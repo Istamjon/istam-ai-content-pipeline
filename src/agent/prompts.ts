@@ -96,10 +96,9 @@ ${BRAND}
 OUTPUT LANGUAGE: English keys (OK / ISSUES / FACT_OK) as specified; issue text short English for the rewrite agent.`,
 
   visualDirector: `You are the Visual Director for personal brand "${brand.name}".
-Image prompts are built by the deterministic premium template in config/imagePrompt.ts
-(Subject/Environment/Composition/Style/Lighting/Color #036158/Details/Camera/Quality/Negative).
-Images are generated only via Cloudflare Workers AI FLUX.2-dev at 1536×1536.
-Pollinations is text-only. You are not used for primary generation anymore.`,
+Image prompts: config/imagePrompt.ts — dark gray→black gradient background, ONE centered main idea
+(workflow | infrastructure | engineering), no office/room, brand teal #036158, zero on-image text.
+Pipeline: Nano Banana → Cloudflare FLUX → AI Horde. Pollinations is text-only.`,
 } as const;
 
 // ─── User prompt builders ─────────────────────────────────────────────────
@@ -284,14 +283,16 @@ export function buildImagePromptUserPrompt(input: {
   topicSnippet: string;
 }): string {
   return `
-TASK: Create ONE English image-generation prompt for a social post about this AI Engineering topic.
+TASK: Create ONE English image-generation prompt for a premium editorial hero illustration
+about this AI Engineering topic. Tell a complete visual story of a real production AI system —
+not abstract shapes, not generic tech objects.
 
-Must reflect brand colors and minimalist premium tech style.
 Topic title: ${input.title}
 Topic context: ${input.topicSnippet.slice(0, 800)}
 
 Required visual DNA (include):
 ${brand.visualStyle.imagePromptFragment}
+Photorealistic, enterprise, magazine-quality, brand #036158, no readable text, no logos.
 
 Output only the prompt string.
 `.trim();

@@ -203,27 +203,29 @@ export const brand = {
   },
 
   /**
-   * Visual system — Cloudflare FLUX.2 via config/imagePrompt.ts
-   * 3 presets rotate: graph | abstract | systems — never office/workspace.
+   * Visual system — config/imagePrompt.ts
+   * Presets: workflow | infrastructure | engineering
+   * Layout: dark gray→black gradient bg + ONE centered main idea. No office/room.
    */
   visualStyle: {
-    style: "Premium AI Engineering editorial illustration, enterprise technology",
-    presets: ["graph", "abstract", "systems"] as const,
+    style:
+      "Premium editorial hero — one centered production-AI idea on dark gray→black gradient",
+    presets: ["workflow", "infrastructure", "engineering"] as const,
     principles: [
-      "Professional technology editorial artwork",
-      "Three looks: agent-graph / abstract brand / cloud systems",
-      "NO office, desk, workplace, furniture, or room interiors",
-      "Modern AI Engineering aesthetic",
-      "Clean minimalist composition, high credibility",
-      "No cartoon, no stock-photo look, no text, no logos, no watermarks",
-      "Square 1:1 social quality (Cloudflare FLUX.2-dev)",
+      "Background: dark gray (#1F2937) → black (#0A0A0A) gradient only",
+      "Center: exactly ONE main visual idea (topic-driven)",
+      "No office, room, desk, furniture, people, or workplace interior",
+      "Photoreal CGI hybrid, minimalist, enterprise magazine quality",
+      "Brand teal #036158 + subtle cyan accents on the center subject",
+      "No text, logos, watermarks, generic cloud icons",
+      "Square 1:1 social crop-safe",
     ],
     imagePromptFragment:
-      "premium AI Engineering illustration, primary #036158, abstract systems graphs neural networks, no office no desk no people, no text no logos no watermark",
+      "one centered AI Engineering hero object, dark gray to black gradient void background, brand teal #036158, no office no room no people, no text no logos no watermark",
   },
 
   imageStyle:
-    "premium AI Engineering illustration, primary #036158, graphs abstract systems neural, no office no workplace, Cloudflare FLUX.2-dev, no text no logos no watermark",
+    "one centered production AI concept, dark gray→black gradient bg, brand #036158, no office no room, no text no logos no watermark",
 };
 
 export type Brand = typeof brand;
@@ -238,11 +240,30 @@ export const platformLimits: Record<string, number> = {
   blogger: 50000,
 };
 
-/** Primary content sources only (user-defined). */
+/** Content sources: primary blogs + major AI labs / education. */
 export const sources = [
+  // Primary
   { url: "https://actualize.co/ai-engineering-blog/", name: "Actualize AI" },
   { url: "https://www.the-agentic-engineer.com/blog", name: "The Agentic Engineer" },
   { url: "https://skywork.ai/blog/", name: "Skywork AI" },
+  // Additional
+  { url: "https://deepmind.google/blog/", name: "DeepMind" },
+  { url: "https://www.anthropic.com/news", name: "Anthropic News" },
+  { url: "https://www.deeplearning.ai/the-batch", name: "DeepLearning.AI The Batch" },
+  { url: "https://qwen.ai/blog/", name: "Qwen Blog" },
+  { url: "https://openai.com/news/", name: "OpenAI News" },
+  {
+    url: "https://blog.google/innovation-and-ai/technology/ai/",
+    name: "Google AI Blog",
+  },
+  {
+    url: "https://towardsdatascience.com/category/artificial-intelligence/agentic-ai/",
+    name: "Towards Data Science — Agentic AI",
+  },
+  {
+    url: "https://plainenglish.io/topics/fullstack",
+    name: "Plain English — Fullstack",
+  },
 ];
 
 /** Compact brand block injected into agent system prompts */

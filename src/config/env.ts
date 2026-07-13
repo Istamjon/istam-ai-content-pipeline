@@ -22,8 +22,14 @@ export const env = {
    * auto = Gemini if key set, else Pollinations; on Gemini fail → Pollinations.
    */
   TEXT_PROVIDER: (process.env.TEXT_PROVIDER || "auto").toLowerCase(),
-  /** Google AI Studio / Gemini API key (Free Tier). */
+  /** Google AI Studio / Gemini API key (Free Tier) — text + image key #1. */
   GEMINI_API_KEY: process.env.GEMINI_API_KEY || "",
+  /**
+   * Extra Gemini keys for Nano Banana image rotation (429/quota → next key).
+   * Also accepts comma list: GEMINI_API_KEYS or NANOBANANA_API_KEYS.
+   */
+  GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2 || "",
+  GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3 || "",
   /**
    * Free-friendly default: gemini-flash-lite-latest
    * Alternatives: gemini-2.0-flash-lite, gemini-flash-latest
@@ -36,12 +42,15 @@ export const env = {
   ),
   /**
    * Nano Banana = Gemini native image models (better on-image text).
-   * Free tier quota is low/variable — soft cap + fallback to Cloudflare.
+   * Free tier quota is low/variable — multi-key rotation + CF/Horde fallback.
    * Models: gemini-2.5-flash-image | gemini-3.1-flash-image | gemini-3.1-flash-lite-image
    */
   NANOBANANA_IMAGE_MODEL:
     process.env.NANOBANANA_IMAGE_MODEL || "gemini-2.5-flash-image",
-  /** Soft daily Nano Banana images (UTC). Keep low for Free Tier. */
+  /**
+   * Soft daily Nano Banana images PER KEY (UTC).
+   * Total capacity ≈ this × number of configured keys.
+   */
   DAILY_NANOBANANA_LIMIT: Math.max(
     0,
     parseInt(process.env.DAILY_NANOBANANA_LIMIT || "3", 10) || 3,
@@ -165,7 +174,12 @@ export const env = {
    * organization — company page only (istam-obidov)
    * person — personal profile only (/in/istam)
    */
-  LINKEDIN_POST_AS: (process.env.LINKEDIN_POST_AS || "both").toLowerCase(),
+  /**
+   * person — only https://www.linkedin.com/in/istam/
+   * organization — company only
+   * both/auto — person + company
+   */
+  LINKEDIN_POST_AS: (process.env.LINKEDIN_POST_AS || "person").toLowerCase(),
   /**
    * If true, OAuth requests w_organization_social.
    * Only enable after Community Management API is approved on the app
@@ -221,10 +235,10 @@ export const env = {
    * Slot count = CRON_SLOTS_PER_DAY; times differ each day and are persisted.
    */
   CRON_RANDOM: process.env.CRON_RANDOM !== "false",
-  /** How many pipeline runs per day when CRON_RANDOM=true (default 3 — social-safe). */
+  /** How many pipeline runs per day when CRON_RANDOM=true (default 4). */
   CRON_SLOTS_PER_DAY: Math.max(
     1,
-    Math.min(48, parseInt(process.env.CRON_SLOTS_PER_DAY || "3", 10) || 3),
+    Math.min(48, parseInt(process.env.CRON_SLOTS_PER_DAY || "4", 10) || 4),
   ),
   /** Local hour window start for random slots (0–23). */
   CRON_WINDOW_START_HOUR: Math.max(

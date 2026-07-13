@@ -1,8 +1,11 @@
 /**
- * Premium AI Engineering image prompts for Cloudflare FLUX.2 / social covers.
- * 3 presets — NO office, NO readable text on image.
- * Topic drives visual metaphor (not on-image typography).
- * Brand color: #036158
+ * Premium editorial hero image prompts (Nano Banana / Cloudflare FLUX / Horde).
+ * Rules:
+ *  - Background: dark gray → black gradient only (NO office, NO room, NO furniture)
+ *  - Center: ONE main visual idea (topic-driven production AI concept)
+ *  - Brand primary: #036158
+ *
+ * Length targets: Horde ~1000 (lead first), CF ~2200, Nano ~2500.
  */
 
 export const brandImageColors = {
@@ -13,13 +16,26 @@ export const brandImageColors = {
   accentCyan: "#5EEAD4",
 };
 
-export type ImageVisualPreset = "graph" | "abstract" | "systems";
+/** Center-subject variety — same dark gradient void background for all. */
+export type ImageVisualPreset = "workflow" | "infrastructure" | "engineering";
 
 export const IMAGE_PRESETS: ImageVisualPreset[] = [
-  "graph",
-  "abstract",
-  "systems",
+  "workflow",
+  "infrastructure",
+  "engineering",
 ];
+
+/** Legacy env aliases → new presets */
+const PRESET_ALIASES: Record<string, ImageVisualPreset> = {
+  workflow: "workflow",
+  infrastructure: "infrastructure",
+  engineering: "engineering",
+  graph: "workflow",
+  abstract: "engineering",
+  systems: "infrastructure",
+  workspace: "engineering",
+  office: "engineering",
+};
 
 export const imageAspect = {
   ratio: "1:1",
@@ -29,86 +45,41 @@ export const imageAspect = {
   genHeight: 1024,
 } as const;
 
-/** Hard ban: models often paint gibberish words when UI/dashboard is mentioned. */
-const NEGATIVE_BLOCK = `Negative:
-absolutely no text, no letters, no words, no numbers, no alphabet, no typography, no captions, no labels, no watermarks, no logos, no signs, no UI screens with text, no keyboard, no code on screen, no charts with axis labels, no readable interface, no people, no faces, no hands, no office, no desk, no chair, no workplace, no room interior, no furniture, no low quality, no blurry, no cartoon, no anime, no stock photo, no oversaturation, no chaotic collage, no third-party brand marks`;
-
-const COLOR_BLOCK = `Color:
-brand teal #036158, white, dark gray #1F2937, black #0A0A0A, soft cyan accents only — no rainbow neon`;
-
-const QUALITY_BLOCK = `Quality:
-ultra detailed, sharp, clean edges, professional social post visual, square 1:1, photoreal CGI hybrid`;
+/** Shared background for every image — hard rule. */
+const BACKGROUND_RULE =
+  "pure dark gray to black vertical gradient void background (#1F2937 fading into #0A0A0A), empty negative space, no floor, no walls, no room, no office, no desk, no chair, no furniture, no windows, no people, no workplace interior";
 
 type PresetSpec = {
   id: ImageVisualPreset;
-  environment: string;
-  composition: string;
-  style: string;
-  lighting: string;
-  details: string;
-  camera: string;
-  subjectLead: string;
+  /** Single centered hero subject (the ONE main visual idea). */
+  centerIdea: string;
 };
 
+/**
+ * Three center-subject angles — always one focal object/system, same dark void bg.
+ */
 const PRESETS: Record<ImageVisualPreset, PresetSpec> = {
-  graph: {
-    id: "graph",
-    subjectLead:
-      "visual metaphor of multi-agent orchestration as glowing connected nodes and flowing edges",
-    environment: `Environment:
-dark premium void, translucent geometric planes, pure technical space, no rooms`,
-    composition: `Composition:
-centered node graph, teal modules linked by soft data streams, hierarchical, clear structure, generous negative space`,
-    style: `Style:
-premium systems architecture illustration, 3D CGI, minimal enterprise editorial, high clarity`,
-    lighting: `Lighting:
-soft studio glow on nodes, gentle edge light, light haze for depth`,
-    details: `Details:
-smooth unlabeled nodes, abstract connectors, no screens, no keyboards, no readable panels, polished materials`,
-    camera: `Camera:
-slight isometric view, sharp main path, square crop`,
+  workflow: {
+    id: "workflow",
+    centerIdea:
+      "one centered multi-agent orchestration system: a few connected agent modules linked by teal data streams into a single clear pipeline, knowledge retrieval feeding the center, automation flow ending in one outcome node",
   },
 
-  abstract: {
-    id: "abstract",
-    subjectLead:
-      "abstract premium AI concept form made of neural lattice and teal energy flows",
-    environment: `Environment:
-deep black to charcoal gradient, soft volumetric atmosphere, no interiors`,
-    composition: `Composition:
-bold central abstract sculpture, asymmetric balance, poster-like, strong negative space`,
-    style: `Style:
-gallery-quality abstract tech art, refined CGI, elegant minimalism, not crypto-art`,
-    lighting: `Lighting:
-soft key light, teal subsurface glow, cinematic contrast`,
-    details: `Details:
-neural filaments, particle streams, glass-like surfaces, no symbols, no glyphs, no text fragments`,
-    camera: `Camera:
-centered product portrait framing, shallow depth of field, square crop`,
+  infrastructure: {
+    id: "infrastructure",
+    centerIdea:
+      "one centered production AI platform core: compact cloud/model-serving mesh with retrieval layer and API gateway as a single coherent architecture object, teal health glow, clean layered structure",
   },
 
-  systems: {
-    id: "systems",
-    subjectLead:
-      "abstract cloud infrastructure layers and intelligent data beams in free space",
-    environment: `Environment:
-open dark digital expanse, floating layers, soft horizon grid, no buildings interiors`,
-    composition: `Composition:
-layered constellation of unlabeled modules connected by teal beams, clean uncluttered systems map`,
-    style: `Style:
-high-end infrastructure CGI, enterprise cloud aesthetic, modern reliable minimal`,
-    lighting: `Lighting:
-cool soft overhead light, teal emissive accents, premium product lighting`,
-    details: `Details:
-abstract server-like blocks without labels, smooth tunnels, polished metal-glass, no monitors with text`,
-    camera: `Camera:
-slightly elevated wide technical view, square crop`,
+  engineering: {
+    id: "engineering",
+    centerIdea:
+      "one centered AI engineering construct: a refined production pipeline sculpture showing build → evaluate → deploy as a single elegant technical form with brand teal accents, no workspace props",
   },
 };
 
 /**
- * Turn title/hint into short visual concepts — avoid feeding full titles
- * that models try to paint as letters.
+ * Topic → short visual concepts (not title typography).
  */
 export function topicToVisualConcepts(
   title: string,
@@ -134,8 +105,6 @@ export function topicToVisualConcepts(
       "on",
       "with",
       "from",
-      "gets",
-      "gets",
       "how",
       "why",
       "new",
@@ -151,15 +120,13 @@ export function topicToVisualConcepts(
       "using",
       "drive",
       "online",
-      "price",
-      "pricey",
-      "delays",
-      "act",
       "news",
       "blog",
       "update",
       "introducing",
       "announcing",
+      "gets",
+      "act",
     ].map((w) => w.toLowerCase()),
   );
 
@@ -177,10 +144,9 @@ export function topicToVisualConcepts(
     if (seen.has(k)) continue;
     seen.add(k);
     unique.push(t);
-    if (unique.length >= 8) break;
+    if (unique.length >= 10) break;
   }
 
-  // Prefer technical concepts; avoid brand names models try to spell as letters
   const concepts = unique
     .join(", ")
     .replace(/\bGemini\b/gi, "language model")
@@ -189,10 +155,10 @@ export function topicToVisualConcepts(
     .replace(/\bClaude\b/gi, "assistant model")
     .replace(/\bOpenAI\b/gi, "AI lab")
     .replace(/\bTraffic\b/gi, "network flow")
-    .slice(0, 160);
+    .slice(0, 180);
 
   if (!concepts) {
-    return "AI agents, automation pipelines, production systems";
+    return "AI agents, orchestration, knowledge retrieval, automation pipelines, production systems";
   }
   return concepts;
 }
@@ -202,8 +168,7 @@ export function pickImagePreset(
   force?: ImageVisualPreset | string,
 ): ImageVisualPreset {
   const f = (force || "").toLowerCase().trim();
-  if (f === "graph" || f === "abstract" || f === "systems") return f;
-  if (f === "workspace" || f === "office") return "systems";
+  if (f && PRESET_ALIASES[f]) return PRESET_ALIASES[f];
 
   let h = 0;
   const s = seed || "default";
@@ -214,8 +179,8 @@ export function pickImagePreset(
 }
 
 /**
- * Build structured premium prompt — topic as visual metaphor only.
- * Never ask the model to render the article title as text.
+ * Build premium editorial hero prompt.
+ * Hard layout: dark gray→black gradient bg + ONE centered main idea.
  */
 export function buildPremiumImagePrompt(
   topicTitle: string,
@@ -229,26 +194,36 @@ export function buildPremiumImagePrompt(
   );
   const p = PRESETS[preset];
 
-  const subject = `Subject:
-${p.subjectLead}, visually expressing these ideas (metaphor only, not written text): ${concepts}.
-Image must contain zero readable text of any kind.`;
+  // ── Lead (must survive Horde 1000-char slice) ──────────────────────────
+  // Put layout constraints first — providers often truncate the tail.
+  const lead = [
+    `Isolated product-hero shot on empty void: dark gray to black smooth gradient background only (#1F2937 → #0A0A0A).`,
+    `NO room, NO office, NO corridor, NO floor tiles, NO walls, NO ceiling, NO desks, NO keyboards, NO people, NO architecture.`,
+    `ONE single centered floating subject only — ${p.centerIdea}.`,
+    `Topic (visual metaphor, never written as text): ${concepts}.`,
+    `Subject floats in empty space with soft studio rim light; huge empty gradient around it; square 1:1.`,
+    `Brand teal #036158 + subtle cyan glow only on the subject. Photoreal CGI, minimalist, enterprise magazine quality.`,
+    `No text, no logos, no watermarks, no generic flat cloud icon.`,
+  ].join(" ");
 
-  const sections = [
-    subject,
-    p.environment,
-    p.composition,
-    p.style,
-    p.lighting,
-    COLOR_BLOCK,
-    p.details,
-    p.camera,
-    QUALITY_BLOCK,
-    NEGATIVE_BLOCK,
-  ];
+  // ── Extended (CF / Nano Banana) ──────────────────────────────
+  const extended = [
+    ``,
+    `Creative direction:`,
+    `- Exactly one hero subject in the middle — do not fill the frame with many competing objects.`,
+    `- Background must stay empty dark gray → black gradient; never invent an office or workspace.`,
+    `- Every part of the center object should relate to a real production AI idea for the topic.`,
+    `- Communicate innovation, intelligence, trust, enterprise engineering excellence.`,
+    `- Make the reader curious to click; avoid generic cloud icons and cliché robot faces.`,
+    ``,
+    `Visual quality: ultra realistic materials, detailed center subject, HDR, high contrast, premium corporate look.`,
+    ``,
+    `Negative: no office, no desk, no chair, no room interior, no walls, no floor perspective room, no people, no hands, no faces, no furniture, no windows, no keyboard, no monitors with text, no abstract-only random blobs, no crypto-art, no cartoon, no anime, no stock cliché, no oversaturation, no UI labels, no logos, no watermarks, no low quality, no blurry.`,
+  ].join("\n");
 
-  let full = sections.join("\n\n").trim();
-  if (full.length > 2000) {
-    full = full.slice(0, 1990).trimEnd() + "…";
+  let full = (lead + "\n" + extended).trim();
+  if (full.length > 2180) {
+    full = full.slice(0, 2170).trimEnd();
   }
   return { prompt: full, preset };
 }

@@ -59,10 +59,10 @@ export async function hordeImage(prompt: string): Promise<Buffer> {
   const steps = 20; // well under 50-step kudos threshold
 
   const safePrompt = prompt.trim().slice(0, 1000);
-  // Append negative in SD style
+  // SD-style negative after ### — reinforce no office / room layouts
   const fullPrompt =
     safePrompt +
-    " ### low quality, blurry, text, watermark, logo, cartoon, people, faces";
+    " ### low quality, blurry, text, watermark, logo, cartoon, people, faces, office, room, corridor, floor tiles, walls, ceiling, desk, chair, keyboard, furniture, architecture interior";
 
   console.log(
     `[horde] async ${w}x${h} steps=${steps} promptLen=${safePrompt.length} budget=${budget.used}/${budget.limit}`,

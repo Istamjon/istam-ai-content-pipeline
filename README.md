@@ -59,7 +59,7 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 | **Tone** | Professional, practical, no hype |
 | **Never publish** | Crypto, rumors, pure ads, off-topic |
 | **Color** | `#036158` (teal) |
-| **Image presets** | `graph` · `abstract` · `systems` (no office) |
+| **Image presets** | `workflow` · `infrastructure` · `engineering` (editorial photoreal, not abstract) |
 
 ### Content sources (primary)
 
@@ -102,7 +102,7 @@ Nano Banana (Gemini image)  →  Cloudflare FLUX.2 (cf1→cf2→cf3)  →  AI Ho
 
 Soft caps (env):
 
-- `DAILY_NANOBANANA_LIMIT` (default 3)
+- `DAILY_NANOBANANA_LIMIT` (default 3 **per key**; multi-key rotation)
 - `DAILY_IMAGE_TOTAL` (all CF accounts combined)
 - `DAILY_IMAGE_LIMIT` (per CF account)
 - `DAILY_HORDE_LIMIT`
@@ -119,7 +119,8 @@ Gemini Free (gemini-flash-lite-latest)  →  Pollinations (openai-fast)
 
 | Env | Purpose |
 |-----|---------|
-| `GEMINI_API_KEY` | Google AI Studio key |
+| `GEMINI_API_KEY` | Google AI Studio key (text + image nb1) |
+| `GEMINI_API_KEY_2` / `_3` | Extra keys — Nano Banana image rotation on 429 |
 | `GEMINI_MODEL` | Text model (default `gemini-flash-lite-latest`) |
 | `TEXT_PROVIDER` | `auto` \| `gemini` \| `pollinations` |
 | `POLLINATIONS_API_KEY` | Fallback text |
@@ -200,6 +201,8 @@ See [`.env.example`](./.env.example) for a fuller list.
 ```env
 TEXT_PROVIDER=auto
 GEMINI_API_KEY=
+GEMINI_API_KEY_2=
+GEMINI_API_KEY_3=
 GEMINI_MODEL=gemini-flash-lite-latest
 DAILY_GEMINI_LIMIT=80
 POLLINATIONS_API_KEY=
@@ -228,8 +231,8 @@ DAILY_IMAGE_TOTAL=9
 AIHORDE_API_KEY=
 DAILY_HORDE_LIMIT=8
 
-# Optional force preset: graph | abstract | systems
-# IMAGE_PRESET=graph
+# Optional force preset: workflow | infrastructure | engineering
+# IMAGE_PRESET=workflow
 ```
 
 ### Platforms

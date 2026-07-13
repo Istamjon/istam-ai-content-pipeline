@@ -20,6 +20,7 @@ import {
   nanoBananaImage,
   isNanoBananaConfigured,
   canUseNanoBananaToday,
+  logNanoBananaBudgets,
 } from "./nanoBananaImage.js";
 import { getProviderImageBudget } from "../db.js";
 
@@ -93,17 +94,7 @@ export async function generateImageBuffer(
 }
 
 export function logAllImageBudgets(): void {
-  if (isNanoBananaConfigured()) {
-    const b = getProviderImageBudget(
-      "nanobanana",
-      env.DAILY_NANOBANANA_LIMIT,
-    );
-    console.log(
-      `[AI] NANOBANANA budget today (UTC): ${b.used}/${b.limit} remaining=${b.remaining} model=${env.NANOBANANA_IMAGE_MODEL}`,
-    );
-  } else {
-    console.log("[AI] NANOBANANA: not configured (set GEMINI_API_KEY)");
-  }
+  logNanoBananaBudgets();
   logImageBudget();
   if (isHordeConfigured()) {
     const b = getProviderImageBudget("horde", env.DAILY_HORDE_LIMIT);

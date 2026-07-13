@@ -5,8 +5,9 @@ import {
 } from "../../config/imagePrompt.js";
 
 /**
- * Builds structured premium image prompt (3 visual presets for feed variety).
+ * Builds premium editorial hero image prompt (story-driven production scenes).
  * Template in config/imagePrompt.ts — topic inject only (no LLM).
+ * Presets: workflow | infrastructure | engineering (legacy: graph|abstract|systems).
  */
 export async function generateImagePrompt(
   state: typeof StateAnnotation.State,
@@ -25,9 +26,9 @@ export async function generateImagePrompt(
         .replace(/^FACTS:[\s\S]*?(?=\n[A-Z]+:|$)/gim, "")
         .replace(/SUMMARY:\s*/i, "")
         .trim()
-        .slice(0, 220) || current.rewritten?.slice(0, 180);
+        .slice(0, 320) || current.rewritten?.slice(0, 240);
 
-    // Optional: IMAGE_PRESET=graph|abstract|systems (no office)
+    // Optional: IMAGE_PRESET=workflow|infrastructure|engineering
     const force = process.env.IMAGE_PRESET as ImageVisualPreset | undefined;
     const { prompt: imagePrompt, preset } = buildPremiumImagePrompt(
       current.title,

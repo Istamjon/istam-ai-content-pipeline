@@ -238,7 +238,9 @@ export type ImageProviderName =
   | "cloudflare3"
   | "horde"
   | "gemini"
-  | "nanobanana";
+  | "nanobanana"
+  | "nanobanana2"
+  | "nanobanana3";
 
 export function getProviderImageUsage(provider: ImageProviderName): number {
   const today = utcToday();
