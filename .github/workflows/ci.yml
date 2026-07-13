@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript build
+        run: npm run build
+
+      - name: Validate langgraph.json paths
+        run: npm run lint:langgraph-json
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Smoke — image prompt builder
+        run: |
+          node --input-type=module -e "
+          import { buildPremiumImagePrompt } from './dist/config/imagePrompt.js';
+          const r = buildPremiumImagePrompt('Agentic RAG', 'GPU retrieval', { preset: 'workflow' });
+          if (!r.prompt.includes('gradient') || !r.prompt.includes('#036158')) {
+            console.error('prompt missing layout/brand rules');
+            process.exit(1);
+          }
+          if (r.preset !== 'workflow') process.exit(1);
+          console.log('OK preset=', r.preset, 'len=', r.prompt.length);
+          "
+
+      # Full eslint currently fails on legacy process.env usage outside env.ts.
+      # Keep as non-blocking report until cleaned up.
+      - name: ESLint (report only)
+        continue-on-error: true
+        run: npm run lint
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: istam-ai-content-pipeline:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

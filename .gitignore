@@ -64,6 +64,4 @@ data/certs/
 # Local published content cache
 data/canonical/
 
-# Template CI (re-add when gh token has workflow scope)
-.github/workflows/
 
