@@ -35,7 +35,11 @@
     "canonical:regen": "npm run build && node scripts/canonical-cli.mjs regen",
     "tokens:status": "npm run build && node scripts/tokens-status.mjs",
     "tokens:refresh": "npm run build && node scripts/tokens-status.mjs --refresh",
-    "cf:resolve": "npm run build && node scripts/cf-resolve-accounts.mjs"
+    "cf:resolve": "npm run build && node scripts/cf-resolve-accounts.mjs",
+    "docker:build": "docker compose build",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "dependencies": {
     "@langchain/core": "^1.1.42",

@@ -1,0 +1,33 @@
+# Istam AI content pipeline
+#
+# 1) Copy .env.example → .env and fill secrets (never commit .env)
+# 2) Ensure host ./data has tokens (data/tokens/*.json) if already authenticated
+# 3) docker compose up -d --build
+# 4) docker compose logs -f
+
+services:
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: istam-ai-content-pipeline:latest
+    container_name: istam-ai-pipeline
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Local day window for CRON_RANDOM (Uzbekistan)
+      TZ: ${TZ:-Asia/Tashkent}
+      NODE_ENV: production
+      # Do not open OAuth server in this container
+      DRY_RUN: ${DRY_RUN:-false}
+    volumes:
+      # Persist SQLite, tokens, canonical posts, schedule, images
+      - ./data:/app/data
+    # No published ports — long-running cron worker only.
+    # OAuth (port 3000) stays on the host: npm run auth
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

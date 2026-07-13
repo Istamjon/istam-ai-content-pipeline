@@ -192,6 +192,45 @@ node --input-type=module -e "import 'dotenv/config'; import { createEmptyState }
 
 ---
 
+## Docker (production)
+
+Long-running **cron pipeline** in a container. OAuth remains on the host (`npm run auth`).
+
+### Requirements
+
+- Docker + Docker Compose  
+- Host `.env` (from `.env.example`)  
+- Host `./data` volume (SQLite, `data/tokens/*`, schedule, canonical)
+
+### Build & run
+
+```bash
+# first time: tokens already on host after local OAuth
+docker compose up -d --build
+docker compose logs -f
+```
+
+### Useful commands
+
+```bash
+docker compose ps
+docker compose restart
+docker compose down
+# one-shot dry run inside container:
+docker compose run --rm -e DRY_RUN=true pipeline
+```
+
+### What is mounted
+
+| Host | Container | Purpose |
+|------|-----------|---------|
+| `./data` | `/app/data` | DB, tokens, images, canonical, schedule |
+| `.env` | (env_file) | Secrets — **not** baked into the image |
+
+Timezone defaults to `Asia/Tashkent` (`TZ` in compose). Override with `TZ=...` in `.env` if needed.
+
+---
+
 ## Environment variables (core)
 
 See [`.env.example`](./.env.example) for a fuller list.
