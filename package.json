@@ -39,7 +39,8 @@
     "docker:build": "docker compose build",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "docker:logs": "docker compose logs -f",
+    "ci": "npm run build && npm run lint:langgraph-json && npm test"
   },
   "dependencies": {
     "@langchain/core": "^1.1.42",

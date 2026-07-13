@@ -451,6 +451,26 @@ node scripts/reset-image-soft-budget.mjs   # clear soft image counters (UTC day)
 
 ---
 
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) on every push/PR to `main`:
+
+1. `npm ci` → `npm run build` (TypeScript)
+2. `langgraph.json` path check
+3. Unit tests (`npm test`)
+4. Smoke check for image prompt builder
+5. Docker image build (no push)
+
+Local equivalent:
+
+```bash
+npm run ci
+```
+
+ESLint still reports legacy `process.env` usage outside `env.ts` (non-blocking in CI until cleaned up).
+
+---
+
 ## Development
 
 ```bash
