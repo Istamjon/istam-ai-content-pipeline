@@ -134,16 +134,41 @@ export const linkedinProvider: OAuthProvider = {
   },
 };
 
+/** LinkedIn access tokens are typically ~60d; refresh when under 7 days left. */
+const LINKEDIN_REFRESH_IF_WITHIN_MS = 7 * 24 * 60 * 60 * 1000;
+const LINKEDIN_UNKNOWN_EXPIRY_MAX_AGE_MS = 50 * 24 * 60 * 60 * 1000;
+
+function linkedInAccessTokenStillFresh(stored: StoredTokens | null): boolean {
+  if (!stored?.accessToken) return false;
+  if (!stored.obtainedAt || !stored.expiresIn) {
+    // Unknown expiry — treat as fresh until ~50d old (Meta/LinkedIn LL window style)
+    if (!stored.obtainedAt) return true;
+    return Date.now() - stored.obtainedAt < LINKEDIN_UNKNOWN_EXPIRY_MAX_AGE_MS;
+  }
+  const left = stored.obtainedAt + stored.expiresIn * 1000 - Date.now();
+  return left >= LINKEDIN_REFRESH_IF_WITHIN_MS;
+}
+
 /**
  * Refresh access token using LINKEDIN_REFRESH_TOKEN.
- * Returns new access token or null.
+ * Returns new (or still-valid) access token, or null.
+ *
+ * By default skips the network call when the stored token is still fresh.
+ * Pass `{ force: true }` after 401 / EXPIRED responses.
  */
-export async function refreshLinkedInAccessToken(): Promise<string | null> {
+export async function refreshLinkedInAccessToken(options?: {
+  force?: boolean;
+}): Promise<string | null> {
   const stored = loadTokens("linkedin");
+  if (!options?.force && linkedInAccessTokenStillFresh(stored)) {
+    return stored!.accessToken;
+  }
+
   const refreshToken =
     stored?.refreshToken || env.LINKEDIN_REFRESH_TOKEN || process.env.LINKEDIN_REFRESH_TOKEN || "";
   if (!refreshToken || !env.LINKEDIN_CLIENT_ID || !env.LINKEDIN_CLIENT_SECRET) {
-    return null;
+    // No refresh path — still return existing access token if present
+    return stored?.accessToken || null;
   }
 
   const tokenRes = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
@@ -231,10 +256,11 @@ export async function probeCanPostAsOrganization(
 }
 
 export function getLinkedInPostMode(): "both" | "auto" | "person" | "organization" {
-  const m = (env.LINKEDIN_POST_AS || "both").toLowerCase();
+  // Default matches env.LINKEDIN_POST_AS (person) — safest for forks / missing org scope
+  const m = (env.LINKEDIN_POST_AS || "person").toLowerCase();
   if (m === "company" || m === "page") return "organization";
   if (m === "person" || m === "organization" || m === "both" || m === "auto") {
     return m as "both" | "auto" | "person" | "organization";
   }
-  return "both";
+  return "person";
 }

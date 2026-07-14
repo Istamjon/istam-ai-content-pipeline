@@ -27,10 +27,11 @@ function timeToCron(hhmm: string): string | null {
 export function startScheduler(): void {
   let running = false;
 
-  const runOnce = async (reason: string) => {
+  /** @returns true if a pipeline attempt started (and finished), false if skipped busy */
+  const runOnce = async (reason: string): Promise<boolean> => {
     if (running) {
       console.log(`[Scheduler] Previous run still in progress, skipping (${reason})`);
-      return;
+      return false;
     }
     running = true;
     console.log(
@@ -55,8 +56,11 @@ export function startScheduler(): void {
           2,
         ),
       );
+      return true;
     } catch (error) {
       console.error("[Scheduler] Pipeline failed:", error);
+      // Count as attempted so we do not infinite-retry a hard crash every restart
+      return true;
     } finally {
       running = false;
     }
@@ -83,7 +87,7 @@ export function startScheduler(): void {
  * Uses setTimeout for today's remaining slots; rolls over at local midnight.
  */
 function startRandomDailyScheduler(
-  runOnce: (reason: string) => Promise<void>,
+  runOnce: (reason: string) => Promise<boolean>,
 ): void {
   const timers = new Set<ReturnType<typeof setTimeout>>();
 
@@ -116,8 +120,21 @@ function startRandomDailyScheduler(
       const handle = setTimeout(() => {
         timers.delete(handle);
         if (isSlotFired(t)) return;
-        markSlotFired(t);
-        void runOnce(`random ${t}`);
+        // Mark fired only after a real pipeline attempt finishes.
+        // If skipped because another run is busy, leave slot unfired for later.
+        // If process dies mid-run, slot stays unfired → re-arm after restart.
+        void (async () => {
+          try {
+            const attempted = await runOnce(`random ${t}`);
+            if (attempted) markSlotFired(t);
+            else
+              console.warn(
+                `[Scheduler] slot ${t} not marked fired (pipeline busy)`,
+              );
+          } catch (e) {
+            console.warn(`[Scheduler] slot ${t} failed (not marked fired):`, e);
+          }
+        })();
       }, ms);
       timers.add(handle);
       const mins = Math.round(ms / 60000);
@@ -139,7 +156,7 @@ function startRandomDailyScheduler(
   armDay(getOrCreateTodaySchedule());
 }
 
-function startFixedScheduler(runOnce: (reason: string) => Promise<void>): void {
+function startFixedScheduler(runOnce: (reason: string) => Promise<boolean>): void {
   const times = env.CRON_TIMES?.length ? env.CRON_TIMES : [];
   if (times.length > 0) {
     let scheduled = 0;
@@ -171,7 +188,7 @@ function startFixedScheduler(runOnce: (reason: string) => Promise<void>): void {
 }
 
 function scheduleInterval(
-  runOnce: (reason: string) => Promise<void>,
+  runOnce: (reason: string) => Promise<boolean>,
 ): void {
   const interval = env.CRON_INTERVAL_MINUTES;
   const expression = `*/${interval} * * * *`;

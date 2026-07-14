@@ -2,9 +2,14 @@ import { env } from "../config/env.js";
 import { ensurePublicImageUrl } from "../lib/imageHost.js";
 import { threadsProvider } from "../oauth/providers/threads.js";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Threads Graph API: create container → publish.
  * Image posts need a public URL; local files go through temporary Litterbox hosting.
+ * Containers are often not immediately publishable — retry like Instagram.
  * @see https://developers.facebook.com/docs/threads/posts
  */
 export async function publishToThreads(
@@ -48,6 +53,7 @@ export async function publishToThreads(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(createBody),
+        signal: AbortSignal.timeout(60_000),
       },
     );
 
@@ -63,31 +69,46 @@ export async function publishToThreads(
       return { success: false, error: msg };
     }
 
-    const publishResponse = await fetch(
-      `https://graph.threads.net/v1.0/${userId}/threads_publish`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          creation_id: createData.id,
-          access_token: token,
-        }),
-      },
-    );
+    // Container may need a few seconds (TEXT and IMAGE); code 24 = media not found yet
+    let lastError = "Threads media_publish failed";
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await sleep(attempt === 0 ? 2500 : 2000 * attempt);
 
-    const publishData = (await publishResponse.json()) as {
-      id?: string;
-      error?: { message: string };
-    };
+      const publishResponse = await fetch(
+        `https://graph.threads.net/v1.0/${userId}/threads_publish`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            creation_id: createData.id,
+            access_token: token,
+          }),
+          signal: AbortSignal.timeout(60_000),
+        },
+      );
 
-    if (!publishResponse.ok || publishData.error) {
-      return {
-        success: false,
-        error: publishData.error?.message || `Threads publish failed: ${publishResponse.status}`,
+      const publishData = (await publishResponse.json()) as {
+        id?: string;
+        error?: { message: string; code?: number; error_subcode?: number };
       };
+
+      if (!publishData.error && publishData.id) {
+        return { success: true };
+      }
+
+      lastError = publishData.error?.message || lastError;
+      const retryable =
+        publishData.error?.code === 24 ||
+        /not ready|in progress|wait|not found|does not exist|медиафайл/i.test(
+          lastError,
+        );
+      if (!retryable) break;
+      console.warn(
+        `[threads] publish attempt ${attempt + 1} not ready: ${lastError.slice(0, 120)}`,
+      );
     }
 
-    return { success: true };
+    return { success: false, error: lastError };
   } catch (error) {
     return { success: false, error: String(error) };
   }

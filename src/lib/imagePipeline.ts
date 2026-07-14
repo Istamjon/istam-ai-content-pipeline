@@ -1,8 +1,9 @@
 /**
  * Image generation waterfall:
  *   1) Nano Banana (Gemini image — best text-in-image when quota allows)
- *   2) Cloudflare multi-account free FLUX
- *   3) AI Horde
+ *   2) Pollinations gpt-image-2 (when Nano fails / no quota)
+ *   3) Cloudflare multi-account free FLUX
+ *   4) AI Horde
  */
 import { env } from "../config/env.js";
 import {
@@ -22,9 +23,19 @@ import {
   canUseNanoBananaToday,
   logNanoBananaBudgets,
 } from "./nanoBananaImage.js";
+import {
+  pollinationsImage,
+  isPollinationsImageConfigured,
+  canUsePollinationsImageToday,
+  logPollinationsImageBudget,
+} from "./pollinations.js";
 import { getProviderImageBudget } from "../db.js";
 
-export type ImageProviderUsed = "nanobanana" | "cloudflare" | "horde";
+export type ImageProviderUsed =
+  | "nanobanana"
+  | "pollinations"
+  | "cloudflare"
+  | "horde";
 
 export async function generateImageBuffer(
   prompt: string,
@@ -40,7 +51,7 @@ export async function generateImageBuffer(
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`nanobanana: ${msg}`);
       console.warn(
-        "[imagePipeline] Nano Banana failed → Cloudflare:",
+        "[imagePipeline] Nano Banana failed → Pollinations gpt-image-2:",
         msg.slice(0, 200),
       );
     }
@@ -48,11 +59,32 @@ export async function generateImageBuffer(
     const b = canUseNanoBananaToday();
     errors.push(`nanobanana: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] Nano Banana daily budget ${b.used}/${b.limit} → Cloudflare`,
+      `[imagePipeline] Nano Banana daily budget ${b.used}/${b.limit} → Pollinations gpt-image-2`,
     );
   }
 
-  // 2) Cloudflare (cf1 → cf2 → cf3)
+  // 2) Pollinations gpt-image-2 (right after Nano Banana)
+  if (isPollinationsImageConfigured() && canUsePollinationsImageToday().ok) {
+    try {
+      const buffer = await pollinationsImage(prompt);
+      return { buffer, provider: "pollinations" };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`pollinations: ${msg}`);
+      console.warn(
+        "[imagePipeline] Pollinations gpt-image-2 failed → Cloudflare:",
+        msg.slice(0, 200),
+      );
+    }
+  } else if (isPollinationsImageConfigured()) {
+    const b = canUsePollinationsImageToday();
+    errors.push(`pollinations: budget ${b.used}/${b.limit}`);
+    console.warn(
+      `[imagePipeline] Pollinations image budget ${b.used}/${b.limit} → Cloudflare`,
+    );
+  }
+
+  // 3) Cloudflare (cf1 → cf2 → cf3)
   if (isCloudflareImageConfigured() && canGenerateImageToday().ok) {
     try {
       const buffer = await cloudflareImage(prompt);
@@ -73,7 +105,7 @@ export async function generateImageBuffer(
     );
   }
 
-  // 3) AI Horde
+  // 4) AI Horde
   if (isHordeConfigured() && canUseHordeToday().ok) {
     try {
       const buffer = await hordeImage(prompt);
@@ -95,6 +127,7 @@ export async function generateImageBuffer(
 
 export function logAllImageBudgets(): void {
   logNanoBananaBudgets();
+  logPollinationsImageBudget();
   logImageBudget();
   if (isHordeConfigured()) {
     const b = getProviderImageBudget("horde", env.DAILY_HORDE_LIMIT);

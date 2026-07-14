@@ -1,6 +1,6 @@
 /**
  * Brand-fit filter for Istam Obidov AI Engineering pipeline.
- * Rejects gaming / lifestyle / off-topic SEO bait early (before LLM spend).
+ * Prefers primary AI-engineering sources; rejects gaming / lifestyle / SEO bait.
  */
 
 export type BrandFitResult = {
@@ -9,41 +9,182 @@ export type BrandFitResult = {
   reason: string;
   positives: string[];
   negatives: string[];
+  /** Host preference boost applied (primary sources) */
+  sourceBoost?: number;
 };
 
 /** Strong on-brand signals (title + body + url) */
 const POSITIVE: Array<{ re: RegExp; w: number; label: string }> = [
-  { re: /\b(ai\s*agent|agentic|multi[- ]?agent|autonomous\s+agent)\b/i, w: 4, label: "ai-agent" },
-  { re: /\b(langgraph|langchain|llamaindex|semantic\s*kernel|crewai|autogen)\b/i, w: 4, label: "agent-framework" },
-  { re: /\b(mcp|model\s+context\s+protocol)\b/i, w: 3, label: "mcp" },
-  { re: /\b(llm|large\s+language\s+model|foundation\s+model)\b/i, w: 3, label: "llm" },
-  { re: /\b(rag|retrieval[- ]augmented|vector\s+db|embedding)\b/i, w: 3, label: "rag" },
-  { re: /\b(ai\s*engineering|ml\s*ops|mlops|llmops|prompt\s+engineering)\b/i, w: 3, label: "ai-eng" },
-  { re: /\b(workflow|orchestration|automation|pipeline)\b/i, w: 2, label: "workflow" },
-  { re: /\b(openai|anthropic|claude|gpt-?4|gpt-?5|gemini|llama|mistral)\b/i, w: 2, label: "model-vendor" },
-  { re: /\b(transformer|neural|inference|fine[- ]?tun|tokeniz)\b/i, w: 2, label: "ml-core" },
-  { re: /\b(developer|engineering|software\s+architect|production)\b/i, w: 1, label: "dev" },
-  { re: /\b(api|sdk|open\s*source|github)\b/i, w: 1, label: "dev-tools" },
-  { re: /\b(agent\s+skill|tool\s+use|function\s+call|tool[- ]calling)\b/i, w: 3, label: "agent-tools" },
+  // Core agentic / frameworks
+  {
+    re: /\b(ai\s*agent|agentic|multi[- ]?agent|autonomous\s+agent|agent\s+system)\b/i,
+    w: 5,
+    label: "ai-agent",
+  },
+  {
+    re: /\b(langgraph|langchain|llamaindex|semantic\s*kernel|crewai|autogen|haystack)\b/i,
+    w: 5,
+    label: "agent-framework",
+  },
+  { re: /\b(mcp|model\s+context\s+protocol)\b/i, w: 4, label: "mcp" },
+  {
+    re: /\b(llm|large\s+language\s+model|foundation\s+model|small\s+language\s+model|slm)\b/i,
+    w: 4,
+    label: "llm",
+  },
+  {
+    re: /\b(rag|retrieval[- ]augmented|vector\s+(db|database|store)|embedding|chunking)\b/i,
+    w: 4,
+    label: "rag",
+  },
+  {
+    re: /\b(ai\s*engineering|ml\s*ops|mlops|llmops|prompt\s+engineering|context\s+engineering)\b/i,
+    w: 4,
+    label: "ai-eng",
+  },
+  {
+    re: /\b(agent\s+skill|tool\s+use|function\s+call|tool[- ]calling|tool[- ]use|function[- ]calling)\b/i,
+    w: 4,
+    label: "agent-tools",
+  },
+  {
+    re: /\b(orchestrat|workflow|automation|pipeline|state\s+machine|graph\s+workflow)\b/i,
+    w: 3,
+    label: "workflow",
+  },
+  {
+    re: /\b(eval|evaluation|guardrail|observability|tracing|hallucinat|grounding)\b/i,
+    w: 3,
+    label: "prod-quality",
+  },
+  {
+    re: /\b(openai|anthropic|claude|gpt-?[45]|gemini|llama|mistral|deepseek|qwen)\b/i,
+    w: 2,
+    label: "model-vendor",
+  },
+  {
+    re: /\b(transformer|neural|inference|fine[- ]?tun|tokeniz|diffusion|multimodal)\b/i,
+    w: 2,
+    label: "ml-core",
+  },
+  {
+    re: /\b(deepmind|alphafold|gemini\s+2|gemini\s+3|research\s+release)\b/i,
+    w: 2,
+    label: "research-lab",
+  },
+  {
+    re: /\b(production|deploy|scalab|latency|cost\s+optim|architecture)\b/i,
+    w: 2,
+    label: "production",
+  },
+  // Modern full-stack (brand pillars: React, Next.js, Node, Python, Django, APIs, JS/TS)
+  {
+    re: /\b(next\.?js|nextjs)\b/i,
+    w: 4,
+    label: "nextjs",
+  },
+  {
+    re: /\b(react\.?js|react\s*native|\breact\b)\b/i,
+    w: 3,
+    label: "react",
+  },
+  {
+    re: /\b(node\.?js|nodejs|express\.?js|nestjs|fastify)\b/i,
+    w: 3,
+    label: "nodejs",
+  },
+  {
+    re: /\b(type\s*script|typescript|\.tsx?\b)\b/i,
+    w: 3,
+    label: "typescript",
+  },
+  {
+    re: /\b(java\s*script|javascript|\.jsx?\b|es6|es202[0-9])\b/i,
+    w: 2,
+    label: "javascript",
+  },
+  {
+    re: /\b(python|django|flask|fastapi|uvicorn)\b/i,
+    w: 3,
+    label: "python-stack",
+  },
+  {
+    re: /\b(rest\s*api|graphql|openapi|swagger|web\s*api|api\s*design|api\s*gateway|endpoint)\b/i,
+    w: 3,
+    label: "apis",
+  },
+  {
+    re: /\b(developer|software\s+engineer|software\s+architect|fullstack|full[- ]stack)\b/i,
+    w: 1,
+    label: "dev",
+  },
+  { re: /\b(sdk|open\s*source|github)\b/i, w: 1, label: "dev-tools" },
 ];
+
+/** Strong AI engineering (not generic lifestyle) */
+const STRONG_AI_LABELS = new Set([
+  "ai-agent",
+  "agent-framework",
+  "mcp",
+  "llm",
+  "rag",
+  "ai-eng",
+  "agent-tools",
+  "workflow",
+  "prod-quality",
+  "model-vendor",
+  "ml-core",
+  "research-lab",
+]);
+
+/**
+ * Strong engineering stack — counts for secondary sources (TDS / Plain English)
+ * so React/Next/Node/Python/Django/API posts are not rejected as "weak AI".
+ */
+const STRONG_STACK_LABELS = new Set([
+  "nextjs",
+  "react",
+  "nodejs",
+  "typescript",
+  "javascript",
+  "python-stack",
+  "apis",
+  "production",
+]);
 
 /** Hard off-brand / SEO-bait / entertainment */
 const NEGATIVE: Array<{ re: RegExp; w: number; label: string }> = [
-  // Gaming
-  { re: /\b(dead\s+by\s+daylight|dbd|fortnite|minecraft|roblox|valorant|cs:?go|call\s+of\s+duty|gta\s*[0-9]|league\s+of\s+legends|dota\s*2|genshin|steam\s+game)\b/i, w: 8, label: "gaming" },
-  { re: /\b(skill\s+check|perk\s+build|loot\s+box|esports|speedrun|walkthrough|gameplay)\b/i, w: 5, label: "gaming-terms" },
+  {
+    re: /\b(dead\s+by\s+daylight|dbd|fortnite|minecraft|roblox|valorant|cs:?go|call\s+of\s+duty|gta\s*[0-9]|league\s+of\s+legends|dota\s*2|genshin|steam\s+game)\b/i,
+    w: 8,
+    label: "gaming",
+  },
+  {
+    re: /\b(skill\s+check|perk\s+build|loot\s+box|esports|speedrun|walkthrough|gameplay)\b/i,
+    w: 5,
+    label: "gaming-terms",
+  },
   { re: /\b(xbox|playstation|nintendo|console\s+game)\b/i, w: 4, label: "console" },
-  // Crypto / trading
-  { re: /\b(bitcoin|btc|ethereum|crypto\s*currency|nft|airdrop|memecoin|defi|forex|binary\s+option)\b/i, w: 8, label: "crypto" },
-  // Celebrity / gossip / lifestyle
+  {
+    re: /\b(bitcoin|btc|ethereum|crypto\s*currency|nft|airdrop|memecoin|defi|forex|binary\s+option)\b/i,
+    w: 8,
+    label: "crypto",
+  },
   { re: /\b(celebrity|gossip|horoscope|dating\s+app|onlyfans)\b/i, w: 6, label: "lifestyle" },
-  // Pure product spam without AI engineering depth
-  { re: /\b(buy\s+now|limited\s+offer|coupon\s+code|weight\s+loss)\b/i, w: 5, label: "spam" },
-  // Sports
+  {
+    re: /\b(buy\s+now|limited\s+offer|coupon\s+code|weight\s+loss)\b/i,
+    w: 5,
+    label: "spam",
+  },
   { re: /\b(nba|nfl|premier\s+league|world\s+cup|ufc)\b/i, w: 5, label: "sports" },
+  // Soft noise on general blogs (not hard reject alone)
+  {
+    re: /\b(recipe|fashion|travel\s+guide|beauty\s+tips|relationship\s+advice)\b/i,
+    w: 4,
+    label: "offtopic-soft",
+  },
 ];
 
-/** Title-only hard reject patterns (common SEO bait on AI blogs) */
 const TITLE_HARD_REJECT: RegExp[] = [
   /\bdead\s+by\s+daylight\b/i,
   /\bfortnite\b/i,
@@ -53,7 +194,86 @@ const TITLE_HARD_REJECT: RegExp[] = [
   /\bcrypto\s+signal/i,
 ];
 
-const MIN_SCORE = 3;
+/** Default minimum content score (before source boost is enough alone). */
+const MIN_SCORE = 4;
+
+/**
+ * Preferred crawl hosts — aligned with brand.sources primary list.
+ * Higher boost = preferred when ranking batch.
+ */
+const PREFERRED_SOURCES: Array<{
+  host: string;
+  boost: number;
+  label: string;
+  /** Require strong AI signal (generic fullstack noise filter) */
+  requireStrongAi?: boolean;
+  /** Higher bar after boost for noisy general blogs */
+  minScore?: number;
+}> = [
+  { host: "actualize.co", boost: 6, label: "src-actualize" },
+  { host: "the-agentic-engineer.com", boost: 6, label: "src-agentic-eng" },
+  { host: "skywork.ai", boost: 5, label: "src-skywork" },
+  { host: "deepmind.google", boost: 4, label: "src-deepmind" },
+  // TDS agentic category still hosts some off-topic; require real AI signal
+  {
+    host: "towardsdatascience.com",
+    boost: 4,
+    label: "src-tds",
+    requireStrongAi: true,
+    minScore: 5,
+  },
+  // Fullstack topic is noisy — only keep clear AI/agent/LLM posts
+  {
+    host: "plainenglish.io",
+    boost: 2,
+    label: "src-plainenglish",
+    requireStrongAi: true,
+    minScore: 6,
+  },
+];
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export function matchPreferredSource(url: string): {
+  boost: number;
+  label: string;
+  requireStrongAi: boolean;
+  minScore: number;
+} | null {
+  const host = hostnameOf(url);
+  if (!host) return null;
+  for (const s of PREFERRED_SOURCES) {
+    if (host === s.host || host.endsWith(`.${s.host}`)) {
+      return {
+        boost: s.boost,
+        label: s.label,
+        requireStrongAi: Boolean(s.requireStrongAi),
+        minScore: s.minScore ?? MIN_SCORE,
+      };
+    }
+  }
+  return null;
+}
+
+function hasStrongAi(positives: string[]): boolean {
+  return positives.some((p) => STRONG_AI_LABELS.has(p));
+}
+
+function hasStrongStack(positives: string[]): boolean {
+  return positives.some((p) => STRONG_STACK_LABELS.has(p));
+}
+
+/** Topic is on-brand for secondary sources: AI *or* modern full-stack. */
+function hasStrongTopic(positives: string[]): boolean {
+  const content = positives.filter((p) => !p.startsWith("src-"));
+  return hasStrongAi(content) || hasStrongStack(content);
+}
 
 /**
  * Score title+snippet+url for brand fit.
@@ -88,7 +308,6 @@ export function scoreBrandFit(input: {
   for (const { re, w, label } of POSITIVE) {
     if (re.test(blob)) {
       score += w;
-      // Title hits weight more
       if (re.test(title)) score += 1;
       positives.push(label);
     }
@@ -102,21 +321,25 @@ export function scoreBrandFit(input: {
     }
   }
 
-  // Gaming + weak AI mention (e.g. "agent" as game term) still reject
+  const src = matchPreferredSource(url);
+  let sourceBoost = 0;
+  if (src) {
+    sourceBoost = src.boost;
+    score += sourceBoost;
+    positives.push(src.label);
+  }
+
+  // Gaming + weak tech mention still reject
   if (negatives.includes("gaming") || negatives.includes("gaming-terms")) {
-    const strongAi =
-      positives.includes("ai-agent") ||
-      positives.includes("agent-framework") ||
-      positives.includes("llm") ||
-      positives.includes("mcp");
-    // "Agent Gates" gaming metaphor without real AI stack → fail
-    if (!strongAi || score < MIN_SCORE + 2) {
+    const strong = hasStrongTopic(positives);
+    if (!strong || score < MIN_SCORE + 3) {
       return {
         ok: false,
         score,
-        reason: "gaming/off-topic bait (weak or no real AI-engineering signal)",
+        reason: "gaming/off-topic bait (weak or no real engineering signal)",
         positives,
         negatives,
+        sourceBoost,
       };
     }
   }
@@ -128,29 +351,45 @@ export function scoreBrandFit(input: {
       reason: "never-publish topic (crypto/spam)",
       positives,
       negatives,
+      sourceBoost,
     };
   }
 
-  // Must have at least some AI/dev positive signal
-  if (positives.length === 0) {
+  if (positives.length === 0 || (positives.length === 1 && positives[0]?.startsWith("src-"))) {
     return {
       ok: false,
       score,
-      reason: "no AI Engineering / agents / LLM signals",
+      reason: "no AI Engineering / full-stack (React/Next/Node/Python/API) signals",
       positives,
       negatives,
+      sourceBoost,
     };
   }
 
-  const ok = score >= MIN_SCORE && !negatives.includes("hard-title");
+  // Secondary blogs: require AI *or* modern stack (React/Next/Node/TS/Python/Django/APIs)
+  if (src?.requireStrongAi && !hasStrongTopic(positives)) {
+    return {
+      ok: false,
+      score,
+      reason: `weak topic for ${src.label} (need AI agents/LLM/RAG or React/Next/Node/Python/Django/API)`,
+      positives,
+      negatives,
+      sourceBoost,
+    };
+  }
+
+  const minNeeded = src?.minScore ?? MIN_SCORE;
+  const ok = score >= minNeeded && !negatives.includes("hard-title");
+
   return {
     ok,
     score,
     reason: ok
-      ? `score=${score} positives=${positives.slice(0, 5).join(",")}`
-      : `score=${score} below min ${MIN_SCORE} (${negatives.join(",") || "weak"})`,
+      ? `score=${score} (+src ${sourceBoost}) ${positives.filter((p) => !p.startsWith("src-")).slice(0, 5).join(",") || "ok"}`
+      : `score=${score} below min ${minNeeded} (${negatives.join(",") || "weak"})`,
     positives,
     negatives,
+    sourceBoost,
   };
 }
 

@@ -53,6 +53,7 @@ export async function publishToInstagram(
         caption: text,
         access_token: token,
       }),
+      signal: AbortSignal.timeout(90_000),
     });
 
     const createData = (await createResponse.json()) as {
@@ -84,6 +85,7 @@ export async function publishToInstagram(
             creation_id: mediaId,
             access_token: token,
           }),
+          signal: AbortSignal.timeout(90_000),
         },
       );
 

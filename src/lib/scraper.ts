@@ -4,6 +4,8 @@ import { Article } from "../agent/state.js";
 export interface SourceConfig {
   url: string;
   name: string;
+  /** primary = AI-eng core blogs; secondary = stricter brand-fit */
+  tier?: "primary" | "secondary";
   rssPaths?: string[];
   sitemapPath?: string;
   articleSelector?: string;

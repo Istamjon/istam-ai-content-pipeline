@@ -17,8 +17,9 @@ function ensureImagesDir(): void {
 }
 
 /**
- * Generate post image: Cloudflare multi-account → AI Horde.
- * C: on total failure → no imagePath → graph skips publish.
+ * Generate post image:
+ *   Nano Banana → Pollinations gpt-image-2 → Cloudflare → AI Horde.
+ * On total failure → no imagePath → graph skips publish.
  */
 export async function generateImage(
   state: typeof StateAnnotation.State,
@@ -40,7 +41,11 @@ export async function generateImage(
 
     const { buffer, provider } = await generateImageBuffer(current.imagePrompt);
     const ext =
-      provider === "horde" ? "webp" : provider === "nanobanana" ? "png" : "jpg";
+      provider === "horde"
+        ? "webp"
+        : provider === "nanobanana" || provider === "pollinations"
+          ? "png"
+          : "jpg";
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const filepath = path.join(imagesDir, filename);
     fs.writeFileSync(filepath, buffer);

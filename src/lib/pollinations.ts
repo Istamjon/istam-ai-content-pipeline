@@ -1,5 +1,10 @@
 import { env } from "../config/env.js";
-import { getAiDailyUsage, incrementAiDailyUsage } from "../db.js";
+import {
+  getAiDailyUsage,
+  getProviderImageBudget,
+  incrementAiDailyUsage,
+  incrementProviderImageUsage,
+} from "../db.js";
 import {
   canUseGeminiToday,
   geminiText,
@@ -7,11 +12,10 @@ import {
 } from "./geminiText.js";
 
 /**
- * Text generation entrypoint for the agent pipeline.
+ * Text + image via Pollinations.
  *
- * - Primary: Google Gemini Free Tier (if GEMINI_API_KEY set)
- * - Fallback: Pollinations (openai-fast)
- * - Images: Cloudflare / AI Horde only (not here)
+ * - TEXT: Gemini Free (primary) → Pollinations openai-fast
+ * - IMAGE: gpt-image-2 (waterfall after Nano Banana)
  */
 
 const FREE_TEXT_MODELS = new Set([
@@ -198,16 +202,115 @@ export async function pollinationsText(
   );
 }
 
+const POLLINATIONS_IMAGE_PROVIDER = "pollinations";
+
+export function isPollinationsImageConfigured(): boolean {
+  return Boolean(env.POLLINATIONS_API_KEY);
+}
+
+export function canUsePollinationsImageToday(): {
+  ok: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+} {
+  const limit = env.DAILY_POLLINATIONS_IMAGE_LIMIT;
+  if (limit <= 0) {
+    return { ok: true, used: 0, limit: 0, remaining: 999 };
+  }
+  const b = getProviderImageBudget(POLLINATIONS_IMAGE_PROVIDER, limit);
+  return { ok: b.remaining > 0, used: b.used, limit: b.limit, remaining: b.remaining };
+}
+
 /**
- * @deprecated Images use Cloudflare FLUX.2-dev only. Never call for production.
+ * Pollinations text-to-image (default model: gpt-image-2).
+ * Used in the image waterfall right after Nano Banana fails.
+ * @see https://gen.pollinations.ai/image/{prompt}?model=gpt-image-2
  */
-export async function pollinationsImage(_prompt: string): Promise<Buffer> {
-  throw new Error(
-    "pollinationsImage disabled. Images = Cloudflare FLUX.2-dev (lib/cloudflareImage.ts)",
+export async function pollinationsImage(prompt: string): Promise<Buffer> {
+  if (!env.POLLINATIONS_API_KEY) {
+    throw new Error(
+      "POLLINATIONS_API_KEY required for gpt-image-2. Get a key at https://enter.pollinations.ai",
+    );
+  }
+
+  const budget = canUsePollinationsImageToday();
+  if (!budget.ok) {
+    throw new Error(
+      `Pollinations image daily limit ${budget.used}/${budget.limit} (UTC)`,
+    );
+  }
+
+  const model = env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2";
+  const width = Math.min(2048, Math.max(256, env.IMAGE_WIDTH || 1024));
+  const height = Math.min(2048, Math.max(256, env.IMAGE_HEIGHT || 1024));
+  const safePrompt = prompt.trim().slice(0, 2000);
+  if (!safePrompt) throw new Error("Pollinations image: empty prompt");
+
+  // GET /image/{prompt}?model=&width=&height=&key=
+  const params = new URLSearchParams({
+    model,
+    width: String(width),
+    height: String(height),
+    nologo: "true",
+    enhance: "false",
+    key: env.POLLINATIONS_API_KEY,
+  });
+  const url =
+    `${baseUrl()}/image/${encodeURIComponent(safePrompt)}?${params.toString()}`;
+
+  console.log(
+    `[pollinations-image] model=${model} ${width}x${height} promptLen=${safePrompt.length} budget=${budget.used}/${budget.limit || "∞"}`,
+  );
+
+  const response = await fetch(url, {
+    method: "GET",
+    headers: authHeaders({ Accept: "image/*" }),
+    signal: AbortSignal.timeout(180_000),
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => "");
+    throw new Error(
+      `Pollinations image failed: ${response.status} ${response.statusText} ${errBody.slice(0, 220)}`,
+    );
+  }
+
+  const ctype = (response.headers.get("content-type") || "").toLowerCase();
+  const buf = Buffer.from(await response.arrayBuffer());
+  if (buf.length < 500) {
+    const peek = buf.toString("utf8").slice(0, 200);
+    throw new Error(
+      `Pollinations image too small (${buf.length}b) content-type=${ctype} body=${peek}`,
+    );
+  }
+  // Reject JSON error payloads disguised as 200
+  if (ctype.includes("json") || ctype.includes("text")) {
+    throw new Error(
+      `Pollinations image returned non-image (${ctype}): ${buf.toString("utf8").slice(0, 200)}`,
+    );
+  }
+
+  trackRequest();
+  const used = incrementProviderImageUsage(POLLINATIONS_IMAGE_PROVIDER, 1);
+  console.log(
+    `[pollinations-image] OK model=${model} bytes=${buf.length} daily=${used}/${budget.limit || "∞"}`,
+  );
+  return buf;
+}
+
+export function logPollinationsImageBudget(): void {
+  if (!isPollinationsImageConfigured()) {
+    console.log("[AI] POLLINATIONS image: not configured (set POLLINATIONS_API_KEY)");
+    return;
+  }
+  const b = canUsePollinationsImageToday();
+  console.log(
+    `[AI] POLLINATIONS image (${env.POLLINATIONS_IMAGE_MODEL}): ${b.used}/${b.limit || "∞"} remaining=${b.remaining}`,
   );
 }
 
-/** Usage snapshot — text=Gemini|Pollinations, image=Cloudflare */
+/** Usage snapshot — text=Gemini|Pollinations, image waterfall includes gpt-image-2 */
 export function getPollinationsUsage(): {
   used: number;
   limit: number;
@@ -228,7 +331,7 @@ export function getPollinationsUsage(): {
       ? `gemini:${env.GEMINI_MODEL}`
       : resolveTextModel(),
     textProvider: geminiOn ? "gemini→pollinations" : "pollinations",
-    imageProvider: "cloudflare",
-    imageModel: env.CLOUDFLARE_IMAGE_MODEL,
+    imageProvider: "nanobanana→pollinations→cloudflare→horde",
+    imageModel: env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2",
   };
 }

@@ -90,8 +90,8 @@ export async function publish(
         console.log(
           `[publish] DRY_RUN ✓ ${result.platform} (quality+image OK, not sent)`,
         );
+        // Do not burn real daily platform limits or analytics during dry runs
         results[i] = { ...result, status: "success" };
-        incrementDailyCount(result.platform);
         anySuccess = true;
         continue;
       }
@@ -131,15 +131,14 @@ export async function publish(
       }
     }
 
-    // Mark seen after a full publish attempt so we do not re-spend AI tokens forever
-    // when platforms are misconfigured. Failed posts remain in `posts` for later retry.
-    const attempted = results.some((r) => r.status === "success" || r.status === "failed");
-    if (anySuccess || attempted || dryRun) {
+    // Only mark seen when something actually succeeded (or dry-run preview).
+    // Pure failures stay unseen so the next cron slot can retry after outages.
+    if (anySuccess || dryRun) {
       try {
         markArticleSeen(
           current.url,
           current.title,
-          anySuccess || dryRun ? "pipeline" : "publish-attempted",
+          dryRun ? "dry-run" : "pipeline",
           contentHash(current.rewritten || current.rawText),
         );
       } catch {

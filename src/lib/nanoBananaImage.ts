@@ -26,8 +26,44 @@ export type NanoBananaKeySlot = {
   providerKey: ImageProviderName;
 };
 
-/** Session-level: keys that hit 429 today — skip without re-calling. */
-const exhaustedKeys = new Set<string>();
+/**
+ * Keys temporarily skipped after 429/quota/auth failures.
+ * Map: apiKey → exhausted-until epoch ms.
+ * Cleared on UTC day change and when TTL elapses (not process-lifetime forever).
+ */
+const exhaustedKeys = new Map<string, number>();
+let exhaustedDayKey = "";
+/** Temporary rate-limit ban (not permanent for the container life). */
+const EXHAUSTED_TTL_MS = 45 * 60 * 1000;
+
+function utcDayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Drop day-old bans and expired TTLs before any key selection. */
+function pruneExhaustedKeys(): void {
+  const day = utcDayKey();
+  if (exhaustedDayKey !== day) {
+    exhaustedKeys.clear();
+    exhaustedDayKey = day;
+    return;
+  }
+  const now = Date.now();
+  for (const [key, until] of exhaustedKeys) {
+    if (until <= now) exhaustedKeys.delete(key);
+  }
+}
+
+function isKeyExhausted(apiKey: string): boolean {
+  pruneExhaustedKeys();
+  const until = exhaustedKeys.get(apiKey);
+  if (until === undefined) return false;
+  if (until <= Date.now()) {
+    exhaustedKeys.delete(apiKey);
+    return false;
+  }
+  return true;
+}
 
 function parseExtraKeysFromEnv(): string[] {
   const blob = [
@@ -59,18 +95,21 @@ export function getNanoBananaKeySlots(): NanoBananaKeySlot[] {
   push(env.GEMINI_API_KEY_3);
   for (const k of parseExtraKeysFromEnv()) push(k);
 
-  const providerKeys: ImageProviderName[] = [
-    "nanobanana",
-    "nanobanana2",
-    "nanobanana3",
-  ];
-
   return ordered.map((apiKey, i) => ({
     label: `nb${i + 1}`,
     apiKey,
-    // Cap named providers at 3 for DB; further keys share last bucket soft-cap
-    providerKey: providerKeys[Math.min(i, providerKeys.length - 1)]!,
+    // Stable per-key DB bucket so key 4+ do not share nanobanana3 soft-cap
+    providerKey: nanoBananaProviderKey(i, apiKey),
   }));
+}
+
+/** Soft-budget provider id: nanobanana, nanobanana2, … or nanobanana_<suffix>. */
+function nanoBananaProviderKey(index: number, apiKey: string): ImageProviderName {
+  if (index === 0) return "nanobanana";
+  if (index === 1) return "nanobanana2";
+  if (index === 2) return "nanobanana3";
+  const suffix = apiKey.slice(-8).replace(/[^a-zA-Z0-9]/g, "") || String(index + 1);
+  return `nanobanana_${suffix}`;
 }
 
 export function isNanoBananaConfigured(): boolean {
@@ -101,7 +140,6 @@ export function canUseNanoBananaToday(): {
 
   let used = 0;
   let remaining = 0;
-  // Aggregate unique provider keys (max 3 tracked)
   const seen = new Set<string>();
   for (const s of slots) {
     if (seen.has(s.providerKey)) continue;
@@ -110,13 +148,13 @@ export function canUseNanoBananaToday(): {
     used += b.used;
     remaining += b.remaining;
   }
-  // Soft total = per-key × unique provider buckets (≈ number of keys, max 3 tracked)
+  // Soft total = per-key limit × unique key buckets
   const limit = perKey * seen.size;
   return { ok: remaining > 0, used, limit, remaining, keys: slots.length };
 }
 
 function canUseKeySlot(slot: NanoBananaKeySlot): boolean {
-  if (exhaustedKeys.has(slot.apiKey)) return false;
+  if (isKeyExhausted(slot.apiKey)) return false;
   const perKey = env.DAILY_NANOBANANA_LIMIT;
   if (perKey <= 0) return true;
   const b = getProviderImageBudget(slot.providerKey, perKey);
@@ -124,9 +162,12 @@ function canUseKeySlot(slot: NanoBananaKeySlot): boolean {
 }
 
 function markKeyExhausted(slot: NanoBananaKeySlot, reason: string): void {
-  exhaustedKeys.add(slot.apiKey);
+  pruneExhaustedKeys();
+  const until = Date.now() + EXHAUSTED_TTL_MS;
+  exhaustedKeys.set(slot.apiKey, until);
+  const mins = Math.round(EXHAUSTED_TTL_MS / 60_000);
   console.warn(
-    `[nanobanana] ${slot.label} exhausted this session: ${reason.slice(0, 120)}`,
+    `[nanobanana] ${slot.label} paused ~${mins}m (until ${new Date(until).toISOString()}): ${reason.slice(0, 120)}`,
   );
 }
 
@@ -306,7 +347,7 @@ export function logNanoBananaBudgets(): void {
     if (seen.has(s.providerKey)) continue;
     seen.add(s.providerKey);
     const b = getProviderImageBudget(s.providerKey, env.DAILY_NANOBANANA_LIMIT);
-    const ex = exhaustedKeys.has(s.apiKey) ? " [session-exhausted]" : "";
+    const ex = isKeyExhausted(s.apiKey) ? " [paused-ttl]" : "";
     console.log(
       `[AI]   ${s.label}: ${b.used}/${b.limit} remaining=${b.remaining} …${s.apiKey.slice(-6)}${ex}`,
     );

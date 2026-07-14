@@ -3,6 +3,8 @@
  * - LinkedIn: refresh_token grant
  * - Threads: th_refresh_token (long-lived ~60d, refresh before expiry)
  * - Facebook/Instagram: re-extend via stored userToken + page token if expiring
+ * - Blogger (Google): refresh_token grant (~1h access)
+ * - X OAuth2: refresh_token grant when offline.access was granted
  */
 import { env } from "../config/env.js";
 import { loadTokens, saveTokens } from "./tokenStore.js";
@@ -10,6 +12,9 @@ import { refreshLinkedInAccessToken } from "./providers/linkedin.js";
 import type { OAuthPlatform, StoredTokens } from "./types.js";
 
 const DAYS_BEFORE = 7;
+/** Short-lived tokens (Google ~1h, X OAuth2 ~2h): refresh this many ms before expiry. */
+const SHORT_TOKEN_BUFFER_MS = 5 * 60 * 1000;
+const SHORT_TOKEN_MAX_LIFETIME_S = 3 * 60 * 60; // treat <= 3h TTL as short-lived
 
 function msUntilExpiry(t: StoredTokens): number | null {
   if (!t.obtainedAt || !t.expiresIn) return null;
@@ -27,6 +32,10 @@ export function isTokenExpiring(t: StoredTokens | null, days = DAYS_BEFORE): boo
       return age > 50 * 24 * 60 * 60 * 1000;
     }
     return false;
+  }
+  // Google / X-style short tokens: refresh when under 5 minutes left (not 7 days)
+  if (t.expiresIn && t.expiresIn <= SHORT_TOKEN_MAX_LIFETIME_S) {
+    return left < SHORT_TOKEN_BUFFER_MS;
   }
   return left < days * 24 * 60 * 60 * 1000;
 }
@@ -173,10 +182,147 @@ async function refreshLinkedIn(): Promise<boolean> {
       console.log("[tokenRefresh] linkedin OK (not expiring)");
       return true;
     }
-    const tok = await refreshLinkedInAccessToken();
+    const tok = await refreshLinkedInAccessToken({ force: true });
     return Boolean(tok);
   } catch (e) {
     console.warn("[tokenRefresh] linkedin error:", e);
+    return false;
+  }
+}
+
+async function refreshBlogger(): Promise<boolean> {
+  const t = loadTokens("blogger");
+  if (!t?.accessToken && !t?.refreshToken) return false;
+  if (t.accessToken && !isTokenExpiring(t)) {
+    console.log("[tokenRefresh] blogger OK (not expiring)");
+    return true;
+  }
+
+  const refreshToken =
+    t.refreshToken || process.env.BLOGGER_REFRESH_TOKEN || "";
+  const clientId = process.env.GOOGLE_CLIENT_ID || "";
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
+  if (!refreshToken || !clientId || !clientSecret) {
+    console.log(
+      "[tokenRefresh] blogger: no refresh_token / Google client — keeping access token",
+    );
+    return Boolean(t.accessToken);
+  }
+
+  try {
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    const json = (await res.json()) as {
+      access_token?: string;
+      expires_in?: number;
+      refresh_token?: string;
+      error?: string;
+      error_description?: string;
+    };
+    if (!res.ok || !json.access_token) {
+      console.warn(
+        "[tokenRefresh] blogger refresh failed:",
+        json.error || res.status,
+        json.error_description || "",
+      );
+      return false;
+    }
+    saveTokens({
+      platform: "blogger",
+      accessToken: json.access_token,
+      refreshToken: json.refresh_token || refreshToken,
+      userId: t.userId,
+      obtainedAt: Date.now(),
+      expiresIn: json.expires_in ?? 3600,
+      scopes: t.scopes,
+      extra: t.extra,
+    });
+    console.log("[tokenRefresh] blogger refreshed, expires_in=", json.expires_in);
+    return true;
+  } catch (e) {
+    console.warn("[tokenRefresh] blogger error:", e);
+    return false;
+  }
+}
+
+async function refreshX(): Promise<boolean> {
+  const t = loadTokens("x");
+  // OAuth1 / bearer in env do not use refresh_token
+  if (t?.extra?.mode === "oauth1" || t?.extra?.mode === "bearer") {
+    return Boolean(t.accessToken);
+  }
+  if (!t?.accessToken && !t?.refreshToken) return false;
+  if (t.accessToken && !isTokenExpiring(t)) {
+    console.log("[tokenRefresh] x OK (not expiring)");
+    return true;
+  }
+
+  const refreshToken = t.refreshToken || "";
+  const clientId = process.env.X_CLIENT_ID || "";
+  const clientSecret = process.env.X_CLIENT_SECRET || "";
+  if (!refreshToken || !clientId) {
+    console.log("[tokenRefresh] x: no OAuth2 refresh_token — keeping token");
+    return Boolean(t.accessToken);
+  }
+
+  try {
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: clientId,
+    });
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    if (clientSecret) {
+      headers.Authorization = `Basic ${Buffer.from(
+        `${clientId}:${clientSecret}`,
+      ).toString("base64")}`;
+    }
+    const res = await fetch("https://api.twitter.com/2/oauth2/token", {
+      method: "POST",
+      headers,
+      body,
+      signal: AbortSignal.timeout(30_000),
+    });
+    const json = (await res.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      error?: string;
+      error_description?: string;
+    };
+    if (!res.ok || !json.access_token) {
+      console.warn(
+        "[tokenRefresh] x refresh failed:",
+        json.error || res.status,
+        json.error_description || "",
+      );
+      return false;
+    }
+    saveTokens({
+      platform: "x",
+      accessToken: json.access_token,
+      refreshToken: json.refresh_token || refreshToken,
+      userId: t.userId,
+      obtainedAt: Date.now(),
+      expiresIn: json.expires_in ?? 7200,
+      scopes: t.scopes,
+      extra: { ...(t.extra || {}), mode: "oauth2" },
+    });
+    console.log("[tokenRefresh] x refreshed, expires_in=", json.expires_in);
+    return true;
+  } catch (e) {
+    console.warn("[tokenRefresh] x error:", e);
     return false;
   }
 }
@@ -188,6 +334,8 @@ export async function refreshAllExpiringTokens(): Promise<void> {
     refreshLinkedIn().catch(() => false),
     refreshThreads().catch(() => false),
     refreshFacebookPage().catch(() => false),
+    refreshBlogger().catch(() => false),
+    refreshX().catch(() => false),
   ]);
 }
 

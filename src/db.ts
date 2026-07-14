@@ -229,18 +229,22 @@ export function getImageBudget(limit: number): {
 }
 
 /**
- * cloudflare* / horde / nanobanana = image usage
- * gemini = soft daily text call count (same table, separate provider key)
+ * Per-provider daily counters (image_provider_usage table).
+ * - Image: cloudflare*, horde, nanobanana* → also bump legacy image_daily_usage
+ * - Text: gemini → provider row only (must NOT inflate image totals)
+ * Dynamic keys allowed (e.g. nanobanana4, nanobanana_ab12cd)
  */
-export type ImageProviderName =
-  | "cloudflare"
-  | "cloudflare2"
-  | "cloudflare3"
-  | "horde"
-  | "gemini"
-  | "nanobanana"
-  | "nanobanana2"
-  | "nanobanana3";
+export type ImageProviderName = string;
+
+/** Providers that consume the shared image daily budget. */
+export function isImageGenerationProvider(provider: string): boolean {
+  return (
+    provider === "horde" ||
+    provider === "pollinations" ||
+    provider.startsWith("cloudflare") ||
+    provider.startsWith("nanobanana")
+  );
+}
 
 export function getProviderImageUsage(provider: ImageProviderName): number {
   const today = utcToday();
@@ -263,8 +267,10 @@ export function incrementProviderImageUsage(
     `INSERT INTO image_provider_usage (date, provider, image_count) VALUES (?, ?, ?)
      ON CONFLICT(date, provider) DO UPDATE SET image_count = excluded.image_count`,
   ).run(today, provider, next);
-  // Keep legacy total in sync
-  incrementImageDailyUsage(by);
+  // Only real image gens update the legacy image total (not gemini text, etc.)
+  if (isImageGenerationProvider(provider)) {
+    incrementImageDailyUsage(by);
+  }
   return next;
 }
 

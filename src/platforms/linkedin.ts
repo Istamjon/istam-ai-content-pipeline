@@ -32,18 +32,13 @@ export type LinkedInResult = {
   results?: LinkedInTargetResult[];
 };
 
-const COMPANY_VANITY = "istam-obidov";
-const DEFAULT_ORG_ID = "135286337";
-const PROFILE_URL = "https://www.linkedin.com/in/istam/";
-
 /**
  * Publish to LinkedIn.
  *
- * LINKEDIN_POST_AS:
- *   both (default) — ALWAYS try personal + company (independent)
- *   auto           — same as both
- *   person         — only https://www.linkedin.com/in/istam/
- *   organization   — only https://www.linkedin.com/company/istam-obidov
+ * LINKEDIN_POST_AS (default: person):
+ *   person       — personal profile only
+ *   organization — company page only (requires LINKEDIN_ORGANIZATION_ID)
+ *   both | auto  — person + company when ids are set
  *
  * Company needs Community Management API (w_organization_social).
  * If company fails, person can still succeed.
@@ -61,37 +56,55 @@ export async function publishToLinkedIn(
       };
     }
 
+    // Prefer stored token; publish batch already ran refreshAllExpiringTokens.
+    // Only force-refresh below on 401/EXPIRED (avoids rotating every post).
     let accessToken = creds.accessToken;
-    // Proactive refresh if we have refresh token (keeps posts working)
-    const refreshed = await refreshLinkedInAccessToken();
-    if (refreshed) accessToken = refreshed;
 
     const mode = getLinkedInPostMode();
     const commentary = text.trim().slice(0, 3000);
-    const orgId =
-      (env.LINKEDIN_ORGANIZATION_ID || DEFAULT_ORG_ID).replace(/\D/g, "") ||
-      DEFAULT_ORG_ID;
+    const orgId = (env.LINKEDIN_ORGANIZATION_ID || "").replace(/\D/g, "");
     const personId = (creds.userId || env.LINKEDIN_USER_ID || "").replace(
       /^urn:li:person:/,
       "",
     );
-    const companyUrl = `https://www.linkedin.com/company/${COMPANY_VANITY}`;
-    const companyAdminUrl = `https://www.linkedin.com/company/${orgId}/admin/page-posts/published/`;
+    const vanity =
+      process.env.LINKEDIN_COMPANY_VANITY ||
+      (orgId ? orgId : "company");
+    const companyUrl = orgId
+      ? `https://www.linkedin.com/company/${vanity}`
+      : "";
+    const companyAdminUrl = orgId
+      ? `https://www.linkedin.com/company/${orgId}/admin/page-posts/published/`
+      : "";
 
     const targets: Array<"person" | "organization"> = [];
     if (mode === "person") {
       targets.push("person");
     } else if (mode === "organization") {
+      if (!orgId) {
+        return {
+          success: false,
+          error:
+            "LINKEDIN_POST_AS=organization requires LINKEDIN_ORGANIZATION_ID in .env",
+        };
+      }
       targets.push("organization");
     } else {
-      // both | auto — post to BOTH when possible
+      // both | auto — post to BOTH when ids exist (no hardcoded org fallback)
       if (personId) targets.push("person");
       if (orgId) targets.push("organization");
+      if (targets.length === 0) {
+        return {
+          success: false,
+          error:
+            "LinkedIn: set LINKEDIN_USER_ID and/or LINKEDIN_ORGANIZATION_ID",
+        };
+      }
     }
 
     console.log(
-      `[linkedin] mode=${mode} targets=[${targets.join(",")}] ` +
-        `profile=${PROFILE_URL} company=${companyUrl}`,
+      `[linkedin] mode=${mode} targets=[${targets.join(",")}]` +
+        (orgId ? ` company=${companyUrl}` : ""),
     );
 
     const results: LinkedInTargetResult[] = [];
@@ -129,7 +142,7 @@ export async function publishToLinkedIn(
       );
 
       if (!one.success && /401|EXPIRED|unauthorized/i.test(one.error || "")) {
-        const again = await refreshLinkedInAccessToken();
+        const again = await refreshLinkedInAccessToken({ force: true });
         if (again) {
           accessToken = again;
           one = await attemptPublish(
@@ -179,8 +192,8 @@ export async function publishToLinkedIn(
     const warningParts: string[] = [];
     if (okPerson && !okOrg && targets.includes("organization")) {
       warningParts.push(
-        `Company ${companyUrl} FAILED (API 403 / no w_organization_social). ` +
-          `Post is on PERSONAL profile only: ${PROFILE_URL}`,
+        `Company ${companyUrl || orgId} FAILED (API 403 / no w_organization_social). ` +
+          `Post is on PERSONAL profile only.`,
       );
     }
     if (!okPerson && okOrg) {
@@ -241,10 +254,10 @@ async function attemptPublish(
 
   const feedUrl = shareToFeedUrl(ugc.postId);
   if (postedAs === "organization") {
-    console.log("[linkedin] Company:", companyUrl);
-    console.log("[linkedin] Admin:", companyAdminUrl);
+    console.log("[linkedin] Company:", companyUrl || authorUrn);
+    if (companyAdminUrl) console.log("[linkedin] Admin:", companyAdminUrl);
   } else {
-    console.log("[linkedin] Profile:", PROFILE_URL);
+    console.log("[linkedin] Profile author:", authorUrn);
   }
   console.log("[linkedin] Feed:", feedUrl);
 
@@ -263,6 +276,7 @@ function persistLastPost(result: LinkedInResult, orgId: string): void {
   if (!prev) return;
   const person = result.results?.find((r) => r.target === "person" && r.success);
   const org = result.results?.find((r) => r.target === "organization" && r.success);
+  const vanity = process.env.LINKEDIN_COMPANY_VANITY || orgId || "";
   saveTokens({
     ...prev,
     extra: {
@@ -274,9 +288,12 @@ function persistLastPost(result: LinkedInResult, orgId: string): void {
       lastPersonFeedUrl: person?.feedUrl || "",
       lastOrgFeedUrl: org?.feedUrl || "",
       organizationId: orgId,
-      companyVanity: COMPANY_VANITY,
-      companyUrl: `https://www.linkedin.com/company/${COMPANY_VANITY}`,
-      profileUrl: PROFILE_URL,
+      ...(vanity
+        ? {
+            companyVanity: vanity,
+            companyUrl: `https://www.linkedin.com/company/${vanity}`,
+          }
+        : {}),
     },
   });
 }

@@ -47,7 +47,7 @@ export const imageAspect = {
 
 /** Shared background for every image — hard rule. */
 const BACKGROUND_RULE =
-  "pure dark gray to black vertical gradient void background (#1F2937 fading into #0A0A0A), empty negative space, no floor, no walls, no room, no office, no desk, no chair, no furniture, no windows, no people, no workplace interior";
+  "dark technical blueprint background, deep indigo-black engineering grid canvas (#0A0A0C with subtle gray gridlines), clean flat schematic layout, empty space, no rooms, no offices, no walls, no floors, no people";
 
 type PresetSpec = {
   id: ImageVisualPreset;
@@ -62,19 +62,19 @@ const PRESETS: Record<ImageVisualPreset, PresetSpec> = {
   workflow: {
     id: "workflow",
     centerIdea:
-      "one centered multi-agent orchestration system: a few connected agent modules linked by teal data streams into a single clear pipeline, knowledge retrieval feeding the center, automation flow ending in one outcome node",
+      "a clean 2D schematic diagram of a multi-agent system architecture, consisting of thin vector geometric node boxes, connected by sharp data flow lines with tiny directional arrows",
   },
 
   infrastructure: {
     id: "infrastructure",
     centerIdea:
-      "one centered production AI platform core: compact cloud/model-serving mesh with retrieval layer and API gateway as a single coherent architecture object, teal health glow, clean layered structure",
+      "a clean system architecture flowchart, depicting a modular cloud-serving mesh, api gateways, and database/retrieval layers as structured technical blocks on a grid",
   },
 
   engineering: {
     id: "engineering",
     centerIdea:
-      "one centered AI engineering construct: a refined production pipeline sculpture showing build → evaluate → deploy as a single elegant technical form with brand teal accents, no workspace props",
+      "a scientific engineering drawing of a circular pipeline cycle, showing modular build-evaluate-deploy stages linked by precise curved pathways with minimal technical nodes",
   },
 };
 
@@ -197,28 +197,28 @@ export function buildPremiumImagePrompt(
   // ── Lead (must survive Horde 1000-char slice) ──────────────────────────
   // Put layout constraints first — providers often truncate the tail.
   const lead = [
-    `Isolated product-hero shot on empty void: dark gray to black smooth gradient background only (#1F2937 → #0A0A0A).`,
-    `NO room, NO office, NO corridor, NO floor tiles, NO walls, NO ceiling, NO desks, NO keyboards, NO people, NO architecture.`,
-    `ONE single centered floating subject only — ${p.centerIdea}.`,
-    `Topic (visual metaphor, never written as text): ${concepts}.`,
-    `Subject floats in empty space with soft studio rim light; huge empty gradient around it; square 1:1.`,
-    `Brand teal #036158 + subtle cyan glow only on the subject. Photoreal CGI, minimalist, enterprise magazine quality.`,
-    `No text, no logos, no watermarks, no generic flat cloud icon.`,
+    `A clean 2D vector technical blueprint schematic of an AI architecture on a dark engineering grid background (#0A0A0C with subtle gray gridlines).`,
+    `NO room, NO office, NO floor tiles, NO walls, NO furniture, NO desks, NO people.`,
+    `ONE main centered diagram only — ${p.centerIdea}.`,
+    `Topic (conceptual schematic, never written as text): ${concepts}.`,
+    `High-contrast technical drawing style, 2.5D schematic view, thin precise vector strokes, crisp lines, square 1:1 format.`,
+    `Brand teal #036158 and electric cyan lines highlighting the flow pathways, minimal clean illustration, research paper figure quality.`,
+    `No written text inside the diagram, no logos, no watermarks, no generic flat cloud icons.`,
   ].join(" ");
 
   // ── Extended (CF / Nano Banana) ──────────────────────────────
   const extended = [
     ``,
     `Creative direction:`,
-    `- Exactly one hero subject in the middle — do not fill the frame with many competing objects.`,
-    `- Background must stay empty dark gray → black gradient; never invent an office or workspace.`,
-    `- Every part of the center object should relate to a real production AI idea for the topic.`,
-    `- Communicate innovation, intelligence, trust, enterprise engineering excellence.`,
-    `- Make the reader curious to click; avoid generic cloud icons and cliché robot faces.`,
+    `- Exactly one clear schematic flowchart in the middle — do not clutter the diagram with unnecessary nodes.`,
+    `- Background must stay a clean, dark grid canvas; never generate realistic rooms, offices, or people.`,
+    `- Every line, arrow, and box must represent a clean logical component of the AI system.`,
+    `- Communicate technical precision, academic depth, and elegant system design.`,
+    `- Avoid literal texts, letters, words, or alphabet symbols on the diagram modules.`,
     ``,
-    `Visual quality: ultra realistic materials, detailed center subject, HDR, high contrast, premium corporate look.`,
+    `Visual quality: crisp vector style, thin white and brand teal strokes, clean schematics, high contrast, research-grade look.`,
     ``,
-    `Negative: no office, no desk, no chair, no room interior, no walls, no floor perspective room, no people, no hands, no faces, no furniture, no windows, no keyboard, no monitors with text, no abstract-only random blobs, no crypto-art, no cartoon, no anime, no stock cliché, no oversaturation, no UI labels, no logos, no watermarks, no low quality, no blurry.`,
+    `Negative: realistic room, office interior, furniture, desks, keyboard, monitors, people, faces, hands, 3D CGI plastic look, messy drawings, cartoon, anime, low resolution, blurry lines, letters, text labels, alphabet words, logos, watermarks.`,
   ].join("\n");
 
   let full = (lead + "\n" + extended).trim();

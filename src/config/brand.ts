@@ -19,6 +19,15 @@ export const brand = {
       "MCP",
       "AI Workflows",
       "Production AI Systems",
+      // Full-stack foundation (content + brand-fit)
+      "React",
+      "Next.js",
+      "Node.js",
+      "Python",
+      "Django",
+      "APIs",
+      "JavaScript",
+      "TypeScript",
     ],
   },
 
@@ -74,6 +83,15 @@ export const brand = {
     "AI Tutorials",
     "Real Projects",
     "Best Practices",
+    // Full-stack stack
+    "React",
+    "Next.js",
+    "Node.js",
+    "Python",
+    "Django",
+    "APIs",
+    "JavaScript",
+    "TypeScript",
   ],
 
   contentRules: [
@@ -209,23 +227,23 @@ export const brand = {
    */
   visualStyle: {
     style:
-      "Premium editorial hero — one centered production-AI idea on dark gray→black gradient",
+      "Premium technical blueprint — one centered flowchart diagram on a dark grid canvas",
     presets: ["workflow", "infrastructure", "engineering"] as const,
     principles: [
-      "Background: dark gray (#1F2937) → black (#0A0A0A) gradient only",
-      "Center: exactly ONE main visual idea (topic-driven)",
+      "Background: deep indigo-black engineering grid (#0A0A0C) with subtle gray gridlines",
+      "Center: exactly ONE main flowchart/schematic diagram (topic-driven)",
       "No office, room, desk, furniture, people, or workplace interior",
-      "Photoreal CGI hybrid, minimalist, enterprise magazine quality",
-      "Brand teal #036158 + subtle cyan accents on the center subject",
-      "No text, logos, watermarks, generic cloud icons",
+      "Academic paper figure quality, minimal vector line art, clean precise lines",
+      "Brand teal #036158 and electric cyan lines highlighting pathways",
+      "No written text inside diagram blocks, no logos, no watermarks, no generic cloud icons",
       "Square 1:1 social crop-safe",
     ],
     imagePromptFragment:
-      "one centered AI Engineering hero object, dark gray to black gradient void background, brand teal #036158, no office no room no people, no text no logos no watermark",
+      "one centered 2D vector technical blueprint schematic, dark engineering grid background, brand teal #036158, no office no room no people, no text no logos no watermark",
   },
 
   imageStyle:
-    "one centered production AI concept, dark gray→black gradient bg, brand #036158, no office no room, no text no logos no watermark",
+    "one centered technical blueprint flowchart schematic, dark engineering grid bg, brand #036158, no office no room, no text no logos no watermark",
 };
 
 export type Brand = typeof brand;
@@ -240,29 +258,47 @@ export const platformLimits: Record<string, number> = {
   blogger: 50000,
 };
 
-/** Content sources: primary blogs + major AI labs / education. */
+/**
+ * Content sources (crawl order). Brand-fit ranks by score + preferred host boost.
+ * Only these hosts are crawled — OpenAI/Anthropic/etc. removed (403 noise + lower priority).
+ *
+ * Tier A (highest trust / AI engineering focus):
+ *   Actualize, Agentic Engineer, Skywork, DeepMind
+ * Tier B (agentic/fullstack — stricter brand-fit):
+ *   Towards Data Science Agentic AI, Plain English Fullstack
+ */
 export const sources = [
-  // Primary
-  { url: "https://actualize.co/ai-engineering-blog/", name: "Actualize AI" },
-  { url: "https://www.the-agentic-engineer.com/blog", name: "The Agentic Engineer" },
-  { url: "https://skywork.ai/blog/", name: "Skywork AI" },
-  // Additional
-  { url: "https://deepmind.google/blog/", name: "DeepMind" },
-  { url: "https://www.anthropic.com/news", name: "Anthropic News" },
-  { url: "https://www.deeplearning.ai/the-batch", name: "DeepLearning.AI The Batch" },
-  { url: "https://qwen.ai/blog/", name: "Qwen Blog" },
-  { url: "https://openai.com/news/", name: "OpenAI News" },
+  // Tier A — primary AI engineering
   {
-    url: "https://blog.google/innovation-and-ai/technology/ai/",
-    name: "Google AI Blog",
+    url: "https://actualize.co/ai-engineering-blog/",
+    name: "Actualize AI",
+    tier: "primary" as const,
   },
+  {
+    url: "https://www.the-agentic-engineer.com/blog",
+    name: "The Agentic Engineer",
+    tier: "primary" as const,
+  },
+  {
+    url: "https://skywork.ai/blog/",
+    name: "Skywork AI",
+    tier: "primary" as const,
+  },
+  {
+    url: "https://deepmind.google/blog/",
+    name: "DeepMind",
+    tier: "primary" as const,
+  },
+  // Tier B — community / education (brand-fit requires strong AI signals)
   {
     url: "https://towardsdatascience.com/category/artificial-intelligence/agentic-ai/",
     name: "Towards Data Science — Agentic AI",
+    tier: "secondary" as const,
   },
   {
     url: "https://plainenglish.io/topics/fullstack",
     name: "Plain English — Fullstack",
+    tier: "secondary" as const,
   },
 ];
 

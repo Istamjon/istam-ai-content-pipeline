@@ -9,15 +9,18 @@ export async function fetchSources(
   _state: typeof StateAnnotation.State,
 ): Promise<GraphUpdate> {
   try {
-    console.log("[fetchSources] Discovering articles from brand sources...");
+    console.log(
+      `[fetchSources] Discovering from ${sources.length} brand sources ` +
+        `(${sources.map((s) => s.name).join(", ")})...`,
+    );
     const articles = await discoverSources(sources);
-    const newArticles: Article[] = [];
+    const scored: Array<{ article: Article; score: number; reason: string }> = [];
     let rejected = 0;
 
     for (const article of articles) {
       if (isArticleSeen(article.url)) continue;
 
-      // Early brand-fit filter (title + url + rss snippet)
+      // Early brand-fit filter (title + url + rss snippet + preferred-host boost)
       const fit = scoreBrandFit({
         title: article.title,
         url: article.url,
@@ -42,36 +45,22 @@ export async function fetchSources(
         continue;
       }
 
-      newArticles.push(article);
+      scored.push({ article, score: fit.score, reason: fit.reason });
     }
 
-    // Prefer higher fit scores first
-    newArticles.sort((a, b) => {
-      const sa = scoreBrandFit({
-        title: a.title,
-        url: a.url,
-        text: a.rawText || "",
-      }).score;
-      const sb = scoreBrandFit({
-        title: b.title,
-        url: b.url,
-        text: b.rawText || "",
-      }).score;
-      return sb - sa;
-    });
-
+    // Prefer higher brand-fit (includes primary-source boost)
+    scored.sort((a, b) => b.score - a.score);
+    const newArticles = scored.map((s) => s.article);
     const batch = newArticles.slice(0, env.MAX_ARTICLES_PER_RUN);
+
     console.log(
       `[fetchSources] Found ${articles.length} total, ` +
         `${newArticles.length} brand-fit unseen, rejected=${rejected}, batch=${batch.length}`,
     );
-    for (const a of batch) {
-      const f = scoreBrandFit({
-        title: a.title,
-        url: a.url,
-        text: a.rawText || "",
-      });
-      console.log(`  - [score=${f.score}] ${a.title.slice(0, 70)} | ${a.url}`);
+    for (const row of scored.slice(0, batch.length)) {
+      console.log(
+        `  - [score=${row.score}] ${row.article.title.slice(0, 70)} | ${row.article.url}`,
+      );
     }
 
     return {

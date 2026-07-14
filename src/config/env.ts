@@ -10,7 +10,7 @@ function normalizeImageTempHours(hours: number): 1 | 12 | 24 | 72 {
 /**
  * AI split (project policy):
  * - TEXT  → Gemini Free (primary) → Pollinations fallback
- * - IMAGE → Cloudflare Workers AI FLUX + AI Horde
+ * - IMAGE → Nano Banana → Pollinations gpt-image-2 → Cloudflare FLUX → AI Horde
  *
  * Gemini: https://aistudio.google.com → API key
  * Pollinations: https://enter.pollinations.ai
@@ -55,17 +55,38 @@ export const env = {
     0,
     parseInt(process.env.DAILY_NANOBANANA_LIMIT || "3", 10) || 3,
   ),
-  /** Secret key sk_… from enter.pollinations.ai (TEXT fallback). */
+  /** Secret key sk_… from enter.pollinations.ai (text + image). */
   POLLINATIONS_API_KEY: process.env.POLLINATIONS_API_KEY || "",
   /**
-   * API host for TEXT generation only.
+   * API host (text chat + /image/{prompt}).
    */
   POLLINATIONS_BASE_URL: (
     process.env.POLLINATIONS_BASE_URL || "https://gen.pollinations.ai"
   ).replace(/\/$/, ""),
   /** Free text model (fallback). */
   POLLINATIONS_TEXT_MODEL: process.env.POLLINATIONS_TEXT_MODEL || "openai-fast",
-  /** Image waterfall starts with Nano Banana when key set. */
+  /**
+   * Pollinations image model after Nano Banana fails.
+   * Official name: gpt-image-2 (also: gptimage, flux, … see /image/models).
+   */
+  POLLINATIONS_IMAGE_MODEL: (() => {
+    const raw = (
+      process.env.POLLINATIONS_IMAGE_MODEL ||
+      process.env.IMAGE_MODEL ||
+      "gpt-image-2"
+    ).trim();
+    // Legacy value when Pollinations images were turned off
+    if (!raw || raw === "disabled") return "gpt-image-2";
+    return raw;
+  })(),
+  /**
+   * Soft daily Pollinations image gens (UTC). 0 = unlimited soft cap.
+   */
+  DAILY_POLLINATIONS_IMAGE_LIMIT: Math.max(
+    0,
+    parseInt(process.env.DAILY_POLLINATIONS_IMAGE_LIMIT || "8", 10) || 8,
+  ),
+  /** Image waterfall: nanobanana → pollinations → cloudflare → horde. */
   IMAGE_PROVIDER: (process.env.IMAGE_PROVIDER || "waterfall") as string,
   /** Cloudflare Account ID #1 (Workers AI REST). */
   CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || "",
@@ -83,8 +104,11 @@ export const env = {
   CLOUDFLARE_IMAGE_MODEL:
     process.env.CLOUDFLARE_IMAGE_MODEL ||
     "@cf/black-forest-labs/flux-2-dev",
-  /** Unused — Pollinations image disabled */
-  IMAGE_MODEL: "disabled",
+  /** Alias for POLLINATIONS_IMAGE_MODEL (legacy env name). */
+  IMAGE_MODEL:
+    process.env.IMAGE_MODEL ||
+    process.env.POLLINATIONS_IMAGE_MODEL ||
+    "gpt-image-2",
   /**
    * Image quality profile:
    * - balanced (default): 1024×1024, steps 15 → ~2–3 free images/day per account
@@ -166,18 +190,14 @@ export const env = {
   /** Person id only, without urn:li:person: prefix */
   LINKEDIN_USER_ID: process.env.LINKEDIN_USER_ID || "",
   /**
-   * Company Page numeric id (from admin URL .../company/135286337/...).
+   * Company Page numeric id (from admin URL .../company/<id>/...).
+   * Required when LINKEDIN_POST_AS includes organization.
    */
   LINKEDIN_ORGANIZATION_ID: process.env.LINKEDIN_ORGANIZATION_ID || "",
   /**
-   * both/auto — post to personal AND company (independent; company may 403)
-   * organization — company page only (istam-obidov)
-   * person — personal profile only (/in/istam)
-   */
-  /**
-   * person — only https://www.linkedin.com/in/istam/
-   * organization — company only
-   * both/auto — person + company
+   * person (default) — personal profile only
+   * organization — company page only (needs LINKEDIN_ORGANIZATION_ID)
+   * both/auto — person + company when ids are set
    */
   LINKEDIN_POST_AS: (process.env.LINKEDIN_POST_AS || "person").toLowerCase(),
   /**
@@ -250,7 +270,7 @@ export const env = {
     1,
     Math.min(24, parseInt(process.env.CRON_WINDOW_END_HOUR || "21", 10) || 21),
   ),
-  /** Minimum minutes between two random slots (default 3h for 3 posts/day). */
+  /** Minimum minutes between two random slots (default 180m with 4 slots/day). */
   CRON_MIN_GAP_MINUTES: Math.max(
     15,
     parseInt(process.env.CRON_MIN_GAP_MINUTES || "180", 10) || 180,

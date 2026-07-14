@@ -29,10 +29,10 @@ describe("imagePrompt", () => {
     );
     expect(preset).toBe("workflow");
     expect(prompt.length).toBeGreaterThan(200);
-    expect(prompt).toMatch(/dark gray to black|gradient/i);
+    expect(prompt).toMatch(/dark engineering grid|technical blueprint/i);
     expect(prompt).toMatch(/#036158/);
     expect(prompt).toMatch(/NO room|no office|NO office/i);
-    expect(prompt).toMatch(/ONE single centered|ONE main visual|one centered/i);
+    expect(prompt).toMatch(/ONE main centered|ONE single centered|one centered/i);
     expect(prompt).not.toMatch(/office interior with desks/i);
   });
 });
