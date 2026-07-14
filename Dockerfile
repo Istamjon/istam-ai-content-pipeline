@@ -19,10 +19,11 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-# Production node_modules only — keeps runtime deps (e.g. dotenv) that
-# npm prune --omit=dev can drop when a package is also listed under devDependencies
+# Production node_modules only (dotenv must stay — imported by dist/index.js)
 RUN rm -rf node_modules \
-  && npm ci --omit=dev
+  && npm ci --omit=dev \
+  && test -d node_modules/dotenv \
+  && node --input-type=module -e "import 'dotenv/config'; console.log('dotenv-ok')"
 
 # ── Runtime ──────────────────────────────────────────────────────────
 FROM node:22-bookworm-slim AS runtime

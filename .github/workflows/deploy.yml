@@ -1,15 +1,7 @@
 # Auto-deploy to VDS after CI succeeds on main.
 #
-# Required GitHub Secrets (Settings → Secrets and variables → Actions):
-#   VDS_HOST     e.g. 95.46.96.179
-#   VDS_USER     e.g. root
-#   VDS_SSH_KEY  full private key PEM (for SSH *into* the VDS — NOT the GitHub deploy key)
-# Optional:
-#   VDS_PORT     default 22
-#   VDS_PATH     default ~/istam-ai-content-pipeline
-#
-# On the VDS: public half of VDS_SSH_KEY must be in ~/.ssh/authorized_keys
-# Repo pull still uses the existing GitHub deploy key on the server.
+# Secrets: VDS_HOST, VDS_USER, VDS_SSH_KEY
+# Optional: VDS_PORT (22), VDS_PATH (/root/istam-ai-content-pipeline)
 
 name: Deploy VDS
 
@@ -28,8 +20,7 @@ jobs:
   deploy:
     name: Deploy to VDS
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    # Only when CI finished successfully (or manual run)
+    timeout-minutes: 35
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success' &&
@@ -50,16 +41,16 @@ jobs:
             echo "::error::Add VDS_HOST, VDS_USER, VDS_SSH_KEY in repo Settings → Secrets"
             exit 1
           fi
-          echo "Secrets present (values not printed)"
+          echo "Secrets present"
 
-      - name: Deploy over SSH
+      - name: Deploy over SSH (pull, no-cache build, health check)
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
           key: ${{ secrets.VDS_SSH_KEY }}
           port: ${{ secrets.VDS_PORT || 22 }}
-          command_timeout: 20m
+          command_timeout: 30m
           script_stop: true
           script: |
             set -euo pipefail
@@ -70,16 +61,62 @@ jobs:
             echo "=== Deploy dir: $APP_DIR ==="
             cd "$APP_DIR"
 
-            echo "=== git pull ==="
+            echo "=== git ==="
+            git remote -v
             git fetch origin main
             git checkout main
-            git pull --ff-only origin main
-            git rev-parse --short HEAD
+            git reset --hard origin/main
+            echo "HEAD=$(git rev-parse --short HEAD)"
+            git log -1 --oneline
+            echo "--- Dockerfile tail ---"
+            tail -n 20 Dockerfile
+            echo "--- package.json dotenv ---"
+            grep -n dotenv package.json || true
 
-            echo "=== docker compose up --build ==="
-            docker compose up -d --build
+            echo "=== .env present? ==="
+            if [ ! -f .env ]; then
+              echo "WARN: .env missing — creating from .env.example (fill secrets later)"
+              cp -n .env.example .env || cp .env.example .env
+            fi
+            ls -la .env data 2>/dev/null || true
+            mkdir -p data/tokens data/images
+            # container runs as uid 10001
+            chown -R 10001:10001 data 2>/dev/null || true
 
-            echo "=== status ==="
-            docker compose ps
-            docker compose logs --tail=40
-            echo "=== deploy OK ==="
+            echo "=== docker compose down + build --no-cache ==="
+            docker compose down || true
+            docker compose build --no-cache --pull
+            docker compose up -d --force-recreate
+
+            echo "=== wait 12s for crash loops ==="
+            sleep 12
+
+            echo "=== ps ==="
+            docker compose ps -a
+
+            STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
+            EXIT=$(docker inspect -f '{{.State.ExitCode}}' istam-ai-pipeline 2>/dev/null || echo na)
+            RESTART=$(docker inspect -f '{{.RestartCount}}' istam-ai-pipeline 2>/dev/null || echo na)
+            echo "status=$STATUS exit=$EXIT restarts=$RESTART"
+
+            echo "=== logs (last 80) ==="
+            docker compose logs --tail=80 || true
+
+            if [ "$STATUS" != "running" ]; then
+              echo "::error::Container not running after deploy (status=$STATUS)"
+              exit 1
+            fi
+            if [ "$RESTART" != "0" ] && [ "$RESTART" != "na" ]; then
+              # allow 0 only; any restart means crash
+              if [ "${RESTART:-0}" -gt 0 ] 2>/dev/null; then
+                echo "::error::Container restarted ${RESTART} times — still crashing"
+                exit 1
+              fi
+            fi
+
+            # live probe: dotenv inside image
+            echo "=== probe dotenv in image ==="
+            docker compose exec -T pipeline node --input-type=module -e "import 'dotenv/config'; console.log('dotenv-runtime-ok')" \
+              || docker run --rm --entrypoint node istam-ai-content-pipeline:latest --input-type=module -e "import 'dotenv/config'; console.log('dotenv-image-ok')"
+
+            echo "=== DEPLOY HEALTHY ==="
