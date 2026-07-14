@@ -12,12 +12,17 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json ./
+# Full install for TypeScript build (devDependencies)
 RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN npm run build \
-  && npm prune --omit=dev
+RUN npm run build
+
+# Production node_modules only — keeps runtime deps (e.g. dotenv) that
+# npm prune --omit=dev can drop when a package is also listed under devDependencies
+RUN rm -rf node_modules \
+  && npm ci --omit=dev
 
 # ── Runtime ──────────────────────────────────────────────────────────
 FROM node:22-bookworm-slim AS runtime
