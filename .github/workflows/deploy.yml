@@ -1,0 +1,85 @@
+# Auto-deploy to VDS after CI succeeds on main.
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   VDS_HOST     e.g. 95.46.96.179
+#   VDS_USER     e.g. root
+#   VDS_SSH_KEY  full private key PEM (for SSH *into* the VDS — NOT the GitHub deploy key)
+# Optional:
+#   VDS_PORT     default 22
+#   VDS_PATH     default ~/istam-ai-content-pipeline
+#
+# On the VDS: public half of VDS_SSH_KEY must be in ~/.ssh/authorized_keys
+# Repo pull still uses the existing GitHub deploy key on the server.
+
+name: Deploy VDS
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vds
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to VDS
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Only when CI finished successfully (or manual run)
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+
+    steps:
+      - name: Check deploy secrets
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_USER: ${{ secrets.VDS_USER }}
+          VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+        run: |
+          missing=0
+          [ -z "$VDS_HOST" ] && echo "Missing secret: VDS_HOST" && missing=1
+          [ -z "$VDS_USER" ] && echo "Missing secret: VDS_USER" && missing=1
+          [ -z "$VDS_SSH_KEY" ] && echo "Missing secret: VDS_SSH_KEY" && missing=1
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Add VDS_HOST, VDS_USER, VDS_SSH_KEY in repo Settings → Secrets"
+            exit 1
+          fi
+          echo "Secrets present (values not printed)"
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 20m
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.VDS_PATH }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="$HOME/istam-ai-content-pipeline"
+            fi
+            echo "=== Deploy dir: $APP_DIR ==="
+            cd "$APP_DIR"
+
+            echo "=== git pull ==="
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+            git rev-parse --short HEAD
+
+            echo "=== docker compose up --build ==="
+            docker compose up -d --build
+
+            echo "=== status ==="
+            docker compose ps
+            docker compose logs --tail=40
+            echo "=== deploy OK ==="

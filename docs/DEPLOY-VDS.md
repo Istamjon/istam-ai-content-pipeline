@@ -82,19 +82,76 @@ docker compose ps
 
 ---
 
-## Optional: auto-deploy from GitHub Actions
+## Auto-deploy from GitHub Actions
 
-Deploy key alone does **not** auto-deploy. Actions needs **SSH into the VDS**:
+Workflow: `.github/workflows/deploy.yml`  
+Runs after **CI succeeds** on `main` (or manual **Actions → Deploy VDS → Run workflow**).
 
-1. Create an SSH key pair used only by Actions → VDS login (different from deploy key).
-2. Add public half to VDS `~/.ssh/authorized_keys`.
-3. Add GitHub **Secrets**:
-   - `VDS_HOST` = `95.46.96.179`
-   - `VDS_USER` = `root` (or deploy user)
-   - `VDS_SSH_KEY` = private key PEM (full text)
-4. Then add a `deploy.yml` job that SSHs and runs `git pull && docker compose up -d --build`.
+### Two different keys (do not mix them)
 
-Until that exists, deploy stays **manual on VDS** (recommended while iterating).
+| Key | Where private key lives | Purpose |
+|-----|-------------------------|---------|
+| **GitHub deploy key** (`VDS-95.46.96.179-Deploy`) | On the **VDS** | Server runs `git pull` from GitHub |
+| **VDS login key** (new) | GitHub Secret `VDS_SSH_KEY` | Actions SSHs **into** the VDS |
+
+### One-time setup
+
+**A) On VDS — create login key for Actions (or reuse an existing user key):**
+
+```bash
+# On VDS as root (or on your PC, then copy public key to VDS)
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f ~/.ssh/gha_vds_deploy -N ""
+
+# Allow Actions to log in as root:
+cat ~/.ssh/gha_vds_deploy.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
+# Show PRIVATE key — add this to GitHub Secrets as VDS_SSH_KEY (never commit it)
+cat ~/.ssh/gha_vds_deploy
+```
+
+If you generated the key on your PC instead:
+
+```bash
+# Local machine
+ssh-keygen -t ed25519 -C "github-actions-deploy" -f gha_vds_deploy -N ""
+ssh-copy-id -i gha_vds_deploy.pub root@95.46.96.179
+# Then paste contents of gha_vds_deploy into GitHub secret VDS_SSH_KEY
+```
+
+**B) GitHub → repo → Settings → Secrets and variables → Actions → New repository secret:**
+
+| Secret | Example value |
+|--------|----------------|
+| `VDS_HOST` | `95.46.96.179` |
+| `VDS_USER` | `root` |
+| `VDS_SSH_KEY` | full private key (`-----BEGIN ... PRIVATE KEY-----` …) |
+| `VDS_PORT` | `22` (optional) |
+| `VDS_PATH` | `/root/istam-ai-content-pipeline` (optional; default `~/istam-ai-content-pipeline`) |
+
+**C) On VDS — ensure git + docker work non-interactively:**
+
+```bash
+cd ~/istam-ai-content-pipeline
+# deploy key for github.com already set
+ssh -T git@github.com
+git remote -v   # should be git@github.com:Istamjon/istam-ai-content-pipeline.git
+docker compose ps
+```
+
+If `origin` is HTTPS, switch to SSH so deploy key is used:
+
+```bash
+git remote set-url origin git@github.com:Istamjon/istam-ai-content-pipeline.git
+```
+
+### Verify
+
+1. Push any small change to `main` (or wait for next push).
+2. **Actions** tab: **CI** green → **Deploy VDS** runs.
+3. Or: Actions → **Deploy VDS** → **Run workflow**.
+
+Do **not** paste private keys into chat — only into GitHub Secrets.
 
 ---
 
