@@ -52,6 +52,27 @@ jobs:
           console.log('OK preset=', r.preset, 'len=', r.prompt.length);
           "
 
+      - name: Smoke — brand-fit + sources
+        run: |
+          node --input-type=module -e "
+          import { scoreBrandFit } from './dist/lib/brandFit.js';
+          import { sources } from './dist/config/brand.js';
+          if (sources.length < 4) { console.error('too few sources', sources.length); process.exit(1); }
+          const ok = scoreBrandFit({
+            title: 'LangGraph multi-agent with TypeScript',
+            url: 'https://actualize.co/ai-engineering-blog/x',
+            text: 'AI agents orchestration Next.js',
+          });
+          if (!ok.ok || ok.score < 4) { console.error('brand-fit failed', ok); process.exit(1); }
+          const bad = scoreBrandFit({
+            title: 'Fortnite season tips',
+            url: 'https://example.com/game',
+            text: 'gameplay loot',
+          });
+          if (bad.ok) { console.error('should reject gaming', bad); process.exit(1); }
+          console.log('OK sources=', sources.length, 'fitScore=', ok.score);
+          "
+
       # Full eslint currently fails on legacy process.env usage outside env.ts.
       # Keep as non-blocking report until cleaned up.
       - name: ESLint (report only)
