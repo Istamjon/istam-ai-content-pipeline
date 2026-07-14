@@ -44,8 +44,9 @@ jobs:
           node --input-type=module -e "
           import { buildPremiumImagePrompt } from './dist/config/imagePrompt.js';
           const r = buildPremiumImagePrompt('Agentic RAG', 'GPU retrieval', { preset: 'workflow' });
-          if (!r.prompt.includes('gradient') || !r.prompt.includes('#036158')) {
-            console.error('prompt missing layout/brand rules');
+          const p = r.prompt.toLowerCase();
+          if (!p.includes('#036158') || !p.includes('no office') || !p.includes('grid')) {
+            console.error('prompt missing layout/brand rules', r.prompt.slice(0, 200));
             process.exit(1);
           }
           if (r.preset !== 'workflow') process.exit(1);
