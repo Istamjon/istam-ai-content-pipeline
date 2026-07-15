@@ -313,15 +313,12 @@ export const env = {
     .filter(Boolean),
   /**
    * Max new articles processed per pipeline run.
-   * Production default: 1 (one image + multi-publish).
+   * Default 3: if article #1 fails quality/image, try #2 and #3 in the same slot.
+   * Graph stops after the first successful publish (no multi-post flood).
    */
   MAX_ARTICLES_PER_RUN: Math.max(
     1,
-    parseInt(
-      process.env.MAX_ARTICLES_PER_RUN ||
-        (process.env.DRY_RUN === "true" ? "1" : "1"),
-      10,
-    ) || 1,
+    parseInt(process.env.MAX_ARTICLES_PER_RUN || "3", 10) || 3,
   ),
   DAILY_LIMIT_TELEGRAM: parseInt(process.env.DAILY_LIMIT_TELEGRAM || "5", 10),
   DAILY_LIMIT_LINKEDIN: parseInt(process.env.DAILY_LIMIT_LINKEDIN || "3", 10),

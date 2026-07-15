@@ -13,6 +13,18 @@ import {
 } from "./lib/dailySchedule.js";
 import { checkAndAlertTokenExpiry } from "./oauth/tokenExpiryAlert.js";
 
+/** Max delayed retries when a slot runs but nothing publishes (quality fail, etc.). */
+const SLOT_MAX_RETRIES = 2;
+/** Wait before re-trying a slot that produced no successful publish. */
+const SLOT_RETRY_MS = 25 * 60 * 1000;
+
+type RunOutcome = {
+  /** Pipeline actually started and finished (not skipped due to busy). */
+  attempted: boolean;
+  /** At least one platform published successfully. */
+  published: boolean;
+};
+
 /**
  * Parse "HH:MM" → cron "M H * * *" (server local time).
  */
@@ -23,6 +35,12 @@ function timeToCron(hhmm: string): string | null {
   const min = parseInt(m[2], 10);
   if (h < 0 || h > 23 || min < 0 || min > 59) return null;
   return `${min} ${h} * * *`;
+}
+
+function hasSuccessfulPublish(
+  publishResults: Array<{ status?: string }> | undefined,
+): boolean {
+  return (publishResults ?? []).some((p) => p.status === "success");
 }
 
 export function startScheduler(): void {
@@ -42,20 +60,25 @@ export function startScheduler(): void {
     }
   };
 
-  /** @returns true if a pipeline attempt started (and finished), false if skipped busy */
-  const runOnce = async (reason: string): Promise<boolean> => {
+  /**
+   * Run the content pipeline once.
+   * - attempted=false → busy, do not consume the slot
+   * - published=true  → mark slot fired
+   * - attempted && !published → leave unfired / schedule retry (caller decides)
+   */
+  const runOnce = async (reason: string): Promise<RunOutcome> => {
     if (running) {
       console.log(`[Scheduler] Previous run still in progress, skipping (${reason})`);
-      return false;
+      return { attempted: false, published: false };
     }
     running = true;
     console.log(
       `[Scheduler] Running content pipeline (${reason}) at ${new Date().toISOString()}`,
     );
     try {
-      // Before publish pipeline: warn if any token dies within 1 day
       await runTokenAlert(reason);
       const result = await graph.invoke(createEmptyState(), graphInvokeConfig);
+      const published = hasSuccessfulPublish(result.publishResults);
       console.log("[Scheduler] Pipeline completed");
       console.log(
         "[Scheduler] Summary:",
@@ -65,6 +88,7 @@ export function startScheduler(): void {
             index: result.articleIndex,
             quality: result.quality,
             publish: result.publishResults,
+            published,
             errors: result.errors,
             title: result.current?.title,
             hasImage: Boolean(result.current?.imagePath),
@@ -73,11 +97,11 @@ export function startScheduler(): void {
           2,
         ),
       );
-      return true;
+      return { attempted: true, published };
     } catch (error) {
       console.error("[Scheduler] Pipeline failed:", error);
-      // Count as attempted so we do not infinite-retry a hard crash every restart
-      return true;
+      // Hard crash: treat as attempted but not published so slot can retry.
+      return { attempted: true, published: false };
     } finally {
       running = false;
     }
@@ -115,19 +139,77 @@ export function startScheduler(): void {
 /**
  * Random times every local day (different plan each day).
  * Uses setTimeout for today's remaining slots; rolls over at local midnight.
+ *
+ * Reliability rules:
+ * - Missed (past) unfired slots → catch-up immediately (restart-safe)
+ * - Slot marked fired only after at least one successful publish
+ * - No-publish runs get up to SLOT_MAX_RETRIES delayed retries
  */
 function startRandomDailyScheduler(
-  runOnce: (reason: string) => Promise<boolean>,
+  runOnce: (reason: string) => Promise<RunOutcome>,
 ): void {
   const timers = new Set<ReturnType<typeof setTimeout>>();
+  /** How many no-publish retries already scheduled/used for HH:MM today. */
+  const slotRetries = new Map<string, number>();
 
   const clearTimers = () => {
     for (const t of timers) clearTimeout(t);
     timers.clear();
   };
 
+  const armTimeout = (ms: number, fn: () => void): void => {
+    const handle = setTimeout(() => {
+      timers.delete(handle);
+      fn();
+    }, ms);
+    timers.add(handle);
+  };
+
+  const fireSlot = (t: string, reason: string): void => {
+    if (isSlotFired(t)) return;
+    void (async () => {
+      try {
+        const outcome = await runOnce(reason);
+        if (!outcome.attempted) {
+          // Busy — try again soon so the slot is not lost.
+          console.warn(
+            `[Scheduler] slot ${t} busy — re-queue in 2 min (${reason})`,
+          );
+          armTimeout(2 * 60 * 1000, () => fireSlot(t, `${reason} requeue`));
+          return;
+        }
+        if (outcome.published) {
+          markSlotFired(t);
+          console.log(`[Scheduler] slot ${t} published — marked fired`);
+          return;
+        }
+        // Ran but nothing published (quality fail, empty sources, etc.)
+        const n = (slotRetries.get(t) || 0) + 1;
+        slotRetries.set(t, n);
+        if (n <= SLOT_MAX_RETRIES) {
+          const mins = Math.round(SLOT_RETRY_MS / 60000);
+          console.warn(
+            `[Scheduler] slot ${t} no publish — retry ${n}/${SLOT_MAX_RETRIES} in ~${mins} min`,
+          );
+          armTimeout(SLOT_RETRY_MS, () =>
+            fireSlot(t, `random ${t} retry${n}`),
+          );
+        } else {
+          // Avoid infinite loops for a bad content day.
+          markSlotFired(t);
+          console.warn(
+            `[Scheduler] slot ${t} exhausted ${SLOT_MAX_RETRIES} retries with no publish — marked fired`,
+          );
+        }
+      } catch (e) {
+        console.warn(`[Scheduler] slot ${t} failed (not marked fired):`, e);
+      }
+    })();
+  };
+
   const armDay = (schedule: DailySchedule) => {
     clearTimers();
+    slotRetries.clear();
     const now = nowLocalHhmm();
     console.log(
       `[Scheduler] Random mode: ${schedule.date} → ${schedule.times.length} slots: ${schedule.times.join(", ")}`,
@@ -137,6 +219,8 @@ function startRandomDailyScheduler(
     );
 
     let armed = 0;
+    let catchUpIndex = 0;
+
     for (const t of schedule.times) {
       if (isSlotFired(t)) {
         console.log(`[Scheduler] slot ${t} already fired today — skip`);
@@ -144,29 +228,18 @@ function startRandomDailyScheduler(
       }
       const ms = msUntilLocalHhmm(t);
       if (ms < 0) {
-        console.log(`[Scheduler] slot ${t} already passed (${now}) — skip`);
+        // Missed while process was down / deploying — catch up (stagger if several).
+        const delay = catchUpIndex * 5000;
+        catchUpIndex += 1;
+        console.log(
+          `[Scheduler] slot ${t} missed (${now}) — catch-up in ${Math.round(delay / 1000)}s`,
+        );
+        armTimeout(delay, () => fireSlot(t, `catch-up ${t}`));
+        armed += 1;
         continue;
       }
-      const handle = setTimeout(() => {
-        timers.delete(handle);
-        if (isSlotFired(t)) return;
-        // Mark fired only after a real pipeline attempt finishes.
-        // If skipped because another run is busy, leave slot unfired for later.
-        // If process dies mid-run, slot stays unfired → re-arm after restart.
-        void (async () => {
-          try {
-            const attempted = await runOnce(`random ${t}`);
-            if (attempted) markSlotFired(t);
-            else
-              console.warn(
-                `[Scheduler] slot ${t} not marked fired (pipeline busy)`,
-              );
-          } catch (e) {
-            console.warn(`[Scheduler] slot ${t} failed (not marked fired):`, e);
-          }
-        })();
-      }, ms);
-      timers.add(handle);
+
+      armTimeout(ms, () => fireSlot(t, `random ${t}`));
       const mins = Math.round(ms / 60000);
       console.log(`[Scheduler] Armed ${t} (in ~${mins} min)`);
       armed += 1;
@@ -175,18 +248,18 @@ function startRandomDailyScheduler(
       `[Scheduler] ${armed} remaining slot(s) today. New random plan at local midnight.`,
     );
 
-    const mid = setTimeout(() => {
-      timers.delete(mid);
+    armTimeout(msUntilNextLocalMidnight(), () => {
       console.log("[Scheduler] Local day rolled — generating new random schedule");
       armDay(getOrCreateTodaySchedule());
-    }, msUntilNextLocalMidnight());
-    timers.add(mid);
+    });
   };
 
   armDay(getOrCreateTodaySchedule());
 }
 
-function startFixedScheduler(runOnce: (reason: string) => Promise<boolean>): void {
+function startFixedScheduler(
+  runOnce: (reason: string) => Promise<RunOutcome>,
+): void {
   const times = env.CRON_TIMES?.length ? env.CRON_TIMES : [];
   if (times.length > 0) {
     let scheduled = 0;
@@ -218,7 +291,7 @@ function startFixedScheduler(runOnce: (reason: string) => Promise<boolean>): voi
 }
 
 function scheduleInterval(
-  runOnce: (reason: string) => Promise<boolean>,
+  runOnce: (reason: string) => Promise<RunOutcome>,
 ): void {
   const interval = env.CRON_INTERVAL_MINUTES;
   const expression = `*/${interval} * * * *`;

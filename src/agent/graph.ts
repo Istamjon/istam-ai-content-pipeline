@@ -50,7 +50,20 @@ const routeAfterGenerateImage = (
 };
 
 const routeAfterPublish = (state: GraphState): "__end__" | "fetchArticle" => {
-  return state.articleIndex < state.newArticles.length ? "fetchArticle" : "__end__";
+  // One successful multi-platform publish is enough for this pipeline run.
+  // Remaining batch articles are only used as fallbacks after quality/image skips.
+  const anySuccess = (state.publishResults ?? []).some(
+    (r) => r.status === "success",
+  );
+  if (anySuccess) {
+    console.log(
+      "[graph] publish succeeded — end run (no more articles this slot)",
+    );
+    return "__end__";
+  }
+  return state.articleIndex < state.newArticles.length
+    ? "fetchArticle"
+    : "__end__";
 };
 
 const builder = new StateGraph(StateAnnotation)
