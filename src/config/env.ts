@@ -86,23 +86,7 @@ export const env = {
     0,
     parseInt(process.env.DAILY_POLLINATIONS_IMAGE_LIMIT || "8", 10) || 8,
   ),
-  /**
-   * Z.AI GLM-Image (paid, ~$0.015/image).
-   * API key: https://z.ai/manage-apikey/apikey-list
-   * Docs: https://docs.z.ai/api-reference/image/generate-image
-   */
-  ZAI_API_KEY: process.env.ZAI_API_KEY || "",
-  ZAI_IMAGE_MODEL: process.env.ZAI_IMAGE_MODEL || "glm-image",
-  /** hd (default, slower) | standard (faster) */
-  ZAI_IMAGE_QUALITY: (process.env.ZAI_IMAGE_QUALITY || "hd").toLowerCase(),
-  /** Optional override e.g. 1280x1280 — else nearest preset from IMAGE_WIDTH/HEIGHT */
-  ZAI_IMAGE_SIZE: process.env.ZAI_IMAGE_SIZE || "",
-  /** Soft daily cap for Z.AI images (UTC). 0 = unlimited soft cap. */
-  DAILY_ZAI_IMAGE_LIMIT: Math.max(
-    0,
-    parseInt(process.env.DAILY_ZAI_IMAGE_LIMIT || "6", 10) || 6,
-  ),
-  /** Image waterfall: nanobanana → zai → pollinations → cloudflare → horde. */
+  /** Image waterfall: nanobanana → pollinations → cloudflare → horde. */
   IMAGE_PROVIDER: (process.env.IMAGE_PROVIDER || "waterfall") as string,
   /** Cloudflare Account ID #1 (Workers AI REST). */
   CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || "",

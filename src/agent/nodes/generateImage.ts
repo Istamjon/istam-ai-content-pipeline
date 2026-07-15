@@ -43,9 +43,7 @@ export async function generateImage(
     const ext =
       provider === "horde"
         ? "webp"
-        : provider === "nanobanana" ||
-            provider === "pollinations" ||
-            provider === "zai"
+        : provider === "nanobanana" || provider === "pollinations"
           ? "png"
           : "jpg";
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
