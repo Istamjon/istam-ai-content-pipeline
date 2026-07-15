@@ -1,9 +1,10 @@
 /**
  * Image generation waterfall:
- *   1) Nano Banana (Gemini image — best text-in-image when quota allows)
- *   2) Pollinations gpt-image-2 (when Nano fails / no quota)
- *   3) Cloudflare multi-account free FLUX
- *   4) AI Horde
+ *   1) Nano Banana (Gemini image — free when quota allows)
+ *   2) Z.AI GLM-Image (paid, high quality text-in-image)
+ *   3) Pollinations gpt-image-2
+ *   4) Cloudflare multi-account free FLUX
+ *   5) AI Horde
  */
 import { env } from "../config/env.js";
 import {
@@ -29,10 +30,17 @@ import {
   canUsePollinationsImageToday,
   logPollinationsImageBudget,
 } from "./pollinations.js";
+import {
+  zaiImage,
+  isZaiImageConfigured,
+  canUseZaiImageToday,
+  logZaiImageBudget,
+} from "./zaiImage.js";
 import { getProviderImageBudget } from "../db.js";
 
 export type ImageProviderUsed =
   | "nanobanana"
+  | "zai"
   | "pollinations"
   | "cloudflare"
   | "horde";
@@ -51,7 +59,7 @@ export async function generateImageBuffer(
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`nanobanana: ${msg}`);
       console.warn(
-        "[imagePipeline] Nano Banana failed → Pollinations gpt-image-2:",
+        "[imagePipeline] Nano Banana failed → Z.AI GLM-Image:",
         msg.slice(0, 200),
       );
     }
@@ -59,11 +67,32 @@ export async function generateImageBuffer(
     const b = canUseNanoBananaToday();
     errors.push(`nanobanana: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] Nano Banana daily budget ${b.used}/${b.limit} → Pollinations gpt-image-2`,
+      `[imagePipeline] Nano Banana daily budget ${b.used}/${b.limit} → Z.AI`,
     );
   }
 
-  // 2) Pollinations gpt-image-2 (right after Nano Banana)
+  // 2) Z.AI GLM-Image (paid quality)
+  if (isZaiImageConfigured() && canUseZaiImageToday().ok) {
+    try {
+      const buffer = await zaiImage(prompt);
+      return { buffer, provider: "zai" };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`zai: ${msg}`);
+      console.warn(
+        "[imagePipeline] Z.AI failed → Pollinations:",
+        msg.slice(0, 200),
+      );
+    }
+  } else if (isZaiImageConfigured()) {
+    const b = canUseZaiImageToday();
+    errors.push(`zai: budget ${b.used}/${b.limit}`);
+    console.warn(
+      `[imagePipeline] Z.AI daily budget ${b.used}/${b.limit} → Pollinations`,
+    );
+  }
+
+  // 3) Pollinations gpt-image-2
   if (isPollinationsImageConfigured() && canUsePollinationsImageToday().ok) {
     try {
       const buffer = await pollinationsImage(prompt);
@@ -84,7 +113,7 @@ export async function generateImageBuffer(
     );
   }
 
-  // 3) Cloudflare (cf1 → cf2 → cf3)
+  // 4) Cloudflare (cf1 → cf2 → cf3)
   if (isCloudflareImageConfigured() && canGenerateImageToday().ok) {
     try {
       const buffer = await cloudflareImage(prompt);
@@ -105,7 +134,7 @@ export async function generateImageBuffer(
     );
   }
 
-  // 4) AI Horde
+  // 5) AI Horde
   if (isHordeConfigured() && canUseHordeToday().ok) {
     try {
       const buffer = await hordeImage(prompt);
@@ -127,6 +156,7 @@ export async function generateImageBuffer(
 
 export function logAllImageBudgets(): void {
   logNanoBananaBudgets();
+  logZaiImageBudget();
   logPollinationsImageBudget();
   logImageBudget();
   if (isHordeConfigured()) {

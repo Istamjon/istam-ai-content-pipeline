@@ -35,7 +35,7 @@ async function logAiConfig(): Promise<void> {
       `poll_daily=${usage.used}/${usage.limit}`,
   );
   console.log(
-    `[AI] IMAGE waterfall: Nano Banana → Pollinations ${env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2"} → Cloudflare (${cfSlots.length} acct) → AI Horde`,
+    `[AI] IMAGE waterfall: Nano Banana → Z.AI GLM-Image → Pollinations ${env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2"} → Cloudflare (${cfSlots.length} acct) → AI Horde`,
   );
   console.log(
     `[AI] CF model=${env.CLOUDFLARE_IMAGE_MODEL} quality=${env.IMAGE_QUALITY} ` +
