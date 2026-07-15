@@ -11,6 +11,7 @@ import {
   msUntilNextLocalMidnight,
   type DailySchedule,
 } from "./lib/dailySchedule.js";
+import { checkAndAlertTokenExpiry } from "./oauth/tokenExpiryAlert.js";
 
 /**
  * Parse "HH:MM" → cron "M H * * *" (server local time).
@@ -27,6 +28,20 @@ function timeToCron(hhmm: string): string | null {
 export function startScheduler(): void {
   let running = false;
 
+  /** Token expiry → Telegram (≤ TOKEN_ALERT_DAYS). Deduped per day. */
+  const runTokenAlert = async (reason: string): Promise<void> => {
+    try {
+      const r = await checkAndAlertTokenExpiry();
+      if (r.alerted > 0) {
+        console.log(
+          `[Scheduler] Token alert (${reason}): sent=${r.alerted} checked=${r.checked}`,
+        );
+      }
+    } catch (e) {
+      console.warn(`[Scheduler] Token alert failed (${reason}):`, e);
+    }
+  };
+
   /** @returns true if a pipeline attempt started (and finished), false if skipped busy */
   const runOnce = async (reason: string): Promise<boolean> => {
     if (running) {
@@ -38,6 +53,8 @@ export function startScheduler(): void {
       `[Scheduler] Running content pipeline (${reason}) at ${new Date().toISOString()}`,
     );
     try {
+      // Before publish pipeline: warn if any token dies within 1 day
+      await runTokenAlert(reason);
       const result = await graph.invoke(createEmptyState(), graphInvokeConfig);
       console.log("[Scheduler] Pipeline completed");
       console.log(
@@ -71,6 +88,19 @@ export function startScheduler(): void {
   } else {
     startFixedScheduler(runOnce);
   }
+
+  // Daily token check at 09:00 local (even if no content slot fires)
+  if (cron.validate("0 9 * * *")) {
+    cron.schedule("0 9 * * *", () => {
+      void runTokenAlert("daily-09:00");
+    });
+    console.log(
+      `[Scheduler] Token expiry alert: ≤${env.TOKEN_ALERT_DAYS}d → Telegram (daily 09:00 + each pipeline)`,
+    );
+  }
+
+  // Immediate check on process start (deduped if already sent today)
+  void runTokenAlert("startup");
 
   if (env.CRON_RUN_ON_START) {
     console.log("[Scheduler] CRON_RUN_ON_START=true — firing first run now...");

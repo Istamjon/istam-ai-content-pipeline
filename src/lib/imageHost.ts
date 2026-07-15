@@ -6,52 +6,80 @@ import { env } from "../config/env.js";
 export type TempImageHours = 1 | 12 | 24 | 72;
 
 const LITTERBOX_API = "https://litterbox.catbox.moe/resources/internals/api.php";
+const CATBOX_API = "https://catbox.moe/user/api.php";
 
 /**
  * Resolve a publicly reachable HTTPS URL for a local image.
- * Uses temporary hosting so files auto-expire remotely (default 24h).
+ * Instagram / Threads Graph APIs need a public image_url.
  *
- * Priority:
+ * Waterfall (free hosts; first success wins):
  * 1. Already http(s) → as-is
- * 2. Litterbox temporary upload (free, auto-deletes after time=)
- * 3. Optional ImgBB if IMGBB_API_KEY set (fallback)
+ * 2. Litterbox temporary upload (auto-delete after IMAGE_TEMP_HOURS)
+ * 3. Catbox permanent free host (Litterbox often 500 on VDS/datacenter IPs)
+ * 4. 0x0.st null pointer (temporary-ish free host)
+ * 5. Optional ImgBB if IMGBB_API_KEY set
  */
 export async function ensurePublicImageUrl(
   imagePath?: string,
-): Promise<{ url?: string; error?: string; temporary?: boolean }> {
+): Promise<{ url?: string; error?: string; temporary?: boolean; host?: string }> {
   if (!imagePath) {
     return { error: "No image path provided" };
   }
 
   if (/^https?:\/\//i.test(imagePath)) {
-    return { url: imagePath, temporary: false };
+    return { url: imagePath, temporary: false, host: "remote" };
   }
 
   if (!fs.existsSync(imagePath)) {
     return { error: `Image file not found: ${imagePath}` };
   }
 
-  try {
-    const url = await uploadToLitterbox(imagePath, env.IMAGE_TEMP_HOURS);
-    return { url, temporary: true };
-  } catch (litterboxError) {
-    console.warn("[imageHost] Litterbox failed:", litterboxError);
+  const errors: string[] = [];
+  const hosts: Array<{
+    name: string;
+    temporary: boolean;
+    run: () => Promise<string>;
+  }> = [
+    {
+      name: "litterbox",
+      temporary: true,
+      run: () => uploadToLitterbox(imagePath, env.IMAGE_TEMP_HOURS),
+    },
+    {
+      name: "catbox",
+      temporary: false,
+      run: () => uploadToCatbox(imagePath),
+    },
+    {
+      name: "0x0",
+      temporary: true,
+      run: () => uploadTo0x0(imagePath),
+    },
+  ];
 
-    if (env.IMGBB_API_KEY) {
-      try {
-        const url = await uploadToImgbb(imagePath);
-        return { url, temporary: false };
-      } catch (imgbbError) {
-        return {
-          error: `Temp image upload failed (litterbox + imgbb): ${String(imgbbError)}`,
-        };
-      }
-    }
-
-    return {
-      error: `Temporary image upload failed: ${String(litterboxError)}`,
-    };
+  if (env.IMGBB_API_KEY) {
+    hosts.push({
+      name: "imgbb",
+      temporary: false,
+      run: () => uploadToImgbb(imagePath),
+    });
   }
+
+  for (const host of hosts) {
+    try {
+      const url = await host.run();
+      console.log(`[imageHost] OK host=${host.name} url=${url.slice(0, 80)}`);
+      return { url, temporary: host.temporary, host: host.name };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`${host.name}: ${msg.slice(0, 160)}`);
+      console.warn(`[imageHost] ${host.name} failed:`, msg.slice(0, 200));
+    }
+  }
+
+  return {
+    error: `Public image upload failed (all hosts): ${errors.join(" | ")}`,
+  };
 }
 
 /**
@@ -77,7 +105,10 @@ export function deleteLocalImage(imagePath?: string | null): boolean {
  * Remove old files from data/images older than maxAgeMs (default 24h).
  * Call occasionally so disk does not grow if a run crashes mid-way.
  */
-export function cleanupOldLocalImages(imagesDir: string, maxAgeMs = 24 * 60 * 60 * 1000): number {
+export function cleanupOldLocalImages(
+  imagesDir: string,
+  maxAgeMs = 24 * 60 * 60 * 1000,
+): number {
   if (!fs.existsSync(imagesDir)) return 0;
   const now = Date.now();
   let removed = 0;
@@ -104,19 +135,24 @@ function normalizeTempHours(hours: number): TempImageHours {
   return 72;
 }
 
+function readImageBlob(imagePath: string): { blob: Blob; filename: string } {
+  const buf = fs.readFileSync(imagePath);
+  const filename = path.basename(imagePath) || "image.png";
+  const blob = new Blob([buf], { type: contentTypeFor(imagePath) });
+  return { blob, filename };
+}
+
 /**
  * Litterbox — temporary free hosting; file disappears after the chosen window.
  * @see https://litterbox.catbox.moe/
  */
 async function uploadToLitterbox(imagePath: string, hours: number): Promise<string> {
   const time = `${normalizeTempHours(hours)}h`;
-  // Node native FormData + Blob (form-data package breaks with undici fetch → 412)
-  const buf = fs.readFileSync(imagePath);
-  const blob = new Blob([buf], { type: contentTypeFor(imagePath) });
+  const { blob, filename } = readImageBlob(imagePath);
   const form = new FormData();
   form.append("reqtype", "fileupload");
   form.append("time", time);
-  form.append("fileToUpload", blob, path.basename(imagePath));
+  form.append("fileToUpload", blob, filename);
 
   const response = await fetch(LITTERBOX_API, {
     method: "POST",
@@ -126,9 +162,58 @@ async function uploadToLitterbox(imagePath: string, hours: number): Promise<stri
 
   const text = (await response.text()).trim();
   if (!response.ok || !/^https?:\/\//i.test(text)) {
-    throw new Error(`Litterbox upload failed: ${response.status} ${text.slice(0, 200)}`);
+    throw new Error(`Litterbox ${response.status}: ${text.slice(0, 200)}`);
   }
   return text;
+}
+
+/**
+ * Catbox — free permanent host (same family as Litterbox; more reliable from VPS).
+ * @see https://catbox.moe/tools.php
+ */
+async function uploadToCatbox(imagePath: string): Promise<string> {
+  const { blob, filename } = readImageBlob(imagePath);
+  const form = new FormData();
+  form.append("reqtype", "fileupload");
+  form.append("fileToUpload", blob, filename);
+
+  const response = await fetch(CATBOX_API, {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(90_000),
+  });
+
+  const text = (await response.text()).trim();
+  if (!response.ok || !/^https?:\/\//i.test(text)) {
+    throw new Error(`Catbox ${response.status}: ${text.slice(0, 200)}`);
+  }
+  return text;
+}
+
+/**
+ * 0x0.st — free null pointer file host.
+ * @see https://0x0.st/
+ */
+async function uploadTo0x0(imagePath: string): Promise<string> {
+  const { blob, filename } = readImageBlob(imagePath);
+  const form = new FormData();
+  form.append("file", blob, filename);
+
+  const response = await fetch("https://0x0.st", {
+    method: "POST",
+    body: form,
+    headers: {
+      // Some hosts rate-limit empty UA from datacenter IPs
+      "User-Agent": "istam-ai-content-pipeline/1.0",
+    },
+    signal: AbortSignal.timeout(90_000),
+  });
+
+  const text = (await response.text()).trim();
+  if (!response.ok || !/^https?:\/\//i.test(text)) {
+    throw new Error(`0x0 ${response.status}: ${text.slice(0, 200)}`);
+  }
+  return text.split(/\s+/)[0];
 }
 
 async function uploadToImgbb(imagePath: string): Promise<string> {

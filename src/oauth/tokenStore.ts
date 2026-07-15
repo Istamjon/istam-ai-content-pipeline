@@ -51,7 +51,7 @@ export function loadTokens(platform: OAuthPlatform): StoredTokens | null {
 export function saveTokens(tokens: StoredTokens): void {
   if (!fs.existsSync(tokensDir)) fs.mkdirSync(tokensDir, { recursive: true });
   fs.writeFileSync(fileFor(tokens.platform), JSON.stringify(tokens, null, 2), "utf8");
-  // Mirror critical fields into .env for legacy readers
+  // Mirror into process.env always; .env file is best-effort (read-only in Docker)
   syncEnv(tokens);
   console.log(`[tokenStore] Saved ${tokens.platform} → data/tokens/${tokens.platform}.json`);
 }
@@ -100,13 +100,22 @@ function syncEnv(tokens: StoredTokens): void {
 
 function upsertEnvFile(key: string, value: string): void {
   const envPath = path.join(projectRoot, ".env");
-  let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
-  const line = `${key}=${value}`;
-  const re = new RegExp(`^${key}=.*$`, "m");
-  if (re.test(content)) content = content.replace(re, line);
-  else {
-    const sep = content.endsWith("\n") || content.length === 0 ? "" : "\n";
-    content = content + sep + line + "\n";
+  try {
+    // Docker runtime image has no writable .env (secrets via env_file).
+    // Never throw — tokens JSON + process.env are the source of truth.
+    let content = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf8") : "";
+    const line = `${key}=${value}`;
+    const re = new RegExp(`^${key}=.*$`, "m");
+    if (re.test(content)) content = content.replace(re, line);
+    else {
+      const sep = content.endsWith("\n") || content.length === 0 ? "" : "\n";
+      content = content + sep + line + "\n";
+    }
+    fs.writeFileSync(envPath, content, "utf8");
+  } catch (e) {
+    // EACCES / EROFS on VDS container — ignore
+    if (process.env.DEBUG_TOKEN_STORE) {
+      console.warn(`[tokenStore] .env write skipped for ${key}:`, e);
+    }
   }
-  fs.writeFileSync(envPath, content, "utf8");
 }

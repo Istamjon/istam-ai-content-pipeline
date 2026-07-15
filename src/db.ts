@@ -105,6 +105,22 @@ export function markArticleSeen(
   ).run(url, title, source, contentHash);
 }
 
+/**
+ * Re-open articles that were permanently skipped only because of transient
+ * fetch failures (old bug). Does not touch brand-reject / pipeline / quality.
+ * @returns number of rows deleted
+ */
+export function releaseTransientFetchSkips(): number {
+  const result = db
+    .prepare(
+      `DELETE FROM seen_articles
+       WHERE source = 'skipped'
+         AND content_hash = 'fetch-error'`,
+    )
+    .run();
+  return Number(result.changes ?? 0);
+}
+
 export function insertPost(
   articleUrl: string,
   platform: Platform,

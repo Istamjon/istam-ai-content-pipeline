@@ -21,6 +21,8 @@ services:
       NODE_ENV: production
       # Do not open OAuth server in this container
       DRY_RUN: ${DRY_RUN:-false}
+      # After deploy/restart: fire one pipeline immediately (still keeps daily slots)
+      CRON_RUN_ON_START: ${CRON_RUN_ON_START:-true}
     volumes:
       # Persist SQLite, tokens, canonical posts, schedule, images
       - ./data:/app/data

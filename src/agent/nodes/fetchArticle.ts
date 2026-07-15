@@ -34,7 +34,7 @@ export async function fetchArticle(
     }
 
     if (!rawText || rawText.trim().length < 50) {
-      // Skip permanently so we do not retry forever
+      // Truly empty after a successful parse — permanent skip
       skipArticle(article.url, title || "Untitled", "empty-content");
       return {
         ...articleLoopReset(),
@@ -57,12 +57,15 @@ export async function fetchArticle(
     };
   } catch (error) {
     const article = state.newArticles[state.articleIndex];
-    if (article) {
-      skipArticle(article.url, article.title || "Untitled", "fetch-error");
-    }
+    const msg = String(error);
+    // Network / bot-block / timeout: do NOT mark seen — next cron can retry
+    // (previous behavior burned OpenAI/etc. articles forever as fetch-error).
+    console.warn(
+      `[fetchArticle] transient fail (not marking seen): ${article?.url || "?"} — ${msg.slice(0, 180)}`,
+    );
     return {
       ...articleLoopReset(),
-      errors: [`fetchArticle error: ${String(error)}`],
+      errors: [`fetchArticle error: ${msg}`],
       articleIndex: state.articleIndex + 1,
       current: null,
     };

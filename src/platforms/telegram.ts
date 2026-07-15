@@ -136,6 +136,29 @@ function extractTitle(text: string): string {
  * Long content → Telegra.ph full article + short channel teaser with link.
  * Enables much longer canonical body on Telegram without multi-message spam.
  */
+/**
+ * Ops / admin alert (token expiry, health). Uses TELEGRAM_CHANNEL by default.
+ * Does not count toward daily post limits.
+ */
+export async function sendTelegramAlert(
+  text: string,
+  chatId?: string,
+): Promise<TgResult> {
+  try {
+    const token = env.TELEGRAM_BOT_TOKEN;
+    const channel = (chatId || env.TELEGRAM_CHANNEL || "").trim();
+    if (!token || !channel) {
+      return {
+        success: false,
+        error: "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL are required for alerts",
+      };
+    }
+    return await sendMessage(token, channel, text, false);
+  } catch (error) {
+    return { success: false, error: String(error) };
+  }
+}
+
 export async function publishToTelegram(
   text: string,
   imagePath?: string,

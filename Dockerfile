@@ -31,25 +31,30 @@ FROM node:22-bookworm-slim AS runtime
 WORKDIR /app
 
 ENV NODE_ENV=production \
-    npm_config_update_notifier=false
+    npm_config_update_notifier=false \
+    DATA_DIR=/app/data
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates tini \
   && rm -rf /var/lib/apt/lists/* \
   && groupadd --gid 10001 app \
-  && useradd --uid 10001 --gid app --shell /usr/sbin/nologin --create-home app
+  && useradd --uid 10001 --gid app --shell /bin/sh --create-home app
 
 COPY --from=build --chown=app:app /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
 COPY --from=build --chown=app:app /app/dist ./dist
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
 RUN mkdir -p /app/data \
-  && chown -R app:app /app/data
+  && chown -R app:app /app/data \
+  && chmod +x /app/docker-entrypoint.sh
 
-USER app
+# Start as root so entrypoint can chown host-mounted ./data, then drop to app.
+# (Without this, SQLite / image writes fail with EACCES on many VDS deploys.)
+USER root
 
 VOLUME ["/app/data"]
 
 # OAuth callback is a separate local process — this image only runs the cron pipeline.
-ENTRYPOINT ["tini", "--"]
+ENTRYPOINT ["tini", "--", "/app/docker-entrypoint.sh"]
 CMD ["node", "dist/index.js"]

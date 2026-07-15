@@ -16,10 +16,15 @@ const DAYS_BEFORE = 7;
 const SHORT_TOKEN_BUFFER_MS = 5 * 60 * 1000;
 const SHORT_TOKEN_MAX_LIFETIME_S = 3 * 60 * 60; // treat <= 3h TTL as short-lived
 
-function msUntilExpiry(t: StoredTokens): number | null {
+export function msUntilExpiry(t: StoredTokens): number | null {
   if (!t.obtainedAt || !t.expiresIn) return null;
   const expiresAt = t.obtainedAt + t.expiresIn * 1000;
   return expiresAt - Date.now();
+}
+
+export function expiresAtMs(t: StoredTokens): number | null {
+  if (!t.obtainedAt || !t.expiresIn) return null;
+  return t.obtainedAt + t.expiresIn * 1000;
 }
 
 export function isTokenExpiring(t: StoredTokens | null, days = DAYS_BEFORE): boolean {

@@ -170,6 +170,21 @@ export const env = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || "",
   TELEGRAM_CHANNEL: process.env.TELEGRAM_CHANNEL || "",
   /**
+   * Optional chat for ops alerts (token expiry). Default = TELEGRAM_CHANNEL.
+   * Use a private group/chat id if you do not want alerts on the public channel.
+   */
+  TELEGRAM_ALERT_CHAT: process.env.TELEGRAM_ALERT_CHAT || "",
+  /**
+   * Send Telegram warning when OAuth token has this many days (or less) left.
+   * Default 1 = "1 kun qolganda".
+   */
+  TOKEN_ALERT_DAYS: Math.max(
+    0,
+    parseInt(process.env.TOKEN_ALERT_DAYS || "1", 10) || 1,
+  ),
+  /** Set TOKEN_ALERT_ENABLED=false to disable expiry Telegram alerts. */
+  TOKEN_ALERT_ENABLED: process.env.TOKEN_ALERT_ENABLED !== "false",
+  /**
    * Telegra.ph long-form for Telegram (full article link in channel).
    * Token auto-created via API if missing.
    */

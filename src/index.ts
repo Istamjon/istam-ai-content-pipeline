@@ -9,9 +9,21 @@ import {
   isCloudflareImageConfigured,
   getCloudflareAccounts,
 } from "./lib/cloudflareImage.js";
+import { releaseTransientFetchSkips } from "./db.js";
 
 async function logAiConfig(): Promise<void> {
   await initCloudflareAccounts();
+  // One-shot: re-open articles burned by old fetch-error permanent skip
+  try {
+    const n = releaseTransientFetchSkips();
+    if (n > 0) {
+      console.log(
+        `[db] Released ${n} transient fetch/empty skips so they can be retried`,
+      );
+    }
+  } catch (e) {
+    console.warn("[db] releaseTransientFetchSkips failed:", e);
+  }
   const usage = getPollinationsUsage();
   const textKeyOk = Boolean(env.POLLINATIONS_API_KEY);
   const cfSlots = getCloudflareAccounts();
@@ -43,6 +55,10 @@ async function logAiConfig(): Promise<void> {
         `maxArticles/run=${env.MAX_ARTICLES_PER_RUN}`,
     );
   }
+  console.log(
+    `[AI] DRY_RUN=${env.DRY_RUN} CRON_RUN_ON_START=${env.CRON_RUN_ON_START} ` +
+      `platforms=${env.ENABLED_PLATFORMS.join(",")}`,
+  );
   if (!textKeyOk) {
     console.warn(
       "[AI] Set POLLINATIONS_API_KEY (text only) — https://enter.pollinations.ai",

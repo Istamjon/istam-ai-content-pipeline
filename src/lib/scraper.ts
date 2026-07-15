@@ -21,18 +21,51 @@ const defaultContentSelector =
   ".content, .entry-content, .post-content, article, [itemprop='articleBody']";
 const defaultLinkSelector = "a[href]";
 
-async function fetchHtml(url: string, timeoutMs = 8_000): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; ContentBot/1.0)",
-      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+
+async function fetchHtml(url: string, timeoutMs = 12_000): Promise<string> {
+  let lastError: Error | null = null;
+  // One retry helps flaky VDS egress / brief 403/429/5xx
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (attempt > 0) {
+        await new Promise((r) => setTimeout(r, 800 * attempt));
+      }
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": BROWSER_UA,
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Cache-Control": "no-cache",
+        },
+        redirect: "follow",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!response.ok) {
+        // Retry only on rate-limit / server errors
+        if (
+          attempt === 0 &&
+          (response.status === 403 ||
+            response.status === 429 ||
+            response.status >= 500)
+        ) {
+          lastError = new Error(`Failed to fetch ${url}: ${response.status}`);
+          continue;
+        }
+        throw new Error(`Failed to fetch ${url}: ${response.status}`);
+      }
+      return response.text();
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (attempt === 0 && /timeout|abort|network|ECONN|ENOTFOUND/i.test(lastError.message)) {
+        continue;
+      }
+      throw lastError;
+    }
   }
-  return response.text();
+  throw lastError || new Error(`Failed to fetch ${url}`);
 }
 
 function resolveUrl(href: string, baseUrl: string): string {

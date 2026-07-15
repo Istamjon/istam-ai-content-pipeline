@@ -56,6 +56,29 @@ docker compose up -d --build
 docker compose logs -f
 ```
 
+### Common “post yubormadi” causes (check logs)
+
+```bash
+docker compose logs --tail=200
+```
+
+| Symptom in logs | Cause | Fix |
+|-----------------|-------|-----|
+| `Temporary image upload failed` / Litterbox 500 | Instagram/Threads need a public image URL; Litterbox often fails from VDS IPs | Redeploy latest (multi-host: Litterbox → Catbox → 0x0 → ImgBB). Optional: set `IMGBB_API_KEY` |
+| `Session has expired` (Facebook/Instagram) | Meta page token expired | On a machine with browser: `npm run auth:facebook`, copy `data/tokens/*.json` to VDS |
+| `fetchArticle … fetch-error` / empty batch | Site blocked scraper; old code permanently skipped URLs | Latest build retries; browser UA + no permanent skip on network errors |
+| `Waiting for scheduled slots` and no posts | `CRON_RUN_ON_START=false` and next slot later | Compose default is now `true`; or set in `.env` |
+| `EACCES` / `DB insert failed` / cannot write images | `./data` owned by root, container user 10001 | Latest image entrypoint chowns data; or `chown -R 10001:10001 data` |
+| `DRY_RUN=true` | Preview mode, nothing posted | Set `DRY_RUN=false` in `.env` |
+
+After fix, force one run:
+
+```bash
+# in .env: CRON_RUN_ON_START=true  DRY_RUN=false
+docker compose up -d --build --force-recreate
+docker compose logs -f --tail=100
+```
+
 ---
 
 ## Update after each push to `main`
