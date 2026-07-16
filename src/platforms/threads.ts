@@ -1,20 +1,29 @@
 import { env } from "../config/env.js";
-import { ensurePublicImageUrl } from "../lib/imageHost.js";
+import { ensurePublicImageUrl, ensurePublicMediaUrl } from "../lib/imageHost.js";
 import { threadsProvider } from "../oauth/providers/threads.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export type ThreadsMediaKind = "image" | "video";
+
+function isVideoPath(p?: string, kind?: ThreadsMediaKind): boolean {
+  if (kind === "video") return true;
+  if (kind === "image") return false;
+  return Boolean(p && /\.(mp4|mov|webm|mkv)$/i.test(p));
+}
+
 /**
  * Threads Graph API: create container → publish.
- * Image posts need a public URL; local files go through temporary Litterbox hosting.
+ * Image/video posts need a public URL; local files go through temporary hosting.
  * Containers are often not immediately publishable — retry like Instagram.
  * @see https://developers.facebook.com/docs/threads/posts
  */
 export async function publishToThreads(
   text: string,
   imagePath?: string,
+  mediaKind: ThreadsMediaKind = "image",
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const oauth = threadsProvider.getCredentials();
@@ -27,24 +36,31 @@ export async function publishToThreads(
       };
     }
 
-    let publicImageUrl: string | undefined;
+    const video = isVideoPath(imagePath, mediaKind);
+    let publicMediaUrl: string | undefined;
     if (imagePath) {
-      const hosted = await ensurePublicImageUrl(imagePath);
+      const hosted = video
+        ? await ensurePublicMediaUrl(imagePath)
+        : await ensurePublicImageUrl(imagePath);
       if (hosted.url) {
-        publicImageUrl = hosted.url;
+        publicMediaUrl = hosted.url;
       } else {
         // Text-only fallback if temp host fails
-        console.warn("[threads] Image host failed, posting text only:", hosted.error);
+        console.warn("[threads] Media host failed, posting text only:", hosted.error);
       }
     }
 
     const createBody: Record<string, string> = {
-      media_type: publicImageUrl ? "IMAGE" : "TEXT",
+      media_type: publicMediaUrl ? (video ? "VIDEO" : "IMAGE") : "TEXT",
       text,
       access_token: token,
     };
-    if (publicImageUrl) {
-      createBody.image_url = publicImageUrl;
+    if (publicMediaUrl) {
+      if (video) {
+        createBody.video_url = publicMediaUrl;
+      } else {
+        createBody.image_url = publicMediaUrl;
+      }
     }
 
     const createResponse = await fetch(

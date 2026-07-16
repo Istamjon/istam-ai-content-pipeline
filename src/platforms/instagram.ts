@@ -1,19 +1,29 @@
 import { env } from "../config/env.js";
-import { ensurePublicImageUrl } from "../lib/imageHost.js";
+import { ensurePublicImageUrl, ensurePublicMediaUrl } from "../lib/imageHost.js";
 import { loadTokens } from "../oauth/tokenStore.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export type InstagramMediaKind = "image" | "video";
+
+function isVideoPath(p?: string, kind?: InstagramMediaKind): boolean {
+  if (kind === "video") return true;
+  if (kind === "image") return false;
+  return Boolean(p && /\.(mp4|mov|webm|mkv)$/i.test(p));
+}
+
 /**
- * Instagram Graph API requires a publicly reachable image_url.
+ * Instagram Graph API requires a publicly reachable image_url / video_url.
  * Local paths are uploaded to temporary Litterbox hosting first.
  * Token: Instagram OAuth store, or Page token from Facebook Login.
+ * Video → REELS container.
  */
 export async function publishToInstagram(
   text: string,
   imagePath?: string,
+  mediaKind: InstagramMediaKind = "image",
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const ig = loadTokens("instagram");
@@ -34,26 +44,39 @@ export async function publishToInstagram(
     }
 
     if (!imagePath) {
-      return { success: false, error: "Instagram requires an image" };
+      return { success: false, error: "Instagram requires an image or video" };
     }
 
-    const hosted = await ensurePublicImageUrl(imagePath);
+    const video = isVideoPath(imagePath, mediaKind);
+    const hosted = video
+      ? await ensurePublicMediaUrl(imagePath)
+      : await ensurePublicImageUrl(imagePath);
     if (!hosted.url) {
       return {
         success: false,
-        error: hosted.error || "Failed to get temporary public image URL for Instagram",
+        error:
+          hosted.error ||
+          `Failed to get temporary public ${video ? "video" : "image"} URL for Instagram`,
       };
+    }
+
+    const createBody: Record<string, string> = {
+      caption: text,
+      access_token: token,
+    };
+    if (video) {
+      createBody.media_type = "REELS";
+      createBody.video_url = hosted.url;
+      createBody.share_to_feed = "true";
+    } else {
+      createBody.image_url = hosted.url;
     }
 
     const createResponse = await fetch(`https://graph.facebook.com/v19.0/${userId}/media`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image_url: hosted.url,
-        caption: text,
-        access_token: token,
-      }),
-      signal: AbortSignal.timeout(90_000),
+      body: JSON.stringify(createBody),
+      signal: AbortSignal.timeout(120_000),
     });
 
     const createData = (await createResponse.json()) as {

@@ -115,6 +115,46 @@ async function sendPhoto(
   return { success: true };
 }
 
+async function sendVideo(
+  token: string,
+  chatId: string,
+  videoPath: string,
+  caption: string,
+): Promise<TgResult> {
+  const buffer = fs.readFileSync(videoPath);
+  const filename = path.basename(videoPath) || "video.mp4";
+  const ext = path.extname(filename).toLowerCase();
+  const mime =
+    ext === ".mov"
+      ? "video/quicktime"
+      : ext === ".webm"
+        ? "video/webm"
+        : "video/mp4";
+
+  const form = new FormData();
+  form.append("chat_id", chatId);
+  form.append("video", new Blob([buffer], { type: mime }), filename);
+  const cap = (caption || "").trim() || " ";
+  form.append("caption", cap.slice(0, 1024));
+  form.append("parse_mode", "HTML");
+  form.append("supports_streaming", "true");
+
+  const response = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
+    method: "POST",
+    body: form,
+    signal: AbortSignal.timeout(300_000),
+  });
+
+  const data = await parseTelegramResponse(response);
+  if (!data.ok) {
+    return {
+      success: false,
+      error: data.description || "Telegram sendVideo failed",
+    };
+  }
+  return { success: true };
+}
+
 function extractTitle(text: string): string {
   const plain = text
     .replace(/<[^>]+>/g, "")
@@ -159,9 +199,12 @@ export async function sendTelegramAlert(
   }
 }
 
+export type TelegramMediaKind = "image" | "video";
+
 export async function publishToTelegram(
   text: string,
   imagePath?: string,
+  mediaKind: TelegramMediaKind = "image",
 ): Promise<TgResult> {
   try {
     const token = env.TELEGRAM_BOT_TOKEN;
@@ -174,12 +217,20 @@ export async function publishToTelegram(
     let channelText = text;
     let telegraphUrl = "";
 
-    if (useTelegraph) {
+    // Telegra.ph is for long text + optional still image — skip for short/video manual posts
+    const isVideo =
+      mediaKind === "video" ||
+      (Boolean(imagePath) &&
+        /\.(mp4|mov|webm|mkv)$/i.test(imagePath || ""));
+    if (useTelegraph && !isVideo && text.length > 900) {
       try {
         const page = await createTelegraphPage({
           title: extractTitle(text),
           content: text,
-          imagePath: imagePath && fs.existsSync(imagePath) ? imagePath : undefined,
+          imagePath:
+            imagePath && fs.existsSync(imagePath) && !isVideo
+              ? imagePath
+              : undefined,
           authorName: brand.name,
           authorUrl: brand.socialLinks.telegram,
         });
@@ -193,11 +244,30 @@ export async function publishToTelegram(
     }
 
     if (imagePath && fs.existsSync(imagePath)) {
-      // ONE post: image + text together (caption under photo — not two messages)
       const caption =
         channelText.length > 1024
           ? channelText.slice(0, 1000).trim() + "…"
           : channelText;
+
+      if (isVideo) {
+        const video = await sendVideo(token, channel, imagePath, caption);
+        if (!video.success) {
+          console.warn(
+            "[telegram] sendVideo failed, falling back to message:",
+            video.error,
+          );
+          return await sendMessage(
+            token,
+            channel,
+            channelText,
+            Boolean(telegraphUrl),
+          );
+        }
+        console.log("[telegram] single video+caption post OK");
+        return { success: true };
+      }
+
+      // ONE post: image + text together (caption under photo — not two messages)
       const photo = await sendPhoto(token, channel, imagePath, caption);
       if (!photo.success) {
         console.warn(

@@ -73,12 +73,31 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 
 | Platform | Notes |
 |----------|--------|
-| **Telegram** | Photo + caption (one post); long body → Telegra.ph + teaser |
+| **Telegram** | Photo + caption (one post); video + caption; long body → Telegra.ph + teaser |
 | **LinkedIn** | Person post (+ optional company if scoped); image upload |
-| **Facebook** | Page photo post; needs **never-expiring Page token** |
-| **Instagram** | Graph API via Page + IG Business ID; needs **public image URL** |
-| **Threads** | Graph API; public image URL when media |
+| **Facebook** | Page photo/video post; needs **never-expiring Page token** |
+| **Instagram** | Graph API via Page + IG Business ID; image or Reels (public URL) |
+| **Threads** | Graph API; public image/video URL when media |
 | X / Blogger | Supported in code; optional / often paid or unused |
+
+### Manual post via Telegram bot
+
+Bot the same `TELEGRAM_BOT_TOKEN` long-polls private messages from admins:
+
+1. Set `TELEGRAM_ADMIN_IDS` (your numeric Telegram user id — DM bot `/whoami`).
+2. Start the process (`npm start` / Docker). Bot runs next to the scheduler.
+3. Send a **photo or video with caption** (caption = post text).
+4. Confirm **✅ Barcha platformalarga joylash** — publishes to every `ENABLED_PLATFORMS` entry.
+5. Bot replies with per-platform ✅ / ❌ / skip.
+
+| Media | Behaviour |
+|-------|-----------|
+| Photo + text | All platforms (Instagram requires media) |
+| Video + text | Telegram, Facebook, Instagram Reels, Threads; **LinkedIn skip**; X text-only |
+| Text only | All except Instagram (skipped) |
+
+Commands: `/help` · `/whoami` · `/platforms` · `/cancel`  
+Disable inbound: `TELEGRAM_BOT_INBOUND=false`.
 
 Default `ENABLED_PLATFORMS`:
 
@@ -280,6 +299,9 @@ DAILY_HORDE_LIMIT=8
 ENABLED_PLATFORMS=telegram,linkedin,facebook,instagram,threads
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHANNEL=
+# Manual publish via Telegram bot (photo/video + caption → all platforms)
+TELEGRAM_BOT_INBOUND=true
+TELEGRAM_ADMIN_IDS=123456789
 TELEGRAPH_ENABLED=true
 
 # LinkedIn OAuth tokens / app

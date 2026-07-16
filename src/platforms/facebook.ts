@@ -3,9 +3,18 @@ import fs from "fs";
 import path from "path";
 import { facebookProvider } from "../oauth/providers/facebook.js";
 
+export type FacebookMediaKind = "image" | "video";
+
+function isVideoPath(p?: string, kind?: FacebookMediaKind): boolean {
+  if (kind === "video") return true;
+  if (kind === "image") return false;
+  return Boolean(p && /\.(mp4|mov|webm|mkv)$/i.test(p));
+}
+
 export async function publishToFacebook(
   text: string,
   imagePath?: string,
+  mediaKind: FacebookMediaKind = "image",
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const oauth = facebookProvider.getCredentials();
@@ -16,6 +25,48 @@ export async function publishToFacebook(
         success: false,
         error: "Facebook not authorized. Run: npm run auth:facebook",
       };
+    }
+
+    // Video post from local file
+    if (
+      imagePath &&
+      fs.existsSync(imagePath) &&
+      !/^https?:\/\//i.test(imagePath) &&
+      isVideoPath(imagePath, mediaKind)
+    ) {
+      const buf = fs.readFileSync(imagePath);
+      const ext = path.extname(imagePath).toLowerCase();
+      const type =
+        ext === ".mov"
+          ? "video/quicktime"
+          : ext === ".webm"
+            ? "video/webm"
+            : "video/mp4";
+      const form = new FormData();
+      form.append("source", new Blob([buf], { type }), path.basename(imagePath));
+      form.append("description", text);
+      form.append("access_token", token);
+
+      const response = await fetch(
+        `https://graph.facebook.com/v19.0/${encodeURIComponent(pageId)}/videos`,
+        {
+          method: "POST",
+          body: form,
+          signal: AbortSignal.timeout(300_000),
+        },
+      );
+
+      const data = (await response.json()) as {
+        id?: string;
+        error?: { message: string };
+      };
+      if (data.error) {
+        return { success: false, error: data.error.message };
+      }
+      if (data.id) {
+        return { success: true };
+      }
+      return { success: false, error: "Facebook video upload returned no id" };
     }
 
     // Photo post from local file (native multipart — works with Node fetch)

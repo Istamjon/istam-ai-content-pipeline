@@ -254,5 +254,20 @@ function contentTypeFor(filePath: string): string {
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   if (ext === ".webp") return "image/webp";
   if (ext === ".gif") return "image/gif";
-  return "image/png";
+  if (ext === ".png") return "image/png";
+  if (ext === ".mp4") return "video/mp4";
+  if (ext === ".mov") return "video/quicktime";
+  if (ext === ".webm") return "video/webm";
+  if (ext === ".mkv") return "video/x-matroska";
+  return "application/octet-stream";
+}
+
+/**
+ * Public HTTPS URL for image or video (same free hosts as images).
+ * Instagram Reels / Threads VIDEO need a public video_url.
+ */
+export async function ensurePublicMediaUrl(
+  mediaPath?: string,
+): Promise<{ url?: string; error?: string; temporary?: boolean; host?: string }> {
+  return ensurePublicImageUrl(mediaPath);
 }

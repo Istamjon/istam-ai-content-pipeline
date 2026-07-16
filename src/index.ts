@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { startScheduler } from "./scheduler.js";
+import { startTelegramBot } from "./bot/telegramBot.js";
 import { env } from "./config/env.js";
 import { createEmptyState } from "./agent/state.js";
 import { getPollinationsUsage } from "./lib/pollinations.js";
@@ -57,7 +58,9 @@ async function logAiConfig(): Promise<void> {
   }
   console.log(
     `[AI] DRY_RUN=${env.DRY_RUN} CRON_RUN_ON_START=${env.CRON_RUN_ON_START} ` +
-      `platforms=${env.ENABLED_PLATFORMS.join(",")}`,
+      `platforms=${env.ENABLED_PLATFORMS.join(",")} ` +
+      `tg_bot=${env.TELEGRAM_BOT_INBOUND ? "on" : "off"} ` +
+      `tg_admins=${env.TELEGRAM_ADMIN_IDS.length}`,
   );
   if (!textKeyOk) {
     console.warn(
@@ -70,6 +73,8 @@ void logAiConfig();
 
 if (env.DRY_RUN) {
   console.log("[Main] DRY_RUN=true, running single pipeline manually...");
+  // Still allow inbound bot for dry-run multi-platform previews
+  startTelegramBot();
   void (async () => {
     try {
       const { graph, graphInvokeConfig } = await import("./agent/graph.js");
@@ -115,4 +120,5 @@ if (env.DRY_RUN) {
   })();
 } else {
   startScheduler();
+  startTelegramBot();
 }

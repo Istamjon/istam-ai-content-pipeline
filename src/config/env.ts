@@ -175,6 +175,20 @@ export const env = {
    */
   TELEGRAM_ALERT_CHAT: process.env.TELEGRAM_ALERT_CHAT || "",
   /**
+   * Inbound Telegram bot: admin can send photo/video + caption → publish all platforms.
+   * Default true when TELEGRAM_BOT_TOKEN is set. Set TELEGRAM_BOT_INBOUND=false to disable.
+   */
+  TELEGRAM_BOT_INBOUND: process.env.TELEGRAM_BOT_INBOUND !== "false",
+  /**
+   * Comma-separated Telegram user IDs allowed to post via the bot.
+   * Get your id: message @userinfobot or /whoami after bot starts.
+   * Empty = no one can publish (safe default).
+   */
+  TELEGRAM_ADMIN_IDS: (process.env.TELEGRAM_ADMIN_IDS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+  /**
    * Send Telegram warning when OAuth token has this many days (or less) left.
    * Default 1 = "1 kun qolganda".
    */
