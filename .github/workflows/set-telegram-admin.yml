@@ -1,4 +1,4 @@
-# One-shot / on-demand: set TELEGRAM_ADMIN_IDS on VDS and recreate container.
+# On-demand: set TELEGRAM_ADMIN_IDS on VDS and recreate container.
 # Usage: gh workflow run set-telegram-admin.yml -f admin_ids=505432394
 
 name: Set Telegram Admin
@@ -30,47 +30,36 @@ jobs:
 
       - name: Update .env and restart pipeline
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          ADMIN_IDS: ${{ github.event.inputs.admin_ids }}
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
           key: ${{ secrets.VDS_SSH_KEY }}
           port: ${{ secrets.VDS_PORT || 22 }}
           command_timeout: 10m
-          script_stop: true
+          # false: multi-line bash (if/for) must not be split by drone-ssh
+          script_stop: false
+          envs: ADMIN_IDS,REMOTE_APP_DIR
           script: |
-            set -uo pipefail
-            ADMIN_IDS="${{ github.event.inputs.admin_ids }}"
-            echo "ADMIN_IDS=$ADMIN_IDS HOME=$HOME USER=$(whoami)"
-
-            APP_DIR="${{ secrets.VDS_PATH }}"
+            set -e
+            echo "USER=$(whoami) HOME=$HOME ADMIN_IDS=${ADMIN_IDS:-}"
+            APP_DIR="${REMOTE_APP_DIR:-}"
             if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
-              for cand in \
-                "$HOME/istam-ai-content-pipeline" \
-                /root/istam-ai-content-pipeline \
-                /opt/istam-ai-content-pipeline \
-                /var/www/istam-ai-content-pipeline
-              do
-                if [ -d "$cand" ] && [ -f "$cand/.env" ]; then
-                  APP_DIR="$cand"
-                  break
-                fi
-              done
+              if [ -f "$HOME/istam-ai-content-pipeline/.env" ]; then APP_DIR="$HOME/istam-ai-content-pipeline"; fi
             fi
-
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              if [ -f /root/istam-ai-content-pipeline/.env ]; then APP_DIR=/root/istam-ai-content-pipeline; fi
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              if [ -f /opt/istam-ai-content-pipeline/.env ]; then APP_DIR=/opt/istam-ai-content-pipeline; fi
+            fi
             echo "APP_DIR=$APP_DIR"
-            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
-              echo "::error::Could not find app dir"
-              ls -la "$HOME" || true
-              exit 1
-            fi
-            cd "$APP_DIR" || exit 1
-
-            if [ ! -f .env ]; then
-              echo "::error::.env missing in $APP_DIR"
-              ls -la
-              exit 1
-            fi
-
+            test -n "$APP_DIR"
+            test -d "$APP_DIR"
+            cd "$APP_DIR"
+            test -f .env
             if grep -q '^TELEGRAM_ADMIN_IDS=' .env; then
               sed -i "s|^TELEGRAM_ADMIN_IDS=.*|TELEGRAM_ADMIN_IDS=${ADMIN_IDS}|" .env
             else
@@ -79,13 +68,10 @@ jobs:
             if ! grep -q '^TELEGRAM_BOT_INBOUND=' .env; then
               printf 'TELEGRAM_BOT_INBOUND=true\n' >> .env
             fi
-
-            echo "=== TELEGRAM_ADMIN_IDS line ==="
-            grep '^TELEGRAM_ADMIN_IDS=' .env || true
-
-            echo "=== recreate container ==="
+            echo "=== TELEGRAM_ADMIN_IDS ==="
+            grep '^TELEGRAM_ADMIN_IDS=' .env
             docker compose up -d --force-recreate
             sleep 10
             docker compose ps
-            docker compose logs --tail=50 || true
-            echo "=== DONE admin_ids=${ADMIN_IDS} ==="
+            docker compose logs --tail=40
+            echo "=== DONE ==="
