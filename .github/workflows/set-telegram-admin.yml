@@ -1,0 +1,67 @@
+# One-shot / on-demand: set TELEGRAM_ADMIN_IDS on VDS and recreate container.
+# Usage: gh workflow run set-telegram-admin.yml -f admin_ids=505432394
+
+name: Set Telegram Admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      admin_ids:
+        description: "Comma-separated Telegram user IDs"
+        required: true
+        default: "505432394"
+
+jobs:
+  set-admin:
+    name: Set TELEGRAM_ADMIN_IDS on VDS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check secrets
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_USER: ${{ secrets.VDS_USER }}
+          VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+        run: |
+          [ -n "$VDS_HOST" ] && [ -n "$VDS_USER" ] && [ -n "$VDS_SSH_KEY" ] || {
+            echo "::error::Missing VDS_* secrets"
+            exit 1
+          }
+
+      - name: Update .env and restart pipeline
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 10m
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.VDS_PATH }}"
+            if [ -z "$APP_DIR" ]; then
+              APP_DIR="$HOME/istam-ai-content-pipeline"
+            fi
+            ADMIN_IDS="${{ github.event.inputs.admin_ids }}"
+            cd "$APP_DIR"
+            if [ ! -f .env ]; then
+              echo "::error::.env missing in $APP_DIR"
+              exit 1
+            fi
+            if grep -qE '^TELEGRAM_ADMIN_IDS=' .env; then
+              sed -i "s|^TELEGRAM_ADMIN_IDS=.*|TELEGRAM_ADMIN_IDS=${ADMIN_IDS}|" .env
+            else
+              printf '\nTELEGRAM_ADMIN_IDS=%s\n' "$ADMIN_IDS" >> .env
+            fi
+            if ! grep -qE '^TELEGRAM_BOT_INBOUND=' .env; then
+              printf 'TELEGRAM_BOT_INBOUND=true\n' >> .env
+            fi
+            echo "=== TELEGRAM_ADMIN_IDS line ==="
+            grep -E '^TELEGRAM_ADMIN_IDS=' .env || true
+            echo "=== recreate container ==="
+            docker compose up -d --force-recreate
+            sleep 8
+            docker compose ps
+            docker compose logs --tail=40 | grep -E 'telegramBot|tg_admins|ADMIN' || true
+            echo "=== DONE admin_ids=${ADMIN_IDS} ==="
