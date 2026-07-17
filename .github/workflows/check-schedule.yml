@@ -1,0 +1,52 @@
+# One-shot: show today's post schedule + pipeline log tail on VDS.
+name: Check Schedule VDS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 5m
+          script_stop: false
+          envs: REMOTE_APP_DIR
+          script: |
+            set -e
+            APP_DIR="${REMOTE_APP_DIR:-}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d "$HOME/istam-ai-content-pipeline" ] && APP_DIR="$HOME/istam-ai-content-pipeline"
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /root/istam-ai-content-pipeline ] && APP_DIR=/root/istam-ai-content-pipeline
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /opt/istam-ai-content-pipeline ] && APP_DIR=/opt/istam-ai-content-pipeline
+            fi
+            echo "APP_DIR=$APP_DIR"
+            cd "$APP_DIR"
+            export TZ="${TZ:-Asia/Tashkent}"
+            echo "=== NOW (Asia/Tashkent) ==="
+            date
+            echo "=== CRON env ==="
+            grep -E '^(CRON_|DRY_RUN|TZ|MAX_ARTICLES)' .env 2>/dev/null || true
+            echo "=== daily-schedule.json ==="
+            if [ -f data/daily-schedule.json ]; then
+              cat data/daily-schedule.json
+            else
+              echo "(missing — will be created on next run)"
+            fi
+            echo ""
+            echo "=== container ==="
+            docker compose ps
+            echo "=== recent logs (schedule / publish) ==="
+            docker compose logs --tail=120 2>&1 | grep -E 'schedule|CRON|slot|publish|pipeline|Waiting|NEXT|DRY_RUN|generateImage|OK provider|error|ERROR|success' || docker compose logs --tail=40
