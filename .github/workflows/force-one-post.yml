@@ -26,11 +26,24 @@ jobs:
             exit 1
           }
 
-      - name: Upload face + set 4/day limits + run pipeline once
+      - name: Checkout (for face.jpg)
+        uses: actions/checkout@v4
+
+      - name: SCP brand face to VDS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          source: "data/brand/face.jpg"
+          target: "/tmp/istam-brand-face/"
+          strip_components: 0
+
+      - name: Place face + set 4/day limits + run pipeline once
         uses: appleboy/ssh-action@v1.2.0
         env:
           REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
-          FACE_B64: ${{ secrets.BRAND_FACE_B64 }}
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
@@ -38,7 +51,7 @@ jobs:
           port: ${{ secrets.VDS_PORT || 22 }}
           command_timeout: 40m
           script_stop: false
-          envs: REMOTE_APP_DIR,FACE_B64
+          envs: REMOTE_APP_DIR
           script: |
             set -e
             APP_DIR="${REMOTE_APP_DIR:-}"
@@ -75,22 +88,24 @@ jobs:
             upsert DAILY_LIMIT_THREADS 4
             upsert DAILY_LIMIT_X 4
             upsert DRY_RUN false
-            # Do not auto multi-fire on every restart after this run
             upsert CRON_RUN_ON_START false
 
             mkdir -p data/brand data/images data/tokens
-            if [ -n "${FACE_B64:-}" ]; then
-              echo "Writing brand face from secret..."
-              printf '%s' "$FACE_B64" | base64 -d > data/brand/face.jpg
-              ls -la data/brand/face.jpg
-            else
-              echo "WARN: BRAND_FACE_B64 secret empty — using existing data/brand/face.jpg if any"
-              ls -la data/brand/ 2>/dev/null || true
+            # SCP lands as /tmp/istam-brand-face/data/brand/face.jpg
+            if [ -f /tmp/istam-brand-face/data/brand/face.jpg ]; then
+              cp -f /tmp/istam-brand-face/data/brand/face.jpg data/brand/face.jpg
+            elif [ -f /tmp/istam-brand-face/face.jpg ]; then
+              cp -f /tmp/istam-brand-face/face.jpg data/brand/face.jpg
             fi
+            ls -la data/brand/face.jpg
             chown -R 10001:10001 data 2>/dev/null || true
 
-            docker compose up -d
-            sleep 8
+            # Pull latest code if deploy not finished yet
+            git fetch origin main 2>/dev/null || true
+            git reset --hard origin/main 2>/dev/null || true
+
+            docker compose up -d --build
+            sleep 12
             docker compose ps
 
             echo "=== face check inside container ==="
@@ -124,5 +139,5 @@ jobs:
             "
 
             echo "=== recent logs ==="
-            docker compose logs --tail=80
+            docker compose logs --tail=100
             echo "=== FORCE ONE POST DONE ==="
