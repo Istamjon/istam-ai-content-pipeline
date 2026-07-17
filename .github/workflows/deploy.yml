@@ -83,29 +83,52 @@ jobs:
             # container runs as uid 10001
             chown -R 10001:10001 data 2>/dev/null || true
 
-            echo "=== docker compose down + prune stale builder (snapshot fix) ==="
-            docker compose down --remove-orphans || true
-            docker rm -f istam-ai-pipeline 2>/dev/null || true
-            # Avoid "parent snapshot does not exist" on flaky buildkit state
-            docker builder prune -af || true
-            docker image prune -f || true
-            sleep 2
-
-            echo "=== docker compose build ==="
-            # Prefer cached layers for reliability; full no-cache only if BUILD_NO_CACHE=1
+            echo "=== docker compose build (keep old container until new image ready) ==="
+            # Do NOT prune builder cache on every deploy — aggressive prune + failed rebuild
+            # leaves the host with no image and a stopped pipeline (seen on 9de9150 deploy).
+            # Prefer cached layers; full no-cache only if BUILD_NO_CACHE=1.
+            build_ok=0
             if [ "${BUILD_NO_CACHE:-0}" = "1" ]; then
-              docker compose build --no-cache --pull
+              if docker compose build --no-cache --pull; then
+                build_ok=1
+              fi
             else
-              docker compose build --pull || docker compose build
+              if docker compose build --pull; then
+                build_ok=1
+              elif docker compose build; then
+                build_ok=1
+              fi
+            fi
+
+            if [ "$build_ok" != "1" ]; then
+              echo "WARN: build failed — recovery prune + rebuild once"
+              docker builder prune -af || true
+              docker image prune -f || true
+              sleep 2
+              if docker compose build --pull || docker compose build; then
+                build_ok=1
+              fi
+            fi
+
+            if [ "$build_ok" != "1" ]; then
+              echo "WARN: rebuild still failed — try existing image if present"
+              if ! docker image inspect istam-ai-content-pipeline:latest >/dev/null 2>&1; then
+                echo "::error::No image and build failed"
+                exit 1
+              fi
             fi
 
             echo "=== docker compose up ==="
+            # Stop old only when new image is ready (or fallback image exists)
+            docker compose down --remove-orphans || true
+            docker rm -f istam-ai-pipeline 2>/dev/null || true
             docker compose up -d --force-recreate --remove-orphans
             sleep 3
             # Retry once if network race
             STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
             if [ "$STATUS" != "running" ]; then
               echo "retry up after network race (status=$STATUS)"
+              docker network prune -f || true
               docker compose down --remove-orphans || true
               sleep 2
               docker compose up -d --force-recreate
