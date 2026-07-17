@@ -143,6 +143,14 @@ upsert_env DAILY_LIMIT_X 4
 upsert_env DAILY_LIMIT_BLOGGER 4
 upsert_env THREADS_MAX_PARTS 6
 upsert_env DRY_RUN false
+# Blog id auto-resolved at runtime; pin known brand defaults if missing
+if ! grep -q '^BLOGGER_URL=.\+' .env 2>/dev/null; then
+  upsert_env BLOGGER_URL 'https://istamjon.blogspot.com/'
+fi
+if ! grep -q '^BLOGGER_BLOG_ID=.\+' .env 2>/dev/null; then
+  # Public feed id for istamjon.blogspot.com (auto-discovery fallback)
+  upsert_env BLOGGER_BLOG_ID '6041787032258205448'
+fi
 # Keep blogger in platforms if google client already configured
 if grep -q '^GOOGLE_CLIENT_ID=.\+' .env 2>/dev/null; then
   if grep -q '^ENABLED_PLATFORMS=' .env; then

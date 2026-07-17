@@ -1,5 +1,11 @@
 import { loadTokens, saveTokens } from "../tokenStore.js";
 import type { AuthCredentials, OAuthProvider, StoredTokens } from "../types.js";
+import {
+  DEFAULT_BLOGGER_BLOG_ID,
+  DEFAULT_BLOGGER_URL,
+  resolveBloggerBlogId,
+  getKnownBloggerBlogId,
+} from "../../lib/bloggerBlogId.js";
 
 const SCOPES = ["https://www.googleapis.com/auth/blogger"].join(" ");
 
@@ -30,7 +36,11 @@ export const bloggerProvider: OAuthProvider = {
     const t = loadTokens("blogger");
     const accessToken =
       t?.accessToken || process.env.BLOGGER_ACCESS_TOKEN || "";
-    const userId = t?.userId || process.env.BLOGGER_BLOG_ID || "";
+    const userId =
+      t?.userId ||
+      process.env.BLOGGER_BLOG_ID ||
+      getKnownBloggerBlogId() ||
+      "";
     if (!accessToken) return null;
     return {
       accessToken,
@@ -88,38 +98,25 @@ export const bloggerProvider: OAuthProvider = {
       );
     }
 
-    // Resolve blog id: env → URL match → first blog
-    let blogId = process.env.BLOGGER_BLOG_ID || "";
-    const preferUrl = (
-      process.env.BLOGGER_URL ||
-      "https://istamjon.blogspot.com/"
-    )
-      .replace(/\/$/, "")
-      .toLowerCase();
-    if (!blogId) {
-      const blogsRes = await fetch(
-        "https://www.googleapis.com/blogger/v3/users/self/blogs",
-        { headers: { Authorization: `Bearer ${tokenJson.access_token}` } },
-      );
-      if (blogsRes.ok) {
-        const blogs = (await blogsRes.json()) as {
-          items?: Array<{ id: string; name: string; url?: string }>;
-        };
-        const items = blogs.items || [];
-        const matched = items.find((b) =>
-          (b.url || "").replace(/\/$/, "").toLowerCase().includes(
-            preferUrl.replace(/^https?:\/\//, "").replace(/\/$/, ""),
-          ),
-        );
-        const pick = matched || items[0];
-        if (pick) {
-          blogId = pick.id;
-          console.log(
-            `[blogger] Using blog: ${pick.name} id=${blogId} url=${pick.url || "?"}`,
-          );
-        }
-      }
-    }
+    // Auto-resolve blog id (public feed → byurl → list → brand default)
+    process.env.BLOGGER_URL =
+      process.env.BLOGGER_URL || DEFAULT_BLOGGER_URL;
+    const resolved = await resolveBloggerBlogId({
+      accessToken: tokenJson.access_token,
+      forceRefresh: true,
+      persist: false,
+    });
+    const blogId =
+      resolved?.blogId ||
+      process.env.BLOGGER_BLOG_ID ||
+      DEFAULT_BLOGGER_BLOG_ID;
+
+    console.log(
+      `[blogger] Using blog id=${blogId}` +
+        (resolved
+          ? ` via ${resolved.source}${resolved.name ? ` (${resolved.name})` : ""}${resolved.url ? ` ${resolved.url}` : ""}`
+          : " (fallback default)"),
+    );
 
     const tokens: StoredTokens = {
       platform: "blogger",
@@ -131,6 +128,7 @@ export const bloggerProvider: OAuthProvider = {
       scopes: SCOPES,
     };
     saveTokens(tokens);
+    process.env.BLOGGER_BLOG_ID = blogId;
     return tokens;
   },
 
@@ -139,7 +137,8 @@ export const bloggerProvider: OAuthProvider = {
       "Google Cloud Console → OAuth 2.0 Client",
       `  Redirect: ${redirectUri()}`,
       "  Enable Blogger API",
-      "  Env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, optional BLOGGER_BLOG_ID",
+      "  Env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET",
+      `  BLOGGER_URL=${DEFAULT_BLOGGER_URL} (blog id auto-resolved)`,
       "  Run: npm run auth -- blogger",
     ].join("\n");
   },

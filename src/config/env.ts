@@ -298,8 +298,12 @@ export const env = {
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
   BLOGGER_REDIRECT_URI:
     process.env.BLOGGER_REDIRECT_URI || "http://localhost:3000/auth/blogger/callback",
+  /** Target blog URL — id is auto-resolved from public feed / OAuth */
+  BLOGGER_URL:
+    process.env.BLOGGER_URL || "https://istamjon.blogspot.com/",
   BLOGGER_ACCESS_TOKEN: process.env.BLOGGER_ACCESS_TOKEN || "",
   BLOGGER_REFRESH_TOKEN: process.env.BLOGGER_REFRESH_TOKEN || "",
+  /** Optional override; empty = auto (public feed → 6041787032258205448 for istamjon.blogspot.com) */
   BLOGGER_BLOG_ID: process.env.BLOGGER_BLOG_ID || "",
   DB_PATH: process.env.DB_PATH || "./data/app.db",
   /**
