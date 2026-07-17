@@ -104,32 +104,16 @@ jobs:
             git fetch origin main 2>/dev/null || true
             git reset --hard origin/main 2>/dev/null || true
 
-            # Avoid name conflict with orphan/old container
-            docker compose down || true
+            # Rebuild image; use one-shot `compose run` (avoids network name races)
+            docker compose build --pull || docker compose build
+            docker compose down --remove-orphans || true
             docker rm -f istam-ai-pipeline 2>/dev/null || true
-            docker compose up -d --build --force-recreate
-            sleep 20
-            docker compose ps -a
-            echo "=== container logs (startup) ==="
-            docker compose logs --tail=80 || true
+            sleep 2
 
-            STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
-            echo "status=$STATUS"
-            if [ "$STATUS" != "running" ]; then
-              echo "Container not running — try start again"
-              docker start istam-ai-pipeline 2>/dev/null || docker compose up -d
-              sleep 10
-              docker compose ps -a
-              docker compose logs --tail=100 || true
-              STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
-            fi
-            if [ "$STATUS" != "running" ]; then
-              echo "::error::pipeline container status=$STATUS"
-              exit 1
-            fi
-
-            echo "=== face check inside container ==="
-            docker compose exec -T pipeline node --input-type=module -e "
+            echo "=== face check (one-shot container) ==="
+            docker compose run --rm --no-deps \
+              -v "$APP_DIR/data:/app/data" \
+              pipeline node --input-type=module -e "
             import { loadBrandFace, logBrandFace } from './dist/lib/brandFace.js';
             logBrandFace();
             const f = loadBrandFace();
@@ -137,8 +121,11 @@ jobs:
             console.log('OK face bytes', f.buffer.length);
             "
 
-            echo "=== FORCE ONE PIPELINE RUN ==="
-            docker compose exec -T pipeline node --input-type=module -e "
+            echo "=== FORCE ONE PIPELINE RUN (one-shot) ==="
+            docker compose run --rm --no-deps \
+              -v "$APP_DIR/data:/app/data" \
+              -e CRON_RUN_ON_START=false \
+              pipeline node --input-type=module -e "
             import 'dotenv/config';
             import { graph, graphInvokeConfig } from './dist/agent/graph.js';
             import { createEmptyState } from './dist/agent/state.js';
@@ -153,11 +140,13 @@ jobs:
             console.log('successCount', ok);
             console.log('title', r.current?.title);
             console.log('image', r.current?.imagePath);
-            console.log('quality', r.quality);
+            console.log('quality', JSON.stringify(r.quality));
             console.log('errors', r.errors);
             if (ok < 1) process.exit(3);
             "
 
-            echo "=== recent logs ==="
-            docker compose logs --tail=100
+            # Leave long-running scheduler up for daily slots
+            docker compose up -d
+            sleep 5
+            docker compose ps -a || true
             echo "=== FORCE ONE POST DONE ==="
