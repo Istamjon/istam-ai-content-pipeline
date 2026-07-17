@@ -15,21 +15,29 @@ export type MediaKind = "image" | "video" | "none";
  * LinkedIn: not supported for video (caller should skip; returns error if called).
  * X / Blogger: text-only fallback for video.
  */
+export type PublishPayload = {
+  text: string;
+  /** Threads multi-post chain */
+  parts?: string[];
+  /** Optional prebuilt media caption (Telegram) */
+  caption?: string;
+};
+
 export async function publishToPlatform(
   platform: Platform,
   text: string,
   imagePath?: string,
   mediaKind: MediaKind = "image",
+  extra?: Pick<PublishPayload, "parts" | "caption">,
 ): Promise<{ success: boolean; error?: string }> {
   const media = mediaKind === "none" ? undefined : imagePath;
   const kind = mediaKind === "video" ? "video" : "image";
 
   switch (platform) {
     case "telegram":
-      return publishToTelegram(text, media, kind);
+      return publishToTelegram(text, media, kind, extra?.caption);
     case "linkedin":
       if (mediaKind === "video") {
-        // No LinkedIn video upload — do not post text-only; skip at caller.
         return {
           success: false,
           error: "LinkedIn video not supported — skip",
@@ -50,9 +58,8 @@ export async function publishToPlatform(
       }
       return publishToX(text, media);
     case "threads":
-      return publishToThreads(text, media, kind);
+      return publishToThreads(text, media, kind, extra?.parts);
     case "blogger":
-      // Blogger HTML posts with local video are not wired; text only for video.
       if (mediaKind === "video") {
         return publishToBlogger(text, undefined);
       }

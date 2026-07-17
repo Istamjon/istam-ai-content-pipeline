@@ -110,11 +110,21 @@ export async function publish(
         continue;
       }
 
-      console.log(`[publish] → ${result.platform}...`);
+      console.log(
+        `[publish] → ${result.platform} text=${formatted.text.length}` +
+          (formatted.parts ? ` parts=${formatted.parts.length}` : "") +
+          (formatted.caption ? ` caption=${formatted.caption.length}` : "") +
+          "...",
+      );
       const publishResult = await publishToPlatform(
         result.platform,
         formatted.text,
         current.imagePath,
+        "image",
+        {
+          parts: formatted.parts,
+          caption: formatted.caption,
+        },
       );
 
       if (publishResult.success) {

@@ -265,15 +265,8 @@ export const brand = {
 
 export type Brand = typeof brand;
 
-export const platformLimits: Record<string, number> = {
-  telegram: 4096,
-  linkedin: 3000,
-  facebook: 63206,
-  instagram: 2200,
-  x: 280,
-  threads: 500,
-  blogger: 50000,
-};
+/** @deprecated Prefer getPlatformTextPolicy — re-export for compatibility */
+export { platformLimits } from "./platformTextLimits.js";
 
 /**
  * Content sources (crawl order). Brand-fit ranks by score + preferred host boost.
@@ -370,13 +363,25 @@ function escapeHtml(s: string): string {
  * LinkedIn/FB/IG: vertical Label + full URL (auto-linked)
  * Threads/X: compact
  */
-export function buildBrandFooter(platform: string): string {
+/**
+ * @param mode compact = fewer links (saves body budget); full = all profiles
+ */
+export function buildBrandFooter(
+  platform: string,
+  mode: "full" | "compact" | "none" = "full",
+): string {
+  if (mode === "none") return "";
+
   const profiles = brand.socialProfiles;
   const title = brand.footerTitle || `Author: ${brand.name}`;
   const tagline = brand.footerTagline || "AI Engineering | AI Agents | Automation";
+  const compactProfiles = profiles.filter((p) =>
+    ["LinkedIn", "Telegram", "YouTube"].includes(p.label),
+  );
+  const list = mode === "compact" ? compactProfiles : profiles;
 
   if (platform === "telegram") {
-    const row = profiles
+    const row = list
       .map((p) => `<a href="${escapeHtml(p.url)}">${escapeHtml(p.label)}</a>`)
       .join(" • ");
     return [
@@ -387,26 +392,11 @@ export function buildBrandFooter(platform: string): string {
     ].join("\n");
   }
 
-  if (platform === "x") {
-    return [title, brand.socialLinks.linkedin, brand.socialLinks.telegram].join("\n");
-  }
-
-  if (platform === "threads") {
-    return [
-      title,
-      brand.socialLinks.linkedin,
-      brand.socialLinks.telegram,
-      brand.socialLinks.threads,
-    ].join("\n");
+  if (platform === "x" || platform === "threads") {
+    return "";
   }
 
   // LinkedIn, Facebook, Instagram, Blogger, Telegra.ph body
-  const lines = profiles.map((p) => `${p.label}: ${p.url}`);
-  return [
-    "────────",
-    title,
-    tagline,
-    "",
-    ...lines,
-  ].join("\n");
+  const lines = list.map((p) => `${p.label}: ${p.url}`);
+  return ["────────", title, tagline, "", ...lines].join("\n");
 }

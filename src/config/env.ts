@@ -374,6 +374,11 @@ export const env = {
   DAILY_LIMIT_X: parseInt(process.env.DAILY_LIMIT_X || "4", 10),
   DAILY_LIMIT_THREADS: parseInt(process.env.DAILY_LIMIT_THREADS || "4", 10),
   DAILY_LIMIT_BLOGGER: parseInt(process.env.DAILY_LIMIT_BLOGGER || "4", 10),
+  /** Max posts in a Threads reply chain (root + replies). */
+  THREADS_MAX_PARTS: Math.max(
+    1,
+    Math.min(12, parseInt(process.env.THREADS_MAX_PARTS || "6", 10) || 6),
+  ),
 };
 
 const dailyLimitByPlatform: Record<string, number> = {

@@ -205,6 +205,8 @@ export async function publishToTelegram(
   text: string,
   imagePath?: string,
   mediaKind: TelegramMediaKind = "image",
+  /** Preformatted caption ≤1024 from format layer (optional). */
+  prebuiltCaption?: string,
 ): Promise<TgResult> {
   try {
     const token = env.TELEGRAM_BOT_TOKEN;
@@ -213,16 +215,19 @@ export async function publishToTelegram(
       return { success: false, error: "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL are required" };
     }
 
+    const CAPTION_HARD = 1024;
     const useTelegraph = env.TELEGRAPH_ENABLED !== false;
     let channelText = text;
     let telegraphUrl = "";
 
-    // Telegra.ph is for long text + optional still image — skip for short/video manual posts
+    // Telegra.ph for long text + still image — full article always when over caption budget
     const isVideo =
       mediaKind === "video" ||
       (Boolean(imagePath) &&
         /\.(mp4|mov|webm|mkv)$/i.test(imagePath || ""));
-    if (useTelegraph && !isVideo && text.length > 900) {
+    const needsTelegraph =
+      useTelegraph && !isVideo && (text.length > 700 || Boolean(imagePath));
+    if (needsTelegraph) {
       try {
         const page = await createTelegraphPage({
           title: extractTitle(text),
@@ -238,16 +243,29 @@ export async function publishToTelegram(
         channelText = buildTelegramTeaser(text, page.url);
         console.log("[telegram] Telegra.ph:", telegraphUrl);
       } catch (e) {
-        console.warn("[telegram] Telegra.ph failed, posting full text:", e);
-        channelText = text;
+        console.warn("[telegram] Telegra.ph failed, posting smart teaser only:", e);
+        channelText = buildTelegramTeaser(text, "");
       }
     }
 
     if (imagePath && fs.existsSync(imagePath)) {
-      const caption =
-        channelText.length > 1024
-          ? channelText.slice(0, 1000).trim() + "…"
-          : channelText;
+      // Prefer format-layer caption; else teaser; never mid-sentence slice
+      let caption = (prebuiltCaption || channelText || " ").trim();
+      if (telegraphUrl && !caption.includes(telegraphUrl)) {
+        // Ensure full-article link present when we have Telegra.ph
+        caption = buildTelegramTeaser(text, telegraphUrl);
+      }
+      if (caption.length > CAPTION_HARD) {
+        caption = buildTelegramTeaser(text, telegraphUrl || "").slice(0, CAPTION_HARD);
+        // buildTelegramTeaser already respects ~1024; hard clamp without mid-word if still over
+        if (caption.length > CAPTION_HARD) {
+          const sp = caption.lastIndexOf(" ", CAPTION_HARD - 1);
+          caption =
+            (sp > 40 ? caption.slice(0, sp) : caption.slice(0, CAPTION_HARD - 1)).trim() +
+            "…";
+        }
+      }
+      console.log(`[telegram] captionLen=${caption.length}/${CAPTION_HARD}`);
 
       if (isVideo) {
         const video = await sendVideo(token, channel, imagePath, caption);
@@ -282,8 +300,7 @@ export async function publishToTelegram(
         );
       }
       console.log("[telegram] single photo+caption post OK");
-      // If caption was truncated and we have Telegra.ph, one short follow-up link only
-      if (telegraphUrl && channelText.length > 1024) {
+      if (telegraphUrl && caption.length >= CAPTION_HARD - 20) {
         const linkMsg =
           `📖 <b>Toʻliq matn</b>\n<a href="${telegraphUrl}">${telegraphUrl}</a>`;
         const follow = await sendMessage(token, channel, linkMsg, true);

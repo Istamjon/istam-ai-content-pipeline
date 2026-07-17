@@ -25,8 +25,19 @@ export interface Article {
 export type { CanonicalContent };
 
 export interface FormattedPost {
+  /** Primary text (root post / full body). */
   text: string;
   hasImage: boolean;
+  /**
+   * Threads multi-post chain (part 0 = text).
+   * When set, publisher posts replies for parts[1..].
+   */
+  parts?: string[];
+  /**
+   * Media caption when different from text (e.g. Telegram photo ≤1024).
+   * If omitted, publisher uses text (may teaser internally).
+   */
+  caption?: string;
 }
 
 export interface QualityResult {

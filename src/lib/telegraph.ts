@@ -225,31 +225,50 @@ export async function createTelegraphPage(options: {
 }
 
 /**
- * Channel teaser: short hook + Telegraph link.
+ * Channel teaser: complete-thought hook + optional Telegraph link + compact footer.
+ * Always aims to stay under Telegram photo caption hard limit (1024).
  */
 export function buildTelegramTeaser(fullText: string, telegraphUrl: string): string {
+  const CAPTION_HARD = 1024;
   let plain = stripFooterAndTags(fullText);
   plain = stripSourceIntros(plain);
+  plain = plain.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+  const linkBlock = telegraphUrl
+    ? `\n\n📖 <b>Toʻliq maqola</b>\n<a href="${escapeHtml(telegraphUrl)}">${escapeHtml(telegraphUrl)}</a>`
+    : "";
+  const footer = buildBrandFooter("telegram", "compact");
+  const reserved = linkBlock.length + (footer ? footer.length + 2 : 0);
+  const hookBudget = Math.max(80, CAPTION_HARD - reserved - 8);
 
   const paras = plain.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
   let hook = "";
   for (const p of paras) {
     if (/^Author:/i.test(p) || /^AI Engineering/i.test(p)) break;
-    const next = hook ? `${hook}\n\n${p}` : p;
-    if (next.length > 700) break;
+    const next = hook ? `${hook} ${p}` : p;
+    if (next.length > hookBudget) break;
     hook = next;
-    if (hook.length >= 280) break;
+    if (hook.length >= Math.min(320, hookBudget)) break;
   }
-  if (!hook) hook = plain.slice(0, 400);
-  hook = stripSourceIntros(hook);
-  hook = hook.replace(/\n*#[\w\u0400-\u04FF]+(\s+#[\w\u0400-\u04FF]+)*\s*$/g, "").trim();
+  if (!hook) {
+    hook = plain.slice(0, hookBudget);
+    const sp = hook.lastIndexOf(" ");
+    if (sp > 40) hook = hook.slice(0, sp);
+  }
+  hook = stripSourceIntros(hook)
+    .replace(/\n*#[\w\u0400-\u04FF]+(\s+#[\w\u0400-\u04FF]+)*\s*$/g, "")
+    .trim();
 
-  const footer = buildBrandFooter("telegram");
-  return (
-    `${escapeHtml(hook)}\n\n` +
-    `📖 <b>Toʻliq maqola</b>\n<a href="${escapeHtml(telegraphUrl)}">${escapeHtml(telegraphUrl)}</a>\n\n` +
-    footer
-  );
+  let out = `${escapeHtml(hook)}${linkBlock}`;
+  if (footer) out = `${out}\n\n${footer}`;
+  if (out.length > CAPTION_HARD) {
+    out = `${escapeHtml(hook.slice(0, Math.max(40, hookBudget - 20)))}${linkBlock}`;
+  }
+  if (out.length > CAPTION_HARD) {
+    const sp = out.lastIndexOf(" ", CAPTION_HARD - 1);
+    out = (sp > 40 ? out.slice(0, sp) : out.slice(0, CAPTION_HARD - 1)).trim() + "…";
+  }
+  return out;
 }
 
 function escapeHtml(s: string): string {
