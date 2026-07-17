@@ -108,8 +108,25 @@ jobs:
             docker compose down || true
             docker rm -f istam-ai-pipeline 2>/dev/null || true
             docker compose up -d --build --force-recreate
-            sleep 15
-            docker compose ps
+            sleep 20
+            docker compose ps -a
+            echo "=== container logs (startup) ==="
+            docker compose logs --tail=80 || true
+
+            STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
+            echo "status=$STATUS"
+            if [ "$STATUS" != "running" ]; then
+              echo "Container not running — try start again"
+              docker start istam-ai-pipeline 2>/dev/null || docker compose up -d
+              sleep 10
+              docker compose ps -a
+              docker compose logs --tail=100 || true
+              STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
+            fi
+            if [ "$STATUS" != "running" ]; then
+              echo "::error::pipeline container status=$STATUS"
+              exit 1
+            fi
 
             echo "=== face check inside container ==="
             docker compose exec -T pipeline node --input-type=module -e "
