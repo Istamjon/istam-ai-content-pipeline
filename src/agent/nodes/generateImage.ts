@@ -36,7 +36,11 @@ export async function generateImage(
     }
 
     ensureImagesDir();
-    cleanupOldLocalImages(imagesDir, 24 * 60 * 60 * 1000);
+    // Orphans from crashed runs — do not keep for 24h (disk on VDS is scarce)
+    const purged = cleanupOldLocalImages(imagesDir, 30 * 60 * 1000);
+    if (purged > 0) {
+      console.log(`[generateImage] purged ${purged} stale image(s) older than 30m`);
+    }
     logAllImageBudgets();
 
     const { buffer, provider } = await generateImageBuffer(current.imagePrompt);

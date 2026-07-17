@@ -8,10 +8,36 @@ import {
   markArticleSeen,
 } from "../../db.js";
 import { env } from "../../config/env.js";
-import { deleteLocalImage } from "../../lib/imageHost.js";
+import {
+  deleteLocalImage,
+  purgePipelineImagesAfterPublish,
+} from "../../lib/imageHost.js";
 import { refreshAllExpiringTokens } from "../../oauth/tokenRefresh.js";
 import { createHash } from "crypto";
 import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const imagesDir = path.resolve(__dirname, "../../../data/images");
+
+/** Free disk: drop local cover after platforms finished (or on hard fail). */
+function freeLocalImages(localImagePath?: string): void {
+  try {
+    const { deletedCurrent, purged } = purgePipelineImagesAfterPublish(
+      imagesDir,
+      localImagePath,
+    );
+    if (deletedCurrent || purged > 0) {
+      console.log(
+        `[publish] freed local images: current=${deletedCurrent} purged=${purged} dir=${imagesDir}`,
+      );
+    }
+  } catch (e) {
+    console.warn("[publish] image cleanup failed:", e);
+    if (localImagePath) deleteLocalImage(localImagePath);
+  }
+}
 
 function contentHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 32);
@@ -43,9 +69,11 @@ export async function publish(
         "publish blocked: quality not OK — " +
         (state.quality?.issues?.slice(0, 3).join("; ") || "failed");
       console.warn(`[publish] ${err}`);
+      freeLocalImages(localImagePath);
       return {
         publishResults: skipAll(state.publishResults, err),
         errors: [err],
+        current: { ...current, imagePath: undefined },
       };
     }
 
@@ -55,6 +83,7 @@ export async function publish(
     if (!hasImage) {
       const err = "publish blocked: image required (no imagePath / file missing)";
       console.warn(`[publish] ${err}`);
+      freeLocalImages(localImagePath);
       return {
         publishResults: skipAll(state.publishResults, err),
         errors: [err],
@@ -156,10 +185,9 @@ export async function publish(
       }
     }
 
-    // Drop local temp file after all platforms finished (remote Litterbox expires later)
-    if (localImagePath && deleteLocalImage(localImagePath)) {
-      console.log("[publish] Deleted local temp image:", localImagePath);
-    }
+    // Drop local temp file(s) after all platforms finished.
+    // IG/Threads already uploaded to Litterbox/Catbox; TG/LI/FB read file before this.
+    freeLocalImages(localImagePath);
 
     return {
       publishResults: results,
@@ -167,10 +195,8 @@ export async function publish(
       current: { ...current, imagePath: undefined },
     };
   } catch (error) {
-    // Still try to free disk on unexpected errors after partial publish
-    if (localImagePath) {
-      deleteLocalImage(localImagePath);
-    }
+    // Still free disk on unexpected errors after partial publish
+    freeLocalImages(localImagePath);
     return {
       errors: [`publish error: ${String(error)}`],
     };

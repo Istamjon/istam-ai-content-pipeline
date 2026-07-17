@@ -82,6 +82,25 @@ export async function ensurePublicImageUrl(
   };
 }
 
+const PIPELINE_IMAGE_EXT = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".webp",
+  ".gif",
+  ".mp4",
+  ".mov",
+  ".webm",
+  ".mkv",
+]);
+
+function isPipelineMediaFile(filePath: string): boolean {
+  const base = path.basename(filePath);
+  if (!base || base.startsWith(".")) return false;
+  if (base === ".gitkeep" || base === "README.md") return false;
+  return PIPELINE_IMAGE_EXT.has(path.extname(base).toLowerCase());
+}
+
 /**
  * Delete a local image file after platforms no longer need it.
  * Safe to call multiple times; ignores missing files.
@@ -102,30 +121,49 @@ export function deleteLocalImage(imagePath?: string | null): boolean {
 }
 
 /**
- * Remove old files from data/images older than maxAgeMs (default 24h).
- * Call occasionally so disk does not grow if a run crashes mid-way.
+ * Remove pipeline media from data/images.
+ * - maxAgeMs omitted / 0 → delete all matching media (post-publish purge)
+ * - maxAgeMs > 0 → only files older than that (orphan crash recovery)
+ * Never touches data/brand (face.jpg lives there).
  */
 export function cleanupOldLocalImages(
   imagesDir: string,
-  maxAgeMs = 24 * 60 * 60 * 1000,
+  maxAgeMs = 30 * 60 * 1000,
 ): number {
   if (!fs.existsSync(imagesDir)) return 0;
   const now = Date.now();
+  const ageGate = maxAgeMs > 0;
   let removed = 0;
   for (const name of fs.readdirSync(imagesDir)) {
     const full = path.join(imagesDir, name);
     try {
       const stat = fs.statSync(full);
       if (!stat.isFile()) continue;
-      if (now - stat.mtimeMs > maxAgeMs) {
-        fs.unlinkSync(full);
-        removed += 1;
-      }
+      if (!isPipelineMediaFile(full)) continue;
+      if (ageGate && now - stat.mtimeMs <= maxAgeMs) continue;
+      fs.unlinkSync(full);
+      removed += 1;
     } catch {
       // ignore per-file errors
     }
   }
   return removed;
+}
+
+/**
+ * After publish: drop the used file and wipe remaining pipeline images in dir.
+ * Keeps disk free — remote hosts (Litterbox/Catbox) already have the bytes for IG/Threads.
+ */
+export function purgePipelineImagesAfterPublish(
+  imagesDir: string,
+  justPublishedPath?: string | null,
+): { deletedCurrent: boolean; purged: number } {
+  const deletedCurrent = justPublishedPath
+    ? deleteLocalImage(justPublishedPath)
+    : false;
+  // maxAgeMs=0 → all remaining media files in data/images
+  const purged = cleanupOldLocalImages(imagesDir, 0);
+  return { deletedCurrent, purged };
 }
 
 function normalizeTempHours(hours: number): TempImageHours {

@@ -8,9 +8,9 @@ import { isBrandFaceConfigured } from "../../lib/brandFace.js";
 
 /**
  * Builds premium scroll-stopping social-cover image prompt.
- * Person + HEADING + topic tech visual. No IO logo.
- * If data/brand/face.jpg exists → identity-preserve prompt language.
- * Env: IMAGE_PRESET=…  IMAGE_COMPOSITION=…
+ * Person (face identity + rotated pose) + Uzbek HEADING + topic tech visual.
+ * No IO logo. Heading prefers rewritten Uzbek hook, not English RSS title.
+ * Env: IMAGE_PRESET=…  IMAGE_COMPOSITION=…  IMAGE_POSE=…
  */
 export async function generateImagePrompt(
   state: typeof StateAnnotation.State,
@@ -37,21 +37,25 @@ export async function generateImagePrompt(
     const forceComposition = process.env.IMAGE_COMPOSITION as
       | ImageCompositionHook
       | undefined;
+    const forcePose = process.env.IMAGE_POSE;
     const faceRef = isBrandFaceConfigured();
 
     const {
       prompt: imagePrompt,
       preset,
       composition,
+      pose,
       heading,
     } = buildPremiumImagePrompt(current.title, topicHint, {
       preset: forcePreset,
       composition: forceComposition,
+      pose: forcePose,
+      rewritten: current.rewritten,
       faceRef,
     });
 
     console.log(
-      `[generateImagePrompt] preset=${preset} composition=${composition} faceRef=${faceRef} heading="${heading.slice(0, 48)}" len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
+      `[generateImagePrompt] preset=${preset} composition=${composition} pose=${pose} faceRef=${faceRef} heading="${heading.slice(0, 48)}" len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
     );
 
     return {
