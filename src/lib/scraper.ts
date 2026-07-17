@@ -12,6 +12,13 @@ export interface SourceConfig {
   titleSelector?: string;
   contentSelector?: string;
   linkSelector?: string;
+  /**
+   * Keep only URLs whose pathname matches at least one pattern
+   * (string substring or RegExp). Applied after discovery.
+   */
+  pathInclude?: Array<string | RegExp>;
+  /** Drop URLs matching any of these pathname patterns. */
+  pathExclude?: Array<string | RegExp>;
 }
 
 const defaultRssPaths = ["/feed", "/rss", "/rss.xml", "/feed.xml", "/atom.xml", "/index.xml"];
@@ -161,7 +168,112 @@ function parseSitemap(xml: string): string[] {
   return urls;
 }
 
+function pathMatches(
+  pathname: string,
+  patterns?: Array<string | RegExp>,
+): boolean {
+  if (!patterns || patterns.length === 0) return true;
+  return patterns.some((p) =>
+    typeof p === "string" ? pathname.includes(p) : p.test(pathname),
+  );
+}
+
+function filterByPathConfig(
+  articles: Article[],
+  config: SourceConfig,
+): Article[] {
+  if (!config.pathInclude?.length && !config.pathExclude?.length) {
+    return articles;
+  }
+  return articles.filter((a) => {
+    try {
+      const path = new URL(a.url).pathname;
+      if (config.pathExclude?.length && pathMatches(path, config.pathExclude)) {
+        return false;
+      }
+      if (config.pathInclude?.length && !pathMatches(path, config.pathInclude)) {
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * Next.js listing pages embed articles in __NEXT_DATA__ (e.g. aiagentstore.ai).
+ * Shape: props.pageProps.articles[] with title, content, slug, tagSlug.
+ */
+function parseNextDataArticles(
+  html: string,
+  baseUrl: string,
+): Article[] {
+  const m = html.match(
+    /<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/,
+  );
+  if (!m?.[1]) return [];
+  try {
+    const data = JSON.parse(m[1]) as {
+      props?: {
+        pageProps?: {
+          articles?: Array<{
+            title?: string;
+            content?: string;
+            slug?: string;
+            tagSlug?: string;
+            url?: string;
+            path?: string;
+          }>;
+        };
+      };
+    };
+    const list = data?.props?.pageProps?.articles;
+    if (!Array.isArray(list) || list.length === 0) return [];
+
+    const origin = new URL(baseUrl).origin;
+    const out: Article[] = [];
+    const seen = new Set<string>();
+
+    for (const item of list) {
+      const title = (item.title || "").trim();
+      if (!title) continue;
+      let url = "";
+      if (item.url && /^https?:\/\//i.test(item.url)) {
+        url = item.url;
+      } else if (item.path) {
+        url = resolveUrl(item.path, baseUrl);
+      } else if (item.slug) {
+        const tag = (item.tagSlug || "guides-and-tutorials").replace(
+          /^\/+|\/+$/g,
+          "",
+        );
+        const slug = item.slug.replace(/^\/+|\/+$/g, "");
+        url = `${origin}/${tag}/${slug}`;
+      } else {
+        continue;
+      }
+      if (seen.has(url)) continue;
+      seen.add(url);
+      out.push({
+        url,
+        title,
+        rawText: (item.content || "").trim(),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 function parseHtml(config: SourceConfig, html: string): Article[] {
+  // Prefer structured Next.js payload when present (avoids nav/promo noise)
+  const nextArticles = parseNextDataArticles(html, config.url);
+  if (nextArticles.length > 0) {
+    return filterByPathConfig(nextArticles, config);
+  }
+
   const $ = cheerio.load(html);
   const articles: Article[] = [];
   const articleSelector = config.articleSelector || defaultArticleSelector;
@@ -212,7 +324,7 @@ function parseHtml(config: SourceConfig, html: string): Article[] {
     });
   }
 
-  return articles;
+  return filterByPathConfig(articles, config);
 }
 
 async function discoverOneSource(config: SourceConfig): Promise<Article[]> {

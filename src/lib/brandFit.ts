@@ -17,7 +17,7 @@ export type BrandFitResult = {
 const POSITIVE: Array<{ re: RegExp; w: number; label: string }> = [
   // Core agentic / frameworks
   {
-    re: /\b(ai\s*agent|agentic|multi[- ]?agent|autonomous\s+agent|agent\s+system)\b/i,
+    re: /\b(ai\s*agents?|ai\s+[\w-]+\s+agents?|agentic|multi[- ]?agent|autonomous\s+agents?|agent\s+system|research\s+agents?)\b/i,
     w: 5,
     label: "ai-agent",
   },
@@ -207,12 +207,26 @@ const PREFERRED_SOURCES: Array<{
   label: string;
   /** Require strong AI signal (generic fullstack noise filter) */
   requireStrongAi?: boolean;
+  /**
+   * If true with requireStrongAi: only STRONG_AI labels count
+   * (not React/Next stack alone — for mixed agent directories / news hubs).
+   */
+  aiOnly?: boolean;
   /** Higher bar after boost for noisy general blogs */
   minScore?: number;
 }> = [
   { host: "actualize.co", boost: 6, label: "src-actualize" },
   { host: "the-agentic-engineer.com", boost: 6, label: "src-agentic-eng" },
   { host: "skywork.ai", boost: 5, label: "src-skywork" },
+  // Agent directory news — mixed listicles; AI/agent only (not bare Next.js SEO)
+  {
+    host: "aiagentstore.ai",
+    boost: 5,
+    label: "src-aiagentstore",
+    requireStrongAi: true,
+    aiOnly: true,
+    minScore: 5,
+  },
   { host: "deepmind.google", boost: 4, label: "src-deepmind" },
   // TDS agentic category still hosts some off-topic; require real AI signal
   {
@@ -244,6 +258,7 @@ export function matchPreferredSource(url: string): {
   boost: number;
   label: string;
   requireStrongAi: boolean;
+  aiOnly: boolean;
   minScore: number;
 } | null {
   const host = hostnameOf(url);
@@ -254,6 +269,7 @@ export function matchPreferredSource(url: string): {
         boost: s.boost,
         label: s.label,
         requireStrongAi: Boolean(s.requireStrongAi),
+        aiOnly: Boolean(s.aiOnly),
         minScore: s.minScore ?? MIN_SCORE,
       };
     }
@@ -366,16 +382,24 @@ export function scoreBrandFit(input: {
     };
   }
 
-  // Secondary blogs: require AI *or* modern stack (React/Next/Node/TS/Python/Django/APIs)
-  if (src?.requireStrongAi && !hasStrongTopic(positives)) {
-    return {
-      ok: false,
-      score,
-      reason: `weak topic for ${src.label} (need AI agents/LLM/RAG or React/Next/Node/Python/Django/API)`,
-      positives,
-      negatives,
-      sourceBoost,
-    };
+  // Noisy hubs: require AI *or* modern stack; aiOnly hosts need real AI/agent signal
+  if (src?.requireStrongAi) {
+    const contentPos = positives.filter((p) => !p.startsWith("src-"));
+    const topicOk = src.aiOnly
+      ? hasStrongAi(contentPos)
+      : hasStrongTopic(positives);
+    if (!topicOk) {
+      return {
+        ok: false,
+        score,
+        reason: src.aiOnly
+          ? `weak AI signal for ${src.label} (need agents/LLM/RAG/automation — not bare stack SEO)`
+          : `weak topic for ${src.label} (need AI agents/LLM/RAG or React/Next/Node/Python/Django/API)`,
+        positives,
+        negatives,
+        sourceBoost,
+      };
+    }
   }
 
   const minNeeded = src?.minScore ?? MIN_SCORE;

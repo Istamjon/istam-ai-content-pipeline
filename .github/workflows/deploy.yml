@@ -83,8 +83,13 @@ jobs:
             # container runs as uid 10001
             chown -R 10001:10001 data 2>/dev/null || true
 
-            echo "=== docker compose down + build --no-cache ==="
+            echo "=== docker compose down + prune stale builder (snapshot fix) ==="
             docker compose down || true
+            # Avoid "parent snapshot does not exist" on flaky buildkit state
+            docker builder prune -af || true
+            docker image prune -f || true
+
+            echo "=== docker compose build --no-cache ==="
             docker compose build --no-cache --pull
             docker compose up -d --force-recreate
 

@@ -281,7 +281,7 @@ export const platformLimits: Record<string, number> = {
  * Only these hosts are crawled — OpenAI/Anthropic/etc. removed (403 noise + lower priority).
  *
  * Tier A (highest trust / AI engineering focus):
- *   Actualize, Agentic Engineer, Skywork, DeepMind
+ *   Actualize, Agentic Engineer, Skywork, AI Agent Store, DeepMind
  * Tier B (agentic/fullstack — stricter brand-fit):
  *   Towards Data Science Agentic AI, Plain English Fullstack
  */
@@ -301,6 +301,20 @@ export const sources = [
     url: "https://skywork.ai/blog/",
     name: "Skywork AI",
     tier: "primary" as const,
+  },
+  {
+    url: "https://aiagentstore.ai/news",
+    name: "AI Agent Store News",
+    tier: "primary" as const,
+    // Real posts live under /guides-and-tutorials/<slug> (Next.js __NEXT_DATA__)
+    pathInclude: ["/guides-and-tutorials/"],
+    pathExclude: [
+      "/agent-factory",
+      "/ai-agents-directory",
+      "/claw-earn",
+      "/claw-setup",
+      "/news/guides-and-tutorials", // tag index only
+    ],
   },
   {
     url: "https://deepmind.google/blog/",
