@@ -1,0 +1,91 @@
+# Safe Docker cache cleanup on VDS (keeps running container + data volumes).
+#
+#   gh workflow run docker-cleanup.yml
+
+name: Docker Cleanup VDS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    name: Safe Docker prune on VDS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check secrets
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_USER: ${{ secrets.VDS_USER }}
+          VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+        run: |
+          [ -n "$VDS_HOST" ] && [ -n "$VDS_USER" ] && [ -n "$VDS_SSH_KEY" ] || {
+            echo "::error::Missing VDS_* secrets"
+            exit 1
+          }
+
+      - name: Prune build cache (safe)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 12m
+          script_stop: false
+          envs: REMOTE_APP_DIR
+          script: |
+            set -e
+            echo "=== BEFORE ==="
+            df -h / | tail -1 || true
+            docker system df || true
+
+            APP_DIR="${REMOTE_APP_DIR:-}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              if [ -d "$HOME/istam-ai-content-pipeline" ]; then APP_DIR="$HOME/istam-ai-content-pipeline"; fi
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              if [ -d /root/istam-ai-content-pipeline ]; then APP_DIR=/root/istam-ai-content-pipeline; fi
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              if [ -d /opt/istam-ai-content-pipeline ]; then APP_DIR=/opt/istam-ai-content-pipeline; fi
+            fi
+            echo "APP_DIR=$APP_DIR"
+
+            # Keep pipeline container running if present
+            if [ -n "$APP_DIR" ] && [ -d "$APP_DIR" ]; then
+              cd "$APP_DIR"
+              docker compose ps || true
+            fi
+
+            echo "=== BuildKit / builder cache (safe) ==="
+            docker builder prune -af || true
+
+            echo "=== Dangling images only (not all images) ==="
+            docker image prune -f || true
+
+            echo "=== Stopped containers + unused networks (NOT volumes) ==="
+            # Never: docker volume prune, docker system prune -a --volumes
+            docker container prune -f || true
+            docker network prune -f || true
+
+            echo "=== AFTER ==="
+            df -h / | tail -1 || true
+            docker system df || true
+
+            if [ -n "$APP_DIR" ] && [ -d "$APP_DIR" ]; then
+              cd "$APP_DIR"
+              echo "=== pipeline status ==="
+              docker compose ps -a || true
+              STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
+              echo "istam-ai-pipeline status=$STATUS"
+              if [ "$STATUS" != "running" ] && [ "$STATUS" != "missing" ]; then
+                echo "Container not running — recreate without rebuild"
+                docker compose up -d || true
+                sleep 5
+                docker compose ps || true
+              fi
+            fi
+            echo "=== CLEANUP DONE (volumes/data untouched) ==="
