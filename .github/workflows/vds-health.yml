@@ -1,0 +1,75 @@
+# Full VDS health: HEAD, container, schedule, env policy, recent errors
+name: VDS Health
+
+on:
+  workflow_dispatch:
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: appleboy/ssh-action@v1.2.0
+        env:
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 10m
+          script_stop: false
+          envs: REMOTE_APP_DIR
+          script: |
+            set -e
+            APP_DIR="${REMOTE_APP_DIR:-}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d "$HOME/istam-ai-content-pipeline" ] && APP_DIR="$HOME/istam-ai-content-pipeline"
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /root/istam-ai-content-pipeline ] && APP_DIR=/root/istam-ai-content-pipeline
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /opt/istam-ai-content-pipeline ] && APP_DIR=/opt/istam-ai-content-pipeline
+            fi
+            echo "APP_DIR=$APP_DIR"
+            test -n "$APP_DIR" && test -d "$APP_DIR"
+            cd "$APP_DIR"
+            export TZ="${TZ:-Asia/Tashkent}"
+
+            echo "=== GIT HEAD ==="
+            git fetch origin main 2>/dev/null || true
+            echo "local=$(git rev-parse --short HEAD 2>/dev/null || echo none)"
+            echo "origin=$(git rev-parse --short origin/main 2>/dev/null || echo none)"
+            git log -1 --oneline 2>/dev/null || true
+
+            echo "=== NOW ==="
+            date
+
+            echo "=== ENV (safe) ==="
+            grep -E '^(DRY_RUN|CRON_|ENABLED_PLATFORMS|DAILY_LIMIT_|THREADS_MAX|GOOGLE_CLIENT_ID|BLOGGER_|NANOBANANA|SKYWORK_API_KEY=)' .env 2>/dev/null \
+              | sed -E 's/(SECRET|TOKEN|KEY)=.*/\1=***/' || true
+
+            echo "=== FACE ==="
+            ls -la data/brand/face.jpg 2>/dev/null || echo "face.jpg missing"
+
+            echo "=== SCHEDULE ==="
+            cat data/daily-schedule.json 2>/dev/null || echo "no schedule yet"
+
+            echo "=== CONTAINER ==="
+            docker compose ps -a || true
+            STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
+            RESTART=$(docker inspect -f '{{.RestartCount}}' istam-ai-pipeline 2>/dev/null || echo na)
+            echo "status=$STATUS restarts=$RESTART"
+
+            echo "=== LOGS (tail 100) ==="
+            docker compose logs --tail=100 2>&1 || true
+
+            echo "=== ERROR GREP ==="
+            docker compose logs --tail=300 2>&1 | grep -iE 'error|fail|exception|crash|ENOENT|cannot|rejected' | tail -40 || echo "(no recent errors matched)"
+
+            if [ "$STATUS" != "running" ]; then
+              echo "::error::Container not running ($STATUS)"
+              exit 1
+            fi
+            echo "=== HEALTH OK ==="

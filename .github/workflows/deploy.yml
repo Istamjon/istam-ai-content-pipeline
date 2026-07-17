@@ -84,17 +84,35 @@ jobs:
             chown -R 10001:10001 data 2>/dev/null || true
 
             echo "=== docker compose down + prune stale builder (snapshot fix) ==="
-            docker compose down || true
+            docker compose down --remove-orphans || true
+            docker rm -f istam-ai-pipeline 2>/dev/null || true
             # Avoid "parent snapshot does not exist" on flaky buildkit state
             docker builder prune -af || true
             docker image prune -f || true
+            sleep 2
 
-            echo "=== docker compose build --no-cache ==="
-            docker compose build --no-cache --pull
-            docker compose up -d --force-recreate
+            echo "=== docker compose build ==="
+            # Prefer cached layers for reliability; full no-cache only if BUILD_NO_CACHE=1
+            if [ "${BUILD_NO_CACHE:-0}" = "1" ]; then
+              docker compose build --no-cache --pull
+            else
+              docker compose build --pull || docker compose build
+            fi
 
-            echo "=== wait 12s for crash loops ==="
-            sleep 12
+            echo "=== docker compose up ==="
+            docker compose up -d --force-recreate --remove-orphans
+            sleep 3
+            # Retry once if network race
+            STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
+            if [ "$STATUS" != "running" ]; then
+              echo "retry up after network race (status=$STATUS)"
+              docker compose down --remove-orphans || true
+              sleep 2
+              docker compose up -d --force-recreate
+            fi
+
+            echo "=== wait 15s for crash loops ==="
+            sleep 15
 
             echo "=== ps ==="
             docker compose ps -a
@@ -104,20 +122,53 @@ jobs:
             RESTART=$(docker inspect -f '{{.RestartCount}}' istam-ai-pipeline 2>/dev/null || echo na)
             echo "status=$STATUS exit=$EXIT restarts=$RESTART"
 
-            echo "=== logs (last 80) ==="
-            docker compose logs --tail=80 || true
+            echo "=== logs (last 100) ==="
+            docker compose logs --tail=100 || true
 
             if [ "$STATUS" != "running" ]; then
               echo "::error::Container not running after deploy (status=$STATUS)"
               exit 1
             fi
             if [ "$RESTART" != "0" ] && [ "$RESTART" != "na" ]; then
-              # allow 0 only; any restart means crash
               if [ "${RESTART:-0}" -gt 0 ] 2>/dev/null; then
                 echo "::error::Container restarted ${RESTART} times — still crashing"
                 exit 1
               fi
             fi
+
+            # Ensure daily policy keys exist (do not overwrite secrets)
+            upsert_env() {
+              key="$1"; val="$2"
+              if grep -q "^${key}=" .env 2>/dev/null; then
+                sed -i "s|^${key}=.*|${key}=${val}|" .env
+              else
+                printf '\n%s=%s\n' "$key" "$val" >> .env
+              fi
+            }
+            upsert_env CRON_SLOTS_PER_DAY 4
+            upsert_env DAILY_LIMIT_TELEGRAM 4
+            upsert_env DAILY_LIMIT_LINKEDIN 4
+            upsert_env DAILY_LIMIT_FACEBOOK 4
+            upsert_env DAILY_LIMIT_INSTAGRAM 4
+            upsert_env DAILY_LIMIT_THREADS 4
+            upsert_env DAILY_LIMIT_X 4
+            upsert_env DAILY_LIMIT_BLOGGER 4
+            upsert_env THREADS_MAX_PARTS 6
+            upsert_env DRY_RUN false
+            # Keep blogger in platforms if google client already configured
+            if grep -q '^GOOGLE_CLIENT_ID=.\+' .env 2>/dev/null; then
+              if grep -q '^ENABLED_PLATFORMS=' .env; then
+                if ! grep -q 'blogger' .env; then
+                  sed -i 's/^ENABLED_PLATFORMS=\(.*\)/ENABLED_PLATFORMS=\1,blogger/' .env
+                  sed -i 's/,,/,/g; s/,$//' .env
+                fi
+              fi
+            fi
+            mkdir -p data/brand data/tokens data/images
+            chown -R 10001:10001 data 2>/dev/null || true
+            # Recreate so env changes apply
+            docker compose up -d --force-recreate
+            sleep 8
 
             # live probe: dotenv inside image
             echo "=== probe dotenv in image ==="
