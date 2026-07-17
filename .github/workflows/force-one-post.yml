@@ -104,8 +104,11 @@ jobs:
             git fetch origin main 2>/dev/null || true
             git reset --hard origin/main 2>/dev/null || true
 
-            docker compose up -d --build
-            sleep 12
+            # Avoid name conflict with orphan/old container
+            docker compose down || true
+            docker rm -f istam-ai-pipeline 2>/dev/null || true
+            docker compose up -d --build --force-recreate
+            sleep 15
             docker compose ps
 
             echo "=== face check inside container ==="
