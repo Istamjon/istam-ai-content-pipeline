@@ -88,8 +88,14 @@ export const bloggerProvider: OAuthProvider = {
       );
     }
 
-    // Resolve first blog id
+    // Resolve blog id: env → URL match → first blog
     let blogId = process.env.BLOGGER_BLOG_ID || "";
+    const preferUrl = (
+      process.env.BLOGGER_URL ||
+      "https://istamjon.blogspot.com/"
+    )
+      .replace(/\/$/, "")
+      .toLowerCase();
     if (!blogId) {
       const blogsRes = await fetch(
         "https://www.googleapis.com/blogger/v3/users/self/blogs",
@@ -97,11 +103,20 @@ export const bloggerProvider: OAuthProvider = {
       );
       if (blogsRes.ok) {
         const blogs = (await blogsRes.json()) as {
-          items?: Array<{ id: string; name: string }>;
+          items?: Array<{ id: string; name: string; url?: string }>;
         };
-        if (blogs.items?.length) {
-          blogId = blogs.items[0].id;
-          console.log("[blogger] Using blog:", blogs.items[0].name, blogId);
+        const items = blogs.items || [];
+        const matched = items.find((b) =>
+          (b.url || "").replace(/\/$/, "").toLowerCase().includes(
+            preferUrl.replace(/^https?:\/\//, "").replace(/\/$/, ""),
+          ),
+        );
+        const pick = matched || items[0];
+        if (pick) {
+          blogId = pick.id;
+          console.log(
+            `[blogger] Using blog: ${pick.name} id=${blogId} url=${pick.url || "?"}`,
+          );
         }
       }
     }
