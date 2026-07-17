@@ -36,7 +36,16 @@ async function logAiConfig(): Promise<void> {
       `poll_daily=${usage.used}/${usage.limit}`,
   );
   console.log(
-    `[AI] IMAGE waterfall: Nano Banana → Pollinations ${env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2"} → Cloudflare (${cfSlots.length} acct) → AI Horde`,
+    `[AI] IMAGE waterfall: Nano Banana → Skywork → Pollinations ${env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2"} → Cloudflare (${cfSlots.length} acct) → AI Horde` +
+      ` | skywork=${
+        [
+          env.SKYWORK_API_KEY,
+          env.SKYWORK_API_KEY_2,
+          env.SKYWORK_API_KEY_3,
+          env.SKYWORK_API_KEY_4,
+          env.SKYWORK_API_KEY_5,
+        ].filter((k) => k?.trim()).length || "off"
+      } key(s)`,
   );
   console.log(
     `[AI] CF model=${env.CLOUDFLARE_IMAGE_MODEL} quality=${env.IMAGE_QUALITY} ` +

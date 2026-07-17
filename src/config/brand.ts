@@ -222,28 +222,46 @@ export const brand = {
 
   /**
    * Visual system — config/imagePrompt.ts
-   * Presets: workflow | infrastructure | engineering
-   * Layout: dark gray→black gradient bg + ONE centered main idea. No office/room.
+   * Cover MUST include: person + heading text + brand logo + topic tech visual.
    */
   visualStyle: {
     style:
-      "Premium technical blueprint — one centered flowchart diagram on a dark grid canvas",
-    presets: ["workflow", "infrastructure", "engineering"] as const,
+      "Scroll-stopping personal-brand social cover — professional person + bold heading + IO logo + topic tech hologram",
+    presets: [
+      "workflow",
+      "infrastructure",
+      "engineering",
+      "agents",
+      "dataflow",
+    ] as const,
+    compositionHooks: [
+      "scale_drama",
+      "diagonal_energy",
+      "radial_burst",
+      "depth_tunnel",
+      "asymmetric_thirds",
+      "critical_path_glow",
+      "bridge_gap",
+      "orbital_constellation",
+    ] as const,
     principles: [
-      "Background: deep indigo-black engineering grid (#0A0A0C) with subtle gray gridlines",
-      "Center: exactly ONE main flowchart/schematic diagram (topic-driven)",
-      "No office, room, desk, furniture, people, or workplace interior",
-      "Academic paper figure quality, minimal vector line art, clean precise lines",
-      "Brand teal #036158 and electric cyan lines highlighting pathways",
-      "No written text inside diagram blocks, no logos, no watermarks, no generic cloud icons",
-      "Square 1:1 social crop-safe",
+      "MUST: one professional person (face visible, waist-up) as attention anchor",
+      "MUST: crisp on-image HEADING from post title (short, legible sans-serif)",
+      "MUST: brand logo — IO monogram in teal #036158 + IstamAI / Istam Obidov wordmark",
+      "Topic-true tech visual (diagram/hologram) supports the story behind the person",
+      "Thumb-stop: face + big title win the feed in 0.3s",
+      "Composition hooks rotate so posts do not look copy-paste",
+      "Background: dark premium tech void (#0A0A0C), not messy office clutter",
+      "Brand teal #036158 + cyan #5EEAD4 glows",
+      "No third-party logos, no gibberish text, no watermarks",
+      "Square 1:1 social crop-safe with ~8% margin",
     ],
     imagePromptFragment:
-      "one centered 2D vector technical blueprint schematic, dark engineering grid background, brand teal #036158, no office no room no people, no text no logos no watermark",
+      "scroll-stopping square cover with professional person, bold legible heading text, IO brand logo monogram teal #036158, topic tech hologram, dark cinematic backdrop, cyan accents",
   },
 
   imageStyle:
-    "one centered technical blueprint flowchart schematic, dark engineering grid bg, brand #036158, no office no room, no text no logos no watermark",
+    "social cover: person + heading + IO logo + topic system visual, dark tech void, brand #036158 + cyan, sharp text, no third-party logos",
 };
 
 export type Brand = typeof brand;

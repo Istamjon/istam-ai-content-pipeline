@@ -18,7 +18,7 @@ function ensureImagesDir(): void {
 
 /**
  * Generate post image:
- *   Nano Banana → Pollinations gpt-image-2 → Cloudflare → AI Horde.
+ *   Nano Banana → Skywork → Pollinations gpt-image-2 → Cloudflare → AI Horde.
  * On total failure → no imagePath → graph skips publish.
  */
 export async function generateImage(
@@ -43,7 +43,9 @@ export async function generateImage(
     const ext =
       provider === "horde"
         ? "webp"
-        : provider === "nanobanana" || provider === "pollinations"
+        : provider === "nanobanana" ||
+            provider === "skywork" ||
+            provider === "pollinations"
           ? "png"
           : "jpg";
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;

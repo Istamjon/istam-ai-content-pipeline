@@ -10,9 +10,10 @@ function normalizeImageTempHours(hours: number): 1 | 12 | 24 | 72 {
 /**
  * AI split (project policy):
  * - TEXT  → Gemini Free (primary) → Pollinations fallback
- * - IMAGE → Nano Banana → Pollinations gpt-image-2 → Cloudflare FLUX → AI Horde
+ * - IMAGE → Nano Banana → Skywork → Pollinations gpt-image-2 → Cloudflare FLUX → AI Horde
  *
  * Gemini: https://aistudio.google.com → API key
+ * Skywork: https://skywork.ai → API key (image credits)
  * Pollinations: https://enter.pollinations.ai
  * Cloudflare: Workers AI REST
  */
@@ -55,6 +56,36 @@ export const env = {
     0,
     parseInt(process.env.DAILY_NANOBANANA_LIMIT || "3", 10) || 3,
   ),
+  /**
+   * Skywork Image API (waterfall #2 after Nano Banana).
+   * Multi-key rotation like Nano Banana: KEY → KEY_2… on credits/429.
+   * Also accepts comma list: SKYWORK_API_KEYS=k1,k2,k3
+   * Keys: https://skywork.ai/?openApiKeySetting=1
+   */
+  SKYWORK_API_KEY: process.env.SKYWORK_API_KEY || "",
+  SKYWORK_API_KEY_2: process.env.SKYWORK_API_KEY_2 || "",
+  SKYWORK_API_KEY_3: process.env.SKYWORK_API_KEY_3 || "",
+  SKYWORK_API_KEY_4: process.env.SKYWORK_API_KEY_4 || "",
+  SKYWORK_API_KEY_5: process.env.SKYWORK_API_KEY_5 || "",
+  SKYWORK_GATEWAY_URL: (
+    process.env.SKYWORK_GATEWAY_URL ||
+    "https://api-tools.skywork.ai/theme-gateway"
+  ).replace(/\/$/, ""),
+  /**
+   * Soft daily Skywork images PER KEY (UTC).
+   * Total capacity ≈ this × number of configured keys.
+   * 0 = unlimited soft cap per key.
+   */
+  DAILY_SKYWORK_LIMIT: Math.max(
+    0,
+    parseInt(process.env.DAILY_SKYWORK_LIMIT || "4", 10) || 4,
+  ),
+  /** 1K | 2K | 4K — 1K ≈ social 1024, faster & cheaper credits */
+  SKYWORK_RESOLUTION: (process.env.SKYWORK_RESOLUTION || "1K").toUpperCase(),
+  /** e.g. 1:1 (default social cover). "auto" = omit */
+  SKYWORK_ASPECT_RATIO: process.env.SKYWORK_ASPECT_RATIO || "1:1",
+  /** Optional source_platform field for Skywork gateway */
+  SKYWORK_SOURCE_PLATFORM: process.env.SKYWORK_SOURCE_PLATFORM || "",
   /** Secret key sk_… from enter.pollinations.ai (text + image). */
   POLLINATIONS_API_KEY: process.env.POLLINATIONS_API_KEY || "",
   /**
@@ -86,7 +117,7 @@ export const env = {
     0,
     parseInt(process.env.DAILY_POLLINATIONS_IMAGE_LIMIT || "8", 10) || 8,
   ),
-  /** Image waterfall: nanobanana → pollinations → cloudflare → horde. */
+  /** Image waterfall: nanobanana → skywork → pollinations → cloudflare → horde. */
   IMAGE_PROVIDER: (process.env.IMAGE_PROVIDER || "waterfall") as string,
   /** Cloudflare Account ID #1 (Workers AI REST). */
   CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || "",

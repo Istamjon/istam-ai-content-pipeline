@@ -1,9 +1,10 @@
 /**
  * Image generation waterfall:
- *   1) Nano Banana (Gemini image — best text-in-image when quota allows)
- *   2) Pollinations gpt-image-2 (when Nano fails / no quota)
- *   3) Cloudflare multi-account free FLUX
- *   4) AI Horde
+ *   1) Nano Banana (Gemini image — best when quota allows)
+ *   2) Skywork Image API (account credits / daily benefit)
+ *   3) Pollinations gpt-image-2
+ *   4) Cloudflare multi-account free FLUX
+ *   5) AI Horde
  */
 import { env } from "../config/env.js";
 import {
@@ -29,10 +30,17 @@ import {
   canUsePollinationsImageToday,
   logPollinationsImageBudget,
 } from "./pollinations.js";
+import {
+  skyworkImage,
+  isSkyworkConfigured,
+  canUseSkyworkToday,
+  logSkyworkBudget,
+} from "./skyworkImage.js";
 import { getProviderImageBudget } from "../db.js";
 
 export type ImageProviderUsed =
   | "nanobanana"
+  | "skywork"
   | "pollinations"
   | "cloudflare"
   | "horde";
@@ -51,7 +59,7 @@ export async function generateImageBuffer(
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`nanobanana: ${msg}`);
       console.warn(
-        "[imagePipeline] Nano Banana failed → Pollinations gpt-image-2:",
+        "[imagePipeline] Nano Banana failed → Skywork:",
         msg.slice(0, 200),
       );
     }
@@ -59,11 +67,38 @@ export async function generateImageBuffer(
     const b = canUseNanoBananaToday();
     errors.push(`nanobanana: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] Nano Banana daily budget ${b.used}/${b.limit} → Pollinations gpt-image-2`,
+      `[imagePipeline] Nano Banana daily budget ${b.used}/${b.limit} → Skywork`,
+    );
+  } else {
+    console.warn("[imagePipeline] Nano Banana not configured → Skywork");
+  }
+
+  // 2) Skywork (after Nano Banana fails / no quota)
+  if (isSkyworkConfigured() && canUseSkyworkToday().ok) {
+    try {
+      const buffer = await skyworkImage(prompt);
+      return { buffer, provider: "skywork" };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`skywork: ${msg}`);
+      console.warn(
+        "[imagePipeline] Skywork failed → Pollinations gpt-image-2:",
+        msg.slice(0, 200),
+      );
+    }
+  } else if (isSkyworkConfigured()) {
+    const b = canUseSkyworkToday();
+    errors.push(`skywork: budget ${b.used}/${b.limit}`);
+    console.warn(
+      `[imagePipeline] Skywork daily budget ${b.used}/${b.limit} → Pollinations`,
+    );
+  } else {
+    console.warn(
+      "[imagePipeline] Skywork not configured (SKYWORK_API_KEY) → Pollinations",
     );
   }
 
-  // 2) Pollinations gpt-image-2 (right after Nano Banana)
+  // 3) Pollinations gpt-image-2
   if (isPollinationsImageConfigured() && canUsePollinationsImageToday().ok) {
     try {
       const buffer = await pollinationsImage(prompt);
@@ -84,7 +119,7 @@ export async function generateImageBuffer(
     );
   }
 
-  // 3) Cloudflare (cf1 → cf2 → cf3)
+  // 4) Cloudflare (cf1 → cf2 → cf3)
   if (isCloudflareImageConfigured() && canGenerateImageToday().ok) {
     try {
       const buffer = await cloudflareImage(prompt);
@@ -105,7 +140,7 @@ export async function generateImageBuffer(
     );
   }
 
-  // 4) AI Horde
+  // 5) AI Horde
   if (isHordeConfigured() && canUseHordeToday().ok) {
     try {
       const buffer = await hordeImage(prompt);
@@ -127,6 +162,7 @@ export async function generateImageBuffer(
 
 export function logAllImageBudgets(): void {
   logNanoBananaBudgets();
+  logSkyworkBudget();
   logPollinationsImageBudget();
   logImageBudget();
   if (isHordeConfigured()) {

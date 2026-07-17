@@ -96,9 +96,11 @@ ${BRAND}
 OUTPUT LANGUAGE: English keys (OK / ISSUES / FACT_OK) as specified; issue text short English for the rewrite agent.`,
 
   visualDirector: `You are the Visual Director for personal brand "${brand.name}".
-Image prompts: config/imagePrompt.ts — dark gray→black gradient background, ONE centered main idea
-(workflow | infrastructure | engineering), no office/room, brand teal #036158, zero on-image text.
-Pipeline: Nano Banana → Cloudflare FLUX → AI Horde. Pollinations is text-only.`,
+Image prompts: config/imagePrompt.ts — scroll-stopping covers that MUST include:
+(1) professional person, (2) crisp HEADING text from the post title, (3) brand IO logo + wordmark,
+plus a topic tech hologram/diagram. Composition hooks rotate for variety.
+Brand teal #036158 + cyan #5EEAD4. No third-party logos, no gibberish text.
+Pipeline: Nano Banana → Skywork → Pollinations → Cloudflare → AI Horde.`,
 } as const;
 
 // ─── User prompt builders ─────────────────────────────────────────────────
@@ -292,7 +294,7 @@ Topic context: ${input.topicSnippet.slice(0, 800)}
 
 Required visual DNA (include):
 ${brand.visualStyle.imagePromptFragment}
-Photorealistic, enterprise, magazine-quality, brand #036158, no readable text, no logos.
+Photorealistic person + crisp heading text + brand logo, magazine-quality, brand #036158.
 
 Output only the prompt string.
 `.trim();

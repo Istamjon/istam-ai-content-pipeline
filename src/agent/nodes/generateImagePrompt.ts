@@ -2,12 +2,14 @@ import { StateAnnotation, GraphUpdate } from "../state.js";
 import {
   buildPremiumImagePrompt,
   type ImageVisualPreset,
+  type ImageCompositionHook,
 } from "../../config/imagePrompt.js";
 
 /**
- * Builds premium editorial hero image prompt (story-driven production scenes).
+ * Builds premium scroll-stopping social-cover image prompt.
+ * Includes: professional PERSON + HEADING text + brand LOGO + topic tech visual.
  * Template in config/imagePrompt.ts — topic inject only (no LLM).
- * Presets: workflow | infrastructure | engineering (legacy: graph|abstract|systems).
+ * Env: IMAGE_PRESET=…  IMAGE_COMPOSITION=…
  */
 export async function generateImagePrompt(
   state: typeof StateAnnotation.State,
@@ -28,16 +30,25 @@ export async function generateImagePrompt(
         .trim()
         .slice(0, 320) || current.rewritten?.slice(0, 240);
 
-    // Optional: IMAGE_PRESET=workflow|infrastructure|engineering
-    const force = process.env.IMAGE_PRESET as ImageVisualPreset | undefined;
-    const { prompt: imagePrompt, preset } = buildPremiumImagePrompt(
-      current.title,
-      topicHint,
-      { preset: force },
-    );
+    const forcePreset = process.env.IMAGE_PRESET as
+      | ImageVisualPreset
+      | undefined;
+    const forceComposition = process.env.IMAGE_COMPOSITION as
+      | ImageCompositionHook
+      | undefined;
+
+    const {
+      prompt: imagePrompt,
+      preset,
+      composition,
+      heading,
+    } = buildPremiumImagePrompt(current.title, topicHint, {
+      preset: forcePreset,
+      composition: forceComposition,
+    });
 
     console.log(
-      `[generateImagePrompt] preset=${preset} len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
+      `[generateImagePrompt] preset=${preset} composition=${composition} heading="${heading.slice(0, 48)}" len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
     );
 
     return {

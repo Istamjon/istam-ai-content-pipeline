@@ -331,7 +331,7 @@ export function getPollinationsUsage(): {
       ? `gemini:${env.GEMINI_MODEL}`
       : resolveTextModel(),
     textProvider: geminiOn ? "gemini→pollinations" : "pollinations",
-    imageProvider: "nanobanana→pollinations→cloudflare→horde",
+    imageProvider: "nanobanana→skywork→pollinations→cloudflare→horde",
     imageModel: env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2",
   };
 }

@@ -8,7 +8,7 @@ The pipeline discovers AI/engineering articles, rewrites them in professional **
 |--------|--------|
 | Orchestration | [LangGraph.js](https://github.com/langchain-ai/langgraphjs) |
 | Text | **Google Gemini Free** → Pollinations fallback |
-| Images | **Nano Banana** (Gemini image) → **Cloudflare Workers AI** (3 accounts) → **AI Horde** |
+| Images | **Nano Banana** → **Skywork** → **Pollinations** → **Cloudflare Workers AI** → **AI Horde** |
 | Storage | SQLite (`better-sqlite3`), canonical JSON, local tokens |
 | Runtime | Node.js (ESM), TypeScript |
 
@@ -59,7 +59,7 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 | **Tone** | Professional, practical, no hype |
 | **Never publish** | Crypto, rumors, pure ads, off-topic |
 | **Color** | `#036158` (teal) |
-| **Image presets** | `workflow` · `infrastructure` · `engineering` (editorial photoreal, not abstract) |
+| **Image presets** | `workflow` · `infrastructure` · `engineering` · `agents` · `dataflow` (premium social cover diagrams) |
 
 ### Content sources (primary)
 
@@ -110,18 +110,22 @@ ENABLED_PLATFORMS=telegram,linkedin,facebook,instagram,threads
 ## Image waterfall
 
 ```
-Nano Banana (Gemini image)  →  Cloudflare FLUX.2 (cf1→cf2→cf3)  →  AI Horde
+Nano Banana (Gemini) → Skywork Image API → Pollinations gpt-image-2 → Cloudflare FLUX.2 → AI Horde
 ```
 
 | Provider | Role |
 |----------|------|
-| **Nano Banana** | Best text-in-image when Free/Paid quota allows |
+| **Nano Banana** | Primary Gemini image when Free/Paid quota allows |
+| **Skywork** | Account credits / daily benefit after Nano fails |
+| **Pollinations** | gpt-image-2 after Skywork fails |
 | **Cloudflare** | Free neurons ~10k/day **per account** (multi-account rotation) |
 | **AI Horde** | Community free GPU fallback (queue/slow) |
 
 Soft caps (env):
 
 - `DAILY_NANOBANANA_LIMIT` (default 3 **per key**; multi-key rotation)
+- `SKYWORK_API_KEY` / `_2`…`_5` (or `SKYWORK_API_KEYS`) + `DAILY_SKYWORK_LIMIT` **per key** (default 4; credit fail → next key)
+- `DAILY_POLLINATIONS_IMAGE_LIMIT`
 - `DAILY_IMAGE_TOTAL` (all CF accounts combined)
 - `DAILY_IMAGE_LIMIT` (per CF account)
 - `DAILY_HORDE_LIMIT`

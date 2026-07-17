@@ -257,6 +257,8 @@ export function isImageGenerationProvider(provider: string): boolean {
   return (
     provider === "horde" ||
     provider === "pollinations" ||
+    provider === "skywork" ||
+    provider.startsWith("skywork") ||
     provider.startsWith("cloudflare") ||
     provider.startsWith("nanobanana")
   );
