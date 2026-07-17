@@ -1,0 +1,129 @@
+# On-demand: set Skywork multi-key env on VDS and recreate container.
+# Prefer repo secrets SKYWORK_API_KEY…; optional workflow inputs override for one-shot.
+#
+#   gh workflow run set-skywork-keys.yml
+
+name: Set Skywork Keys
+
+on:
+  workflow_dispatch:
+    inputs:
+      key1:
+        description: "SKYWORK_API_KEY (optional if secret set)"
+        required: false
+        default: ""
+      key2:
+        description: "SKYWORK_API_KEY_2"
+        required: false
+        default: ""
+      key3:
+        description: "SKYWORK_API_KEY_3"
+        required: false
+        default: ""
+      key4:
+        description: "SKYWORK_API_KEY_4"
+        required: false
+        default: ""
+      daily_limit:
+        description: "DAILY_SKYWORK_LIMIT per key"
+        required: false
+        default: "4"
+
+jobs:
+  set-keys:
+    name: Set Skywork keys on VDS
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check secrets
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_USER: ${{ secrets.VDS_USER }}
+          VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+        run: |
+          [ -n "$VDS_HOST" ] && [ -n "$VDS_USER" ] && [ -n "$VDS_SSH_KEY" ] || {
+            echo "::error::Missing VDS_* secrets"
+            exit 1
+          }
+
+      - name: Update .env Skywork keys and restart
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          SW_KEY1: ${{ github.event.inputs.key1 || secrets.SKYWORK_API_KEY }}
+          SW_KEY2: ${{ github.event.inputs.key2 || secrets.SKYWORK_API_KEY_2 }}
+          SW_KEY3: ${{ github.event.inputs.key3 || secrets.SKYWORK_API_KEY_3 }}
+          SW_KEY4: ${{ github.event.inputs.key4 || secrets.SKYWORK_API_KEY_4 }}
+          SW_LIMIT: ${{ github.event.inputs.daily_limit || '4' }}
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 10m
+          script_stop: false
+          envs: SW_KEY1,SW_KEY2,SW_KEY3,SW_KEY4,SW_LIMIT,REMOTE_APP_DIR
+          script: |
+            set -e
+            APP_DIR="${REMOTE_APP_DIR:-}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              if [ -f "$HOME/istam-ai-content-pipeline/.env" ]; then APP_DIR="$HOME/istam-ai-content-pipeline"; fi
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              if [ -f /root/istam-ai-content-pipeline/.env ]; then APP_DIR=/root/istam-ai-content-pipeline; fi
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              if [ -f /opt/istam-ai-content-pipeline/.env ]; then APP_DIR=/opt/istam-ai-content-pipeline; fi
+            fi
+            echo "APP_DIR=$APP_DIR"
+            test -n "$APP_DIR" && test -d "$APP_DIR"
+            cd "$APP_DIR"
+            test -f .env
+
+            upsert() {
+              key="$1"
+              val="$2"
+              if [ -z "$val" ]; then
+                echo "skip empty $key"
+                return 0
+              fi
+              if grep -q "^${key}=" .env; then
+                sed -i "s|^${key}=.*|${key}=${val}|" .env
+              else
+                printf '\n%s=%s\n' "$key" "$val" >> .env
+              fi
+              echo "set $key=…$(printf '%s' "$val" | tail -c 6)"
+            }
+
+            upsert SKYWORK_API_KEY "$SW_KEY1"
+            upsert SKYWORK_API_KEY_2 "$SW_KEY2"
+            upsert SKYWORK_API_KEY_3 "$SW_KEY3"
+            upsert SKYWORK_API_KEY_4 "$SW_KEY4"
+            upsert DAILY_SKYWORK_LIMIT "${SW_LIMIT:-4}"
+            upsert SKYWORK_RESOLUTION "1K"
+            upsert SKYWORK_ASPECT_RATIO "1:1"
+            if ! grep -q '^SKYWORK_GATEWAY_URL=' .env; then
+              printf 'SKYWORK_GATEWAY_URL=https://api-tools.skywork.ai/theme-gateway\n' >> .env
+            fi
+
+            # Ensure schedule posts on time
+            if grep -q '^DRY_RUN=' .env; then
+              sed -i 's|^DRY_RUN=.*|DRY_RUN=false|' .env
+            else
+              printf 'DRY_RUN=false\n' >> .env
+            fi
+            if grep -q '^CRON_RUN_ON_START=' .env; then
+              sed -i 's|^CRON_RUN_ON_START=.*|CRON_RUN_ON_START=true|' .env
+            else
+              printf 'CRON_RUN_ON_START=true\n' >> .env
+            fi
+
+            echo "=== Skywork keys present ==="
+            grep -E '^SKYWORK_API_KEY' .env | sed 's/=.*/=***/' || true
+            grep -E '^DAILY_SKYWORK_LIMIT=|^DRY_RUN=|^CRON_RUN_ON_START=' .env || true
+
+            docker compose up -d --force-recreate
+            sleep 12
+            docker compose ps
+            docker compose logs --tail=50
+            echo "=== DONE ==="

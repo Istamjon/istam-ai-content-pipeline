@@ -45,12 +45,18 @@ jobs:
           import { buildPremiumImagePrompt } from './dist/config/imagePrompt.js';
           const r = buildPremiumImagePrompt('Agentic RAG', 'GPU retrieval', { preset: 'workflow' });
           const p = r.prompt.toLowerCase();
-          if (!p.includes('#036158') || !p.includes('no office') || !p.includes('grid')) {
-            console.error('prompt missing layout/brand rules', r.prompt.slice(0, 200));
+          // Cover must include brand color, person, heading, logo, and composition
+          if (!p.includes('#036158') || !p.includes('person') || !p.includes('heading') || !p.includes('logo')) {
+            console.error('prompt missing person/heading/logo/brand', r.prompt.slice(0, 240));
+            process.exit(1);
+          }
+          if (!r.heading || r.heading.length < 3) {
+            console.error('missing cover heading', r);
             process.exit(1);
           }
           if (r.preset !== 'workflow') process.exit(1);
-          console.log('OK preset=', r.preset, 'len=', r.prompt.length);
+          if (!r.composition) process.exit(1);
+          console.log('OK preset=', r.preset, 'composition=', r.composition, 'heading=', r.heading, 'len=', r.prompt.length);
           "
 
       - name: Smoke — brand-fit + sources
