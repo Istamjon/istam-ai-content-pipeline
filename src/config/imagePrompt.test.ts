@@ -6,7 +6,6 @@ import {
   topicToCoverNarrative,
   titleToCoverHeading,
   COMPOSITION_HOOKS,
-  brandCoverMarks,
 } from "./imagePrompt.js";
 
 describe("imagePrompt", () => {
@@ -52,46 +51,42 @@ describe("imagePrompt", () => {
     expect(COMPOSITION_HOOKS).toContain(h);
   });
 
-  it("topicToCoverNarrative requires person heading logo", () => {
+  it("topicToCoverNarrative requires person heading no logo", () => {
     const n = topicToCoverNarrative(
       "Tail Control for Agentic Workflows",
       "Tail Control for Agentic Workflows",
       "latency, multi-agent",
       "critical_path_glow",
+      true,
     );
     expect(n).toMatch(/heading must read exactly/i);
-    expect(n).toMatch(/professional person|brand logo/i);
+    expect(n).toMatch(/reference photo|identity/i);
+    expect(n).toMatch(/NO brand logo/i);
   });
 
-  it("buildPremiumImagePrompt requires person, heading text, and logo", () => {
+  it("buildPremiumImagePrompt: person, heading, full-bleed, no logo", () => {
     const { prompt, preset, composition, heading } = buildPremiumImagePrompt(
       "Tail Control for Agentic Workflows",
       "latency variance in multi-agent systems",
-      { preset: "workflow", composition: "critical_path_glow" },
+      {
+        preset: "workflow",
+        composition: "critical_path_glow",
+        faceRef: true,
+      },
     );
     expect(preset).toBe("workflow");
     expect(composition).toBe("critical_path_glow");
     expect(heading.length).toBeGreaterThan(5);
     expect(prompt.length).toBeGreaterThan(500);
 
-    // Person
-    expect(prompt).toMatch(/MUST HAVE #1 — PERSON|professional adult|PERSON/i);
-    expect(prompt).toMatch(/face|portrait|waist-up/i);
-
-    // Heading with exact quoted text
+    expect(prompt).toMatch(/FULL-BLEED|full-bleed|edge-to-edge/i);
+    expect(prompt).toMatch(/picture frame|phone mockup/i);
+    expect(prompt).toMatch(/MUST HAVE #1 — PERSON|IDENTITY|PERSON/i);
+    expect(prompt).toMatch(/reference photo|identity/i);
     expect(prompt).toMatch(/MUST HAVE #2 — HEADING|HEADING TEXT/i);
     expect(prompt).toContain(`"${heading}"`);
-    expect(prompt).toMatch(/sans-serif|legible|title/i);
-
-    // Logo / brand
-    expect(prompt).toMatch(/MUST HAVE #3 — LOGO|monogram/i);
-    expect(prompt).toContain(brandCoverMarks.monogram);
-    expect(prompt).toMatch(/Istam|IO/);
-
+    expect(prompt).toMatch(/MUST NOT — LOGO|no IO|No brand badge|no logo/i);
+    expect(prompt).not.toMatch(/MUST HAVE #3 — LOGO/);
     expect(prompt).toMatch(/#036158/);
-    expect(prompt).toMatch(/scroll-stopping|premium/i);
-    // Old ban on people/text/logo should be gone
-    expect(prompt).not.toMatch(/Zero text, zero letters/i);
-    expect(prompt).not.toMatch(/HARD NO:.*people/i);
   });
 });

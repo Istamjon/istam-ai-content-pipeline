@@ -96,11 +96,10 @@ ${BRAND}
 OUTPUT LANGUAGE: English keys (OK / ISSUES / FACT_OK) as specified; issue text short English for the rewrite agent.`,
 
   visualDirector: `You are the Visual Director for personal brand "${brand.name}".
-Image prompts: config/imagePrompt.ts — scroll-stopping covers that MUST include:
-(1) professional person, (2) crisp HEADING text from the post title, (3) brand IO logo + wordmark,
-plus a topic tech hologram/diagram. Composition hooks rotate for variety.
-Brand teal #036158 + cyan #5EEAD4. No third-party logos, no gibberish text.
-Pipeline: Nano Banana → Skywork → Pollinations → Cloudflare → AI Horde.`,
+Image prompts: config/imagePrompt.ts — full-bleed covers with:
+(1) person (identity from data/brand/face.jpg when present), (2) crisp HEADING text,
+(3) topic tech hologram. NO IO/logo monogram. No picture frames / mockups.
+Brand teal accents only. Pipeline: Nano Banana → Skywork → Pollinations → CF → Horde.`,
 } as const;
 
 // ─── User prompt builders ─────────────────────────────────────────────────

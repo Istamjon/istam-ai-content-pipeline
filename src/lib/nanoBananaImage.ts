@@ -203,8 +203,19 @@ async function generateOnce(
   apiKey: string,
   model: string,
   prompt: string,
+  face?: { mimeType: string; base64: string } | null,
 ): Promise<Buffer> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+  const parts: Array<Record<string, unknown>> = [{ text: prompt }];
+  // Reference face first so identity is clear for image models
+  if (face?.base64) {
+    parts.unshift({
+      inlineData: {
+        mimeType: face.mimeType || "image/jpeg",
+        data: face.base64,
+      },
+    });
+  }
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -215,7 +226,7 @@ async function generateOnce(
       contents: [
         {
           role: "user",
-          parts: [{ text: prompt }],
+          parts,
         },
       ],
       generationConfig: {
@@ -242,11 +253,20 @@ async function generateOnce(
   return extractImageBuffer(json);
 }
 
+export type NanoBananaOptions = {
+  /** Brand face reference (identity-preserving cover). */
+  face?: { mimeType: string; base64: string; path?: string } | null;
+};
+
 /**
  * Generate image via Nano Banana (Gemini image models).
  * Rotates API keys on 429/quota; tries model fallbacks per key.
+ * Optional face reference → image+text multimodal generate.
  */
-export async function nanoBananaImage(prompt: string): Promise<Buffer> {
+export async function nanoBananaImage(
+  prompt: string,
+  options?: NanoBananaOptions,
+): Promise<Buffer> {
   const slots = getNanoBananaKeySlots();
   if (slots.length === 0) {
     throw new Error(
@@ -270,10 +290,12 @@ export async function nanoBananaImage(prompt: string): Promise<Buffer> {
     ...MODEL_FALLBACKS.filter((m) => m !== primary),
   ];
 
+  const face = options?.face;
   const safePrompt = prompt.trim().slice(0, 2500);
   const usable = slots.filter(canUseKeySlot);
   console.log(
-    `[nanobanana] generate keys=${usable.map((s) => s.label).join("→") || "none"} models=[${models.slice(0, 3).join(",")}] promptLen=${safePrompt.length} budget=${budget.used}/${budget.limit}`,
+    `[nanobanana] generate keys=${usable.map((s) => s.label).join("→") || "none"} models=[${models.slice(0, 3).join(",")}] promptLen=${safePrompt.length} budget=${budget.used}/${budget.limit}` +
+      (face ? ` faceRef=yes` : ""),
   );
 
   if (usable.length === 0) {
@@ -289,7 +311,7 @@ export async function nanoBananaImage(prompt: string): Promise<Buffer> {
 
     for (const model of models) {
       try {
-        const buf = await generateOnce(slot.apiKey, model, safePrompt);
+        const buf = await generateOnce(slot.apiKey, model, safePrompt, face);
         const used = incrementProviderImageUsage(slot.providerKey, 1);
         console.log(
           `[nanobanana] OK ${slot.label} model=${model} bytes=${buf.length} keyDaily=${used}/${env.DAILY_NANOBANANA_LIMIT}`,

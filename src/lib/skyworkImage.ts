@@ -304,22 +304,53 @@ function isRotatableFailure(msg: string): boolean {
   );
 }
 
+export type SkyworkImageOptions = {
+  face?: { mimeType: string; base64: string; path?: string } | null;
+};
+
 async function generateOnceWithKey(
   slot: SkyworkKeySlot,
   prompt: string,
   aspect: string | undefined,
   resolution: "1K" | "2K" | "4K",
+  face?: { mimeType: string; base64: string } | null,
 ): Promise<Buffer> {
-  const url = `${gatewayBase()}/api/sse/image/create`;
-  const body: Record<string, unknown> = {
-    title: prompt.slice(0, 60),
-    content: prompt,
-    style: {} as Record<string, string>,
-    options: { resolution },
-    source_platform: env.SKYWORK_SOURCE_PLATFORM || "",
-  };
-  if (aspect) {
-    (body.style as Record<string, string>).aspect_ratio = aspect;
+  const base = gatewayBase();
+  let url: string;
+  let body: Record<string, unknown>;
+
+  if (face?.base64) {
+    // Image edit / identity preserve via source_images
+    url = `${base}/api/sse/image/update`;
+    const operation: Record<string, unknown> = {
+      action: "edit",
+      prompt,
+      source_images: [
+        {
+          base64: face.base64,
+          mime_type: face.mimeType || "image/jpeg",
+        },
+      ],
+      resolution,
+    };
+    if (aspect) operation.aspect_ratio = aspect;
+    body = {
+      file_id: "from-local",
+      operations: [operation],
+      source_platform: env.SKYWORK_SOURCE_PLATFORM || "",
+    };
+  } else {
+    url = `${base}/api/sse/image/create`;
+    body = {
+      title: prompt.slice(0, 60),
+      content: prompt,
+      style: {} as Record<string, string>,
+      options: { resolution },
+      source_platform: env.SKYWORK_SOURCE_PLATFORM || "",
+    };
+    if (aspect) {
+      (body.style as Record<string, string>).aspect_ratio = aspect;
+    }
   }
 
   const res = await fetch(url, {
@@ -356,8 +387,12 @@ async function generateOnceWithKey(
 /**
  * Generate image via Skywork Image API with multi-key rotation.
  * On credits/429/auth → next key.
+ * Optional face → edit API with source_images (identity preserve).
  */
-export async function skyworkImage(prompt: string): Promise<Buffer> {
+export async function skyworkImage(
+  prompt: string,
+  options?: SkyworkImageOptions,
+): Promise<Buffer> {
   const slots = getSkyworkKeySlots();
   if (slots.length === 0) {
     throw new Error(
@@ -377,12 +412,14 @@ export async function skyworkImage(prompt: string): Promise<Buffer> {
 
   const aspect = resolveAspectRatio();
   const resolution = resolveResolution();
+  const face = options?.face;
   const usable = slots.filter(canUseKeySlot);
 
   console.log(
     `[skywork] generate keys=${usable.map((s) => s.label).join("→") || "none"} ` +
       `resolution=${resolution} aspect=${aspect || "auto"} promptLen=${safePrompt.length} ` +
-      `budget=${budget.used}/${budget.limit || "∞"}`,
+      `budget=${budget.used}/${budget.limit || "∞"}` +
+      (face ? " faceRef=yes(edit)" : ""),
   );
 
   if (usable.length === 0) {
@@ -400,6 +437,7 @@ export async function skyworkImage(prompt: string): Promise<Buffer> {
         safePrompt,
         aspect,
         resolution,
+        face,
       );
       const used = incrementProviderImageUsage(slot.providerKey, 1);
       console.log(

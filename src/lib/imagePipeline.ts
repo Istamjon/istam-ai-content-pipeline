@@ -1,7 +1,7 @@
 /**
  * Image generation waterfall:
- *   1) Nano Banana (Gemini image — best when quota allows)
- *   2) Skywork Image API (account credits / daily benefit)
+ *   1) Nano Banana (Gemini image — best when quota allows; face ref supported)
+ *   2) Skywork Image API (face ref → edit API)
  *   3) Pollinations gpt-image-2
  *   4) Cloudflare multi-account free FLUX
  *   5) AI Horde
@@ -36,6 +36,7 @@ import {
   canUseSkyworkToday,
   logSkyworkBudget,
 } from "./skyworkImage.js";
+import { loadBrandFace, logBrandFace } from "./brandFace.js";
 import { getProviderImageBudget } from "../db.js";
 
 export type ImageProviderUsed =
@@ -49,11 +50,17 @@ export async function generateImageBuffer(
   prompt: string,
 ): Promise<{ buffer: Buffer; provider: ImageProviderUsed }> {
   const errors: string[] = [];
+  const face = loadBrandFace();
+  if (face) {
+    console.log(
+      `[imagePipeline] brand face ref: ${face.path} (${face.buffer.length} bytes) — Nano/Skywork identity`,
+    );
+  }
 
-  // 1) Nano Banana (Gemini native image)
+  // 1) Nano Banana (Gemini native image + optional face)
   if (isNanoBananaConfigured() && canUseNanoBananaToday().ok) {
     try {
-      const buffer = await nanoBananaImage(prompt);
+      const buffer = await nanoBananaImage(prompt, { face });
       return { buffer, provider: "nanobanana" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -76,7 +83,7 @@ export async function generateImageBuffer(
   // 2) Skywork (after Nano Banana fails / no quota)
   if (isSkyworkConfigured() && canUseSkyworkToday().ok) {
     try {
-      const buffer = await skyworkImage(prompt);
+      const buffer = await skyworkImage(prompt, { face });
       return { buffer, provider: "skywork" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -98,7 +105,7 @@ export async function generateImageBuffer(
     );
   }
 
-  // 3) Pollinations gpt-image-2
+  // 3) Pollinations gpt-image-2 (no face ref API — prompt only)
   if (isPollinationsImageConfigured() && canUsePollinationsImageToday().ok) {
     try {
       const buffer = await pollinationsImage(prompt);
@@ -161,6 +168,7 @@ export async function generateImageBuffer(
 }
 
 export function logAllImageBudgets(): void {
+  logBrandFace();
   logNanoBananaBudgets();
   logSkyworkBudget();
   logPollinationsImageBudget();

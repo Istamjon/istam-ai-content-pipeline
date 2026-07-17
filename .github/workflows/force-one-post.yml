@@ -1,0 +1,128 @@
+# Force one pipeline run on VDS (with optional brand face from secret).
+# After deploy: set BRAND_FACE_B64 secret, then run this workflow.
+#
+#   gh secret set BRAND_FACE_B64 < face.b64
+#   gh workflow run force-one-post.yml
+
+name: Force One Post VDS
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-once:
+    name: One publish with brand face
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check secrets
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_USER: ${{ secrets.VDS_USER }}
+          VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+        run: |
+          [ -n "$VDS_HOST" ] && [ -n "$VDS_USER" ] && [ -n "$VDS_SSH_KEY" ] || {
+            echo "::error::Missing VDS_* secrets"
+            exit 1
+          }
+
+      - name: Upload face + set 4/day limits + run pipeline once
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+          FACE_B64: ${{ secrets.BRAND_FACE_B64 }}
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 40m
+          script_stop: false
+          envs: REMOTE_APP_DIR,FACE_B64
+          script: |
+            set -e
+            APP_DIR="${REMOTE_APP_DIR:-}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d "$HOME/istam-ai-content-pipeline" ] && APP_DIR="$HOME/istam-ai-content-pipeline"
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /root/istam-ai-content-pipeline ] && APP_DIR=/root/istam-ai-content-pipeline
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /opt/istam-ai-content-pipeline ] && APP_DIR=/opt/istam-ai-content-pipeline
+            fi
+            echo "APP_DIR=$APP_DIR"
+            test -n "$APP_DIR" && test -d "$APP_DIR"
+            cd "$APP_DIR"
+            test -f .env
+
+            upsert() {
+              key="$1"; val="$2"
+              if [ -z "$val" ]; then return 0; fi
+              if grep -q "^${key}=" .env; then
+                sed -i "s|^${key}=.*|${key}=${val}|" .env
+              else
+                printf '\n%s=%s\n' "$key" "$val" >> .env
+              fi
+            }
+
+            # 4 posts/day policy
+            upsert CRON_SLOTS_PER_DAY 4
+            upsert DAILY_LIMIT_TELEGRAM 4
+            upsert DAILY_LIMIT_LINKEDIN 4
+            upsert DAILY_LIMIT_FACEBOOK 4
+            upsert DAILY_LIMIT_INSTAGRAM 4
+            upsert DAILY_LIMIT_THREADS 4
+            upsert DAILY_LIMIT_X 4
+            upsert DRY_RUN false
+            # Do not auto multi-fire on every restart after this run
+            upsert CRON_RUN_ON_START false
+
+            mkdir -p data/brand data/images data/tokens
+            if [ -n "${FACE_B64:-}" ]; then
+              echo "Writing brand face from secret..."
+              printf '%s' "$FACE_B64" | base64 -d > data/brand/face.jpg
+              ls -la data/brand/face.jpg
+            else
+              echo "WARN: BRAND_FACE_B64 secret empty — using existing data/brand/face.jpg if any"
+              ls -la data/brand/ 2>/dev/null || true
+            fi
+            chown -R 10001:10001 data 2>/dev/null || true
+
+            docker compose up -d
+            sleep 8
+            docker compose ps
+
+            echo "=== face check inside container ==="
+            docker compose exec -T pipeline node --input-type=module -e "
+            import { loadBrandFace, logBrandFace } from './dist/lib/brandFace.js';
+            logBrandFace();
+            const f = loadBrandFace();
+            if (!f) { console.error('NO FACE'); process.exit(2); }
+            console.log('OK face bytes', f.buffer.length);
+            "
+
+            echo "=== FORCE ONE PIPELINE RUN ==="
+            docker compose exec -T pipeline node --input-type=module -e "
+            import 'dotenv/config';
+            import { graph, graphInvokeConfig } from './dist/agent/graph.js';
+            import { createEmptyState } from './dist/agent/state.js';
+            import { logAllImageBudgets } from './dist/lib/imagePipeline.js';
+            logAllImageBudgets();
+            console.log('invoke start', new Date().toISOString());
+            const r = await graph.invoke(createEmptyState(), graphInvokeConfig);
+            const pub = r.publishResults || [];
+            const ok = pub.filter(p => p.status === 'success').length;
+            console.log('=== PUBLISH RESULTS ===');
+            console.log(JSON.stringify(pub, null, 2));
+            console.log('successCount', ok);
+            console.log('title', r.current?.title);
+            console.log('image', r.current?.imagePath);
+            console.log('quality', r.quality);
+            console.log('errors', r.errors);
+            if (ok < 1) process.exit(3);
+            "
+
+            echo "=== recent logs ==="
+            docker compose logs --tail=80
+            echo "=== FORCE ONE POST DONE ==="

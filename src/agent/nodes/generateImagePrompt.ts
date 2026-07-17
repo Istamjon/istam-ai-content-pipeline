@@ -4,11 +4,12 @@ import {
   type ImageVisualPreset,
   type ImageCompositionHook,
 } from "../../config/imagePrompt.js";
+import { isBrandFaceConfigured } from "../../lib/brandFace.js";
 
 /**
  * Builds premium scroll-stopping social-cover image prompt.
- * Includes: professional PERSON + HEADING text + brand LOGO + topic tech visual.
- * Template in config/imagePrompt.ts — topic inject only (no LLM).
+ * Person + HEADING + topic tech visual. No IO logo.
+ * If data/brand/face.jpg exists → identity-preserve prompt language.
  * Env: IMAGE_PRESET=…  IMAGE_COMPOSITION=…
  */
 export async function generateImagePrompt(
@@ -36,6 +37,7 @@ export async function generateImagePrompt(
     const forceComposition = process.env.IMAGE_COMPOSITION as
       | ImageCompositionHook
       | undefined;
+    const faceRef = isBrandFaceConfigured();
 
     const {
       prompt: imagePrompt,
@@ -45,10 +47,11 @@ export async function generateImagePrompt(
     } = buildPremiumImagePrompt(current.title, topicHint, {
       preset: forcePreset,
       composition: forceComposition,
+      faceRef,
     });
 
     console.log(
-      `[generateImagePrompt] preset=${preset} composition=${composition} heading="${heading.slice(0, 48)}" len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
+      `[generateImagePrompt] preset=${preset} composition=${composition} faceRef=${faceRef} heading="${heading.slice(0, 48)}" len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
     );
 
     return {

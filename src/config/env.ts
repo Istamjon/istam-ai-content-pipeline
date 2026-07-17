@@ -365,14 +365,15 @@ export const env = {
     1,
     parseInt(process.env.MAX_ARTICLES_PER_RUN || "3", 10) || 3,
   ),
-  DAILY_LIMIT_TELEGRAM: parseInt(process.env.DAILY_LIMIT_TELEGRAM || "5", 10),
-  DAILY_LIMIT_LINKEDIN: parseInt(process.env.DAILY_LIMIT_LINKEDIN || "3", 10),
-  /** 0 = unlimited (no soft daily cap for Facebook). */
-  DAILY_LIMIT_FACEBOOK: parseInt(process.env.DAILY_LIMIT_FACEBOOK || "0", 10),
-  DAILY_LIMIT_INSTAGRAM: parseInt(process.env.DAILY_LIMIT_INSTAGRAM || "3", 10),
-  DAILY_LIMIT_X: parseInt(process.env.DAILY_LIMIT_X || "5", 10),
-  DAILY_LIMIT_THREADS: parseInt(process.env.DAILY_LIMIT_THREADS || "5", 10),
-  DAILY_LIMIT_BLOGGER: parseInt(process.env.DAILY_LIMIT_BLOGGER || "5", 10),
+  /** Soft daily publish cap per platform (UTC date). Default 4 = 4 posts/day stack. */
+  DAILY_LIMIT_TELEGRAM: parseInt(process.env.DAILY_LIMIT_TELEGRAM || "4", 10),
+  DAILY_LIMIT_LINKEDIN: parseInt(process.env.DAILY_LIMIT_LINKEDIN || "4", 10),
+  /** 0 = unlimited (no soft daily cap for Facebook). Prefer 4 for 4 posts/day policy. */
+  DAILY_LIMIT_FACEBOOK: parseInt(process.env.DAILY_LIMIT_FACEBOOK || "4", 10),
+  DAILY_LIMIT_INSTAGRAM: parseInt(process.env.DAILY_LIMIT_INSTAGRAM || "4", 10),
+  DAILY_LIMIT_X: parseInt(process.env.DAILY_LIMIT_X || "4", 10),
+  DAILY_LIMIT_THREADS: parseInt(process.env.DAILY_LIMIT_THREADS || "4", 10),
+  DAILY_LIMIT_BLOGGER: parseInt(process.env.DAILY_LIMIT_BLOGGER || "4", 10),
 };
 
 const dailyLimitByPlatform: Record<string, number> = {

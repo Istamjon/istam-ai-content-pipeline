@@ -245,23 +245,22 @@ export const brand = {
       "orbital_constellation",
     ] as const,
     principles: [
-      "MUST: one professional person (face visible, waist-up) as attention anchor",
-      "MUST: crisp on-image HEADING from post title (short, legible sans-serif)",
-      "MUST: brand logo — IO monogram in teal #036158 + IstamAI / Istam Obidov wordmark",
-      "Topic-true tech visual (diagram/hologram) supports the story behind the person",
+      "FULL-BLEED only: the square IS the cover — never a framed poster, photo-in-frame, phone/laptop mockup",
+      "MUST: person in-scene (waist-up); use data/brand/face.jpg as identity when present",
+      "MUST: crisp on-image HEADING from post title (no IO / IstamAI logo)",
+      "NO brand monogram logo badge on the cover",
+      "Topic-true tech hologram shares the same 3D space as the person",
       "Thumb-stop: face + big title win the feed in 0.3s",
-      "Composition hooks rotate so posts do not look copy-paste",
-      "Background: dark premium tech void (#0A0A0C), not messy office clutter",
-      "Brand teal #036158 + cyan #5EEAD4 glows",
+      "Brand teal #036158 + cyan #5EEAD4 glows (colors only, not logo)",
       "No third-party logos, no gibberish text, no watermarks",
-      "Square 1:1 social crop-safe with ~8% margin",
+      "Square 1:1 social crop-safe",
     ],
     imagePromptFragment:
-      "scroll-stopping square cover with professional person, bold legible heading text, IO brand logo monogram teal #036158, topic tech hologram, dark cinematic backdrop, cyan accents",
+      "full-bleed square social cover edge-to-edge, no picture frame, identity-preserving person from brand face photo, bold heading overlay, no logo, topic tech hologram, dark cinematic backdrop, teal accents",
   },
 
   imageStyle:
-    "social cover: person + heading + IO logo + topic system visual, dark tech void, brand #036158 + cyan, sharp text, no third-party logos",
+    "full-bleed social cover: brand face + heading + tech hologram, no logo, no frames, teal accents",
 };
 
 export type Brand = typeof brand;

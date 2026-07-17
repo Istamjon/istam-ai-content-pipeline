@@ -26,6 +26,11 @@ data/pipeline.*.log
 data/images/
 data/images/**
 !data/images/.gitkeep
+# Personal brand face (keep local/VDS only — not in git)
+data/brand/face.jpg
+data/brand/face.jpeg
+data/brand/face.png
+data/brand/face.webp
 data/app.db
 data/app.db-*
 data/cloudflare-accounts.json

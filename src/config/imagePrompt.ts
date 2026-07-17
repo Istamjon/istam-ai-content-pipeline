@@ -413,15 +413,19 @@ export function topicToCoverNarrative(
   heading: string,
   concepts: string,
   hook: ImageCompositionHook,
+  faceRef: boolean,
 ): string {
   const hookLine = HOOKS[hook].eyeCatch;
+  const personLine = faceRef
+    ? `The person MUST be the same individual as in the attached reference photo (identity preserve: face, age, skin tone, hair).`
+    : `Include one professional person as attention anchor.`;
   return (
     `Premium personal-brand social cover for AI Engineering. ` +
     `On-image heading must read exactly: "${heading}". ` +
     `Post topic: ${title.replace(/\s+/g, " ").trim().slice(0, 120)}. ` +
     `Background system visual encodes: ${concepts}. ` +
     `Attention: ${hookLine}. ` +
-    `Include a real professional person, crisp heading text, and brand logo.`
+    `${personLine} Full-bleed scene, crisp heading text, NO brand logo monogram.`
   );
 }
 
@@ -453,18 +457,23 @@ export function pickCompositionHook(
   return preferred[h % preferred.length];
 }
 
-/** Shared MUST blocks: person + heading + logo */
-function buildMustHaveBlocks(heading: string): string[] {
-  const { name, shortName, monogram } = brandCoverMarks;
+/** Shared MUST blocks: person + heading + full-bleed (no IO logo). */
+function buildMustHaveBlocks(heading: string, faceRef: boolean): string[] {
+  const personBlock = faceRef
+    ? `MUST HAVE #1 — PERSON (IDENTITY): Use the attached reference photo as the ONLY person. Preserve the same face identity, facial structure, age, skin tone, hair, and likeness of that reference. Place him in a new full-bleed editorial cover scene with the tech hologram — same person, new professional outfit optional (dark smart-casual + teal accent), waist-up or three-quarter, confident expression, cinematic lighting. Do NOT invent a different face. Do NOT put the photo inside a picture frame.`
+    : `MUST HAVE #1 — PERSON: one professional adult (AI engineer look) integrated INTO the scene with the tech hologram — full-bleed editorial, NOT a cutout on a poster, NOT a portrait in a frame. Sharp face, confident expression, modern smart-casual with teal accent, cinematic lighting, waist-up.`;
+
   return [
-    `MUST HAVE #1 — PERSON: one professional adult (AI engineer / tech founder look), sharp facial features, confident calm expression, modern smart-casual or dark tech attire with subtle teal accent, cinematic portrait lighting, waist-up or three-quarter, photoreal premium quality. Person is a main attention anchor — not a tiny background figure.`,
-    `MUST HAVE #2 — HEADING TEXT: render crisp, perfectly legible cover title in clean modern sans-serif (Inter / SF Pro style). Exact words in double quotes: "${heading}". High contrast white or soft white-to-cyan gradient letters, optional thin teal underline or soft glow. Large hierarchy — readable on mobile thumbnails. No misspellings, no extra words, no lorem ipsum, no random glyphs.`,
-    `MUST HAVE #3 — LOGO: brand mark top-left (or top safe corner): geometric monogram "${monogram}" inside a rounded square badge filled brand teal #036158 with white "${monogram}" letters, plus small wordmark "${name}" or "${shortName}" in clean white sans next to it. Sharp, intentional brand logo — not a watermark, not a stock icon, not a third-party company logo.`,
+    `MUST HAVE #0 — FULL-BLEED CANVAS (critical): The final image IS the social cover — edge-to-edge 1:1. NOT a photo of a poster. NOT artwork inside a wooden/gold/metal picture frame. NOT floating framed art on a wall. NOT phone/laptop/browser mockup. NOT double borders, matte, polaroid, drop-shadow card. Scene fills the square directly.`,
+    personBlock,
+    `MUST HAVE #2 — HEADING TEXT only: crisp cover title overlaid ON the scene. Clean modern sans-serif. Exact words in double quotes: "${heading}". High contrast white or white-to-cyan. Large hierarchy for mobile. No misspellings, no extra words, no gibberish.`,
+    `MUST NOT — LOGO: Do NOT render IO monogram, IstamAI badge, brand logo mark, corner logo sticker, watermark logo, or any logo emblem. No brand badge at all.`,
   ];
 }
 
 /**
- * Build premium social-cover prompt WITH person + heading + logo.
+ * Build premium social-cover prompt: person + heading, full-bleed, NO logo.
+ * When faceRef=true, prompt instructs identity preserve from attached face.jpg.
  */
 export function buildPremiumImagePrompt(
   topicTitle: string,
@@ -474,6 +483,8 @@ export function buildPremiumImagePrompt(
     composition?: ImageCompositionHook | string;
     /** Override on-image heading (defaults from title). */
     heading?: string;
+    /** Reference face available (data/brand/face.jpg). */
+    faceRef?: boolean;
   },
 ): {
   prompt: string;
@@ -481,6 +492,7 @@ export function buildPremiumImagePrompt(
   composition: ImageCompositionHook;
   heading: string;
 } {
+  const faceRef = Boolean(options?.faceRef);
   const concepts = topicToVisualConcepts(topicTitle, topicHint);
   const heading =
     (options?.heading && options.heading.trim()) ||
@@ -495,22 +507,24 @@ export function buildPremiumImagePrompt(
     heading,
     concepts,
     composition,
+    faceRef,
   );
-  const must = buildMustHaveBlocks(heading);
+  const must = buildMustHaveBlocks(heading, faceRef);
 
   // ── Lead (Horde-safe head; strongest requirements first) ───────────────
   const lead = [
-    `Scroll-stopping ultra-premium editorial social media cover, square 1:1, magazine/LinkedIn grade, photoreal person + bold title + brand logo.`,
-    `Dark premium tech backdrop: deep indigo-black (#0A0A0C) with subtle teal ambient glow and faint micro-grid — cinematic void, not a messy room.`,
+    `Scroll-stopping ultra-premium FULL-BLEED social media cover, square 1:1, LinkedIn/Telegram ready — the canvas itself is the cover, not a framed photo.`,
+    `Dark premium tech environment: deep indigo-black (#0A0A0C), subtle teal glow, faint micro-grid — immersive to the edges, no outer border.`,
     must[0],
     must[1],
     must[2],
-    `TECH VISUAL (behind/beside person): ${p.centerIdea}. Topic DNA: ${concepts}.`,
+    must[3],
+    `TECH VISUAL (same 3D space as person, holographic layers): ${p.centerIdea}. Topic DNA: ${concepts}.`,
     `COMPOSITION (${hook.label}): ${hook.layout}.`,
     `Eye-catch: ${hook.eyeCatch}.`,
     `${p.coverFraming}.`,
-    `Colors: brand teal #036158, cyan #5EEAD4 glows, white heading, deep black field, optional amber #F59E0B single accent.`,
-    `Style: premium keynote × Behance tech poster × cinematic portrait — sharp, modern, trustworthy.`,
+    `Colors: brand teal #036158, cyan #5EEAD4, white heading, deep black field.`,
+    `Style: Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
   ].join(" ");
 
   // ── Extended ───────────────────────────────────────────────────────────
@@ -519,27 +533,24 @@ export function buildPremiumImagePrompt(
     `Cover narrative:`,
     narrative,
     ``,
-    `Layout zones (required):`,
-    `- TOP: large HEADING "${heading}" — 1–2 lines max, perfect kerning, razor-sharp letters.`,
-    `- CORNER: LOGO monogram "${brandCoverMarks.monogram}" + "${brandCoverMarks.shortName}" wordmark.`,
-    `- MAIN: professional PERSON interacting with or standing before the tech visual.`,
-    `- SECONDARY: glowing system diagram related to ${concepts} — supports story, does not cover face or title.`,
+    `Professional framing rules:`,
+    `- Full bleed to all edges — zero picture-frame, zero white margin card.`,
+    `- Person and holograms in ONE continuous scene (same light, same depth).`,
+    `- Heading is on-canvas overlay only — not paper inside a frame.`,
+    `- Absolutely no IO / IstamAI / monogram logo anywhere.`,
     ``,
-    `Text rendering quality (critical):`,
-    `- Only the heading and logo text — no body paragraphs, no fake UI chrome, no random captions.`,
-    `- Letters must be correct English spelling of: "${heading}".`,
-    `- Avoid warped, melted, or gibberish typography; prefer bold geometric sans.`,
+    `Layout zones:`,
+    `- TOP: HEADING "${heading}" — 1–2 lines, sharp sans.`,
+    `- MAIN: PERSON + tech hologram mid-ground.`,
+    `- No nested rectangles, no poster-on-wall, no device bezel, no logo corner.`,
     ``,
-    `Person quality:`,
-    `- Natural skin, sharp eyes, professional presence; looks like a real AI engineer creator brand.`,
-    `- No crowd, no extra people, no celebrity lookalikes, no hands covering the face.`,
+    `Text: only the heading words. Exact spelling: "${heading}". No logo text. No gibberish.`,
     ``,
-    `Attention design:`,
-    `- 0.3s stop: face + big title silhouette wins the feed.`,
-    `- Then logo + glowing system reward a longer look.`,
-    `- High contrast, clean margins (~8%), no cluttered corners.`,
+    faceRef
+      ? `Identity: the attached reference face is the subject — keep likeness high; re-pose for a professional cover, do not copy the original photo background as a framed picture.`
+      : `Person: photoreal professional AI creator vibe. ONE person only.`,
     ``,
-    `Hard avoid: dirty office mess, chaotic furniture pile, cartoon/anime, stickers, low-res, blurry face, rainbow neon spam, third-party logos (Google/OpenAI/etc), watermarks, QR codes, unreadable gibberish text, extra random words, misspelled title.`,
+    `Hard avoid: picture frame, wooden frame, gold frame, polaroid, poster on wall, phone mockup, laptop mockup, browser chrome, double border, white margin, IO logo, monogram badge, IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, rainbow neon spam, misspelled title, gibberish text.`,
   ].join("\n");
 
   let full = (lead + "\n" + extended).trim();
