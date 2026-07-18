@@ -33,6 +33,7 @@
     "canonical:list": "npm run build && node scripts/canonical-cli.mjs list",
     "canonical:show": "npm run build && node scripts/canonical-cli.mjs show",
     "canonical:regen": "npm run build && node scripts/canonical-cli.mjs regen",
+    "canonical:regen-all": "npm run build && node scripts/canonical-cli.mjs regen-all",
     "tokens:status": "npm run build && node scripts/tokens-status.mjs",
     "tokens:refresh": "npm run build && node scripts/tokens-status.mjs --refresh",
     "cf:resolve": "npm run build && node scripts/cf-resolve-accounts.mjs",

@@ -12,13 +12,13 @@ import {
   platformLimits,
 } from "../config/platformTextLimits.js";
 import { env } from "../config/env.js";
-import { stripSourceIntros } from "../lib/contentClean.js";
+import { cleanPostBody } from "../lib/contentClean.js";
 import type { CanonicalContent } from "./types.js";
 
 export { platformLimits, smartTruncate, splitIntoThreadParts };
 
 function stripNoise(text: string): string {
-  let t = stripSourceIntros(text);
+  let t = cleanPostBody(text);
   t = t
     .replace(/\n+\s*(Manba|Source|URL)\s*:\s*.+$/gim, "")
     .replace(/\n+\s*Author\s*:\s*.+$/gim, "")
@@ -26,7 +26,7 @@ function stripNoise(text: string): string {
     .replace(/\n+———[\s\S]*$/gim, "")
     .replace(/\n+────────[\s\S]*$/gim, "")
     .trim();
-  return stripSourceIntros(t);
+  return cleanPostBody(t);
 }
 
 function escapeHtml(s: string): string {

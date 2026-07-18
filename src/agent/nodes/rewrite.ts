@@ -1,7 +1,7 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
 import { pollinationsText } from "../../lib/pollinations.js";
 import { roles, buildRewriteUserPrompt } from "../prompts.js";
-import { stripSourceIntros } from "../../lib/contentClean.js";
+import { cleanPostBody } from "../../lib/contentClean.js";
 import { ensureFactsSection } from "../../lib/factsFromBrief.js";
 
 export async function rewrite(
@@ -50,9 +50,11 @@ export async function rewrite(
     rewritten = rewritten
       .replace(/^(Here is|Quyida|Mana)\b[\s\S]*?:\s*/i, "")
       .trim();
-    rewritten = stripSourceIntros(rewritten);
+    rewritten = cleanPostBody(rewritten);
     // E: guarantee 3–5 source-grounded "Asosiy faktlar" bullets when FACTS exist
     rewritten = ensureFactsSection(rewritten, current.summary, 5);
+    // Facts from brief may carry markdown; clean once more
+    rewritten = cleanPostBody(rewritten);
     console.log(`[rewrite] length=${rewritten.length} chars`);
 
     return {

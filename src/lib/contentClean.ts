@@ -2,6 +2,47 @@
  * Clean reader-facing post text: remove source-site intros, attribution spam, noise.
  */
 
+/**
+ * Strip markdown markers so social posts stay plain (no literal **bold** on LinkedIn/X).
+ * Also unwraps `inline code` markers (platforms show backticks literally).
+ */
+export function stripMarkdownNoise(text: string): string {
+  let t = (text || "").replace(/\r\n/g, "\n");
+
+  // Fenced code blocks → keep inner text only
+  t = t.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code: string) =>
+    String(code || "").trim(),
+  );
+
+  // Inline code: `param` → param (keep contents)
+  t = t.replace(/`([^`\n]+)`/g, "$1");
+
+  // **bold** / __bold__ (repeat for nested leftovers)
+  for (let i = 0; i < 3; i++) {
+    t = t.replace(/\*\*([^*]+)\*\*/g, "$1");
+    t = t.replace(/__([^_]+)__/g, "$1");
+  }
+
+  // *italic* / _italic_ (avoid matching underscores inside words like snake_case)
+  t = t.replace(/(?<!\w)\*([^*\n]+)\*(?!\w)/g, "$1");
+  t = t.replace(/(?<!\w)_([^_\n]+)_(?!\w)/g, "$1");
+
+  // Stray leftover bold / star markers
+  t = t.replace(/\*{1,}/g, "");
+  t = t.replace(/_{2,}/g, "");
+
+  // ATX headings at line start: ## Title → Title
+  t = t.replace(/^#{1,6}\s+/gm, "");
+
+  // Markdown links [label](url) → label
+  t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");
+
+  // Collapse spaces left by removed markers (keep newlines)
+  t = t.replace(/[^\S\n]{2,}/g, " ");
+  t = t.replace(/\n{3,}/g, "\n\n").trim();
+  return t;
+}
+
 /** Phrases like "Yangi Skywork AI maqolasi:", "According to TechCrunch", etc. */
 const SOURCE_INTRO_RES: RegExp[] = [
   /^\s*Yangi\s+[\w\s./-]{1,40}\s+maqolasi\s*:\s*/gim,
@@ -29,6 +70,11 @@ export function stripSourceIntros(text: string): string {
   );
   t = t.replace(/\b(Skywork\s*AI|DeepMind)\s+maqolasi(ga|da)?\s*[:,]?\s*/gi, "");
   return t.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Full reader-facing clean: source intros + markdown noise. */
+export function cleanPostBody(text: string): string {
+  return stripMarkdownNoise(stripSourceIntros((text || "").trim()));
 }
 
 export function stripHtmlToPlain(text: string): string {

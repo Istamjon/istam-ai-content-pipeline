@@ -344,6 +344,9 @@ export function pickCoverHeading(input: {
       .map((l) =>
         l
           .replace(/^[#>*\-\d.)\s]+/, "")
+          .replace(/\*\*([^*]+)\*\*/g, "$1")
+          .replace(/\*([^*\n]+)\*/g, "$1")
+          .replace(/`([^`]+)`/g, "$1")
           .replace(/^Asosiy faktlar:.*$/i, "")
           .replace(/https?:\/\/\S+/gi, "")
           .trim(),
@@ -574,7 +577,7 @@ export function topicToCoverNarrative(
     ? `Pose recipe (${POSES[pose].label}): ${POSES[pose].body}.`
     : "";
   const personLine = faceRef
-    ? `The person MUST be the same individual as in the attached reference photo (identity only: face, age, skin tone, hair) but a COMPLETELY NEW body pose and camera angle — never copy the reference photo pose/stance/background.`
+    ? `Person MUST match reference image face.jpg (ORIGINAL FACE REFERENCE): same face, age, skin, hair — NEW pose/angle only; never clone face.jpg stance/background.`
     : `Include one professional person as attention anchor with a varied editorial pose.`;
   return (
     `Premium personal-brand social cover for AI Engineering. ` +
@@ -622,7 +625,7 @@ function buildMustHaveBlocks(
 ): string[] {
   const poseSpec = POSES[pose];
   const personBlock = faceRef
-    ? `MUST HAVE #1 — PERSON (IDENTITY + NEW POSE): Use the attached reference photo ONLY for face identity (same face structure, age, skin tone, hair, likeness). Do NOT copy the reference photo's pose, body angle, hand position, crop, clothing layout, or background. NEW POSE required — ${poseSpec.label}: ${poseSpec.body}. Place him in a brand-new full-bleed editorial cover with the tech hologram. Outfit may change (dark smart-casual + teal accent). Cinematic lighting. Do NOT invent a different face. Do NOT put the photo inside a picture frame. Do NOT paste the reference image as a flat cutout.`
+    ? `MUST HAVE #1 — PERSON (IDENTITY + NEW POSE): Use reference image face.jpg as the ORIGINAL FACE REFERENCE (face identity only: structure, age, skin, hair, likeness). Do NOT copy face.jpg pose, hands, crop, clothes, or background. NEW POSE — ${poseSpec.label}: ${poseSpec.body}. Full-bleed editorial with tech hologram; outfit may change (dark smart-casual + teal). Cinematic light. No different face; no frame; no flat cutout of face.jpg.`
     : `MUST HAVE #1 — PERSON + POSE: one professional adult (AI engineer look) integrated INTO the scene with the tech hologram — full-bleed editorial, NOT a cutout on a poster. Pose — ${poseSpec.label}: ${poseSpec.body}. Sharp face, modern smart-casual with teal accent, cinematic lighting, waist-up.`;
 
   return [
@@ -693,21 +696,28 @@ export function buildPremiumImagePrompt(
   const must = buildMustHaveBlocks(heading, faceRef, pose);
 
   // ── Lead (Horde-safe head; strongest requirements first) ───────────────
+  // Lead with face.jpg first (Nano Banana truncates ~2500; identity must survive).
+  const faceLead = faceRef
+    ? `REFERENCE IMAGE: face.jpg — ORIGINAL FACE REFERENCE. Preserve exact facial identity from face.jpg only. New pose/scene — never clone face.jpg body pose or background.`
+    : "";
   const lead = [
+    faceLead,
     `Scroll-stopping ultra-premium FULL-BLEED social media cover, square 1:1, LinkedIn/Telegram ready — the canvas itself is the cover, not a framed photo.`,
     `Dark premium tech environment: deep indigo-black (#0A0A0C), subtle teal glow, faint micro-grid — immersive to the edges, no outer border.`,
     must[0],
     must[1],
     must[2],
     must[3],
-    `POSE LOCK (${poseSpec.label}): ${poseSpec.body}. Different from any previous post and from the reference photo pose.`,
+    `POSE LOCK (${poseSpec.label}): ${poseSpec.body}. Different from any previous post and from the face.jpg reference pose.`,
     `TECH VISUAL (same 3D space as person, holographic layers): ${p.centerIdea}. Topic DNA: ${concepts}.`,
     `COMPOSITION (${hook.label}): ${hook.layout}.`,
     `Eye-catch: ${hook.eyeCatch}.`,
     `${p.coverFraming}.`,
     `Colors: brand teal #036158, cyan #5EEAD4, white Uzbek heading, deep black field.`,
     `Style: Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
-  ].join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   // ── Extended ───────────────────────────────────────────────────────────
   const extended = [
@@ -729,15 +739,23 @@ export function buildPremiumImagePrompt(
     `Text: only the heading words in Uzbek Latin. Exact spelling: "${heading}". No English title. No logo text. No gibberish.`,
     ``,
     faceRef
-      ? `Identity vs pose: reference image = FACE ONLY. Keep likeness high. MUST use a new pose (${poseSpec.label}); forbid cloning reference stance, hand positions, crop, or original background.`
+      ? `Identity vs pose: reference image face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE). High likeness from face.jpg. New pose (${poseSpec.label}); no cloning face.jpg stance/hands/crop/background.`
       : `Person: photoreal professional AI creator vibe. ONE person only. Pose: ${poseSpec.label}.`,
     ``,
-    `Hard avoid: same pose as reference photo, picture frame, wooden frame, gold frame, polaroid, poster on wall, phone mockup, laptop mockup, browser chrome, double border, white margin, IO logo, monogram badge, IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, rainbow neon spam, English-only heading, Cyrillic heading, misspelled title, gibberish text.`,
+    `Hard avoid: same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, English-only or Cyrillic heading, misspelled/gibberish text.`,
   ].join("\n");
 
   let full = (lead + "\n" + extended).trim();
-  if (full.length > 3000) {
-    full = full.slice(0, 2990).trimEnd();
+  // Prefer keeping lead (identity + colors + pose) intact when trimming.
+  const maxLen = 3000;
+  if (full.length > maxLen) {
+    const leadLen = lead.length;
+    if (leadLen >= maxLen - 40) {
+      full = lead.slice(0, maxLen - 10).trimEnd();
+    } else {
+      const budget = maxLen - leadLen - 2;
+      full = (lead + "\n" + extended.slice(0, Math.max(0, budget))).trimEnd();
+    }
   }
   return { prompt: full, preset, composition, pose, heading };
 }

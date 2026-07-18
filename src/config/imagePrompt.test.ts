@@ -86,7 +86,7 @@ describe("imagePrompt", () => {
       "pointing_critical_path",
     );
     expect(n).toMatch(/Uzbek|heading MUST/i);
-    expect(n).toMatch(/reference photo|identity/i);
+    expect(n).toMatch(/face\.jpg|ORIGINAL FACE REFERENCE|identity/i);
     expect(n).toMatch(/NEW body pose|NEW POSE|pose recipe/i);
     expect(n).toMatch(/NO brand logo/i);
   });
@@ -115,7 +115,9 @@ describe("imagePrompt", () => {
     expect(prompt).toMatch(/FULL-BLEED|full-bleed|edge-to-edge/i);
     expect(prompt).toMatch(/picture frame|phone mockup/i);
     expect(prompt).toMatch(/MUST HAVE #1 — PERSON|IDENTITY|PERSON/i);
-    expect(prompt).toMatch(/NEW POSE|POSE LOCK|reference photo ONLY for face/i);
+    expect(prompt).toMatch(/face\.jpg/);
+    expect(prompt).toMatch(/ORIGINAL FACE REFERENCE/i);
+    expect(prompt).toMatch(/NEW POSE|POSE LOCK|ORIGINAL FACE REFERENCE|face identity/i);
     expect(prompt).toMatch(/MUST HAVE #2 — HEADING|OʻZBEK|Uzbek/i);
     expect(prompt).toContain(`"${heading}"`);
     expect(prompt).toMatch(/MUST NOT — LOGO|no IO|No brand badge|no logo/i);

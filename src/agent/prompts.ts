@@ -210,7 +210,8 @@ POST REQUIREMENTS:
 7) No hashtags in body
 8) No clickbait; no crypto; no pure promotion
 9) Coherent single topic — no confusion / mixed-up claims
-10) FORBIDDEN openers / phrases (never use):
+10) PLAIN TEXT ONLY — no Markdown: do not use **bold**, *italic*, __underline__, # headings, or other markdown markers. Platforms show asterisks literally. Emphasize with words, not stars.
+11) FORBIDDEN openers / phrases (never use):
    - "Yangi Skywork AI maqolasi:"
    - "Yangi … maqolasi:"
    - "Skywork AI maqolasi"

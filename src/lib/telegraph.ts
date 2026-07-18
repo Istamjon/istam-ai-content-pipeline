@@ -9,6 +9,7 @@ import { env } from "../config/env.js";
 import { ensurePublicImageUrl } from "./imageHost.js";
 import {
   stripFooterAndTags,
+  stripMarkdownNoise,
   stripSourceIntros,
 } from "./contentClean.js";
 
@@ -100,6 +101,7 @@ export function textToTelegraphNodes(
 ): NodeElement[] {
   let plain = stripFooterAndTags(text);
   plain = stripSourceIntros(plain);
+  plain = stripMarkdownNoise(plain);
 
   const nodes: NodeElement[] = [];
 

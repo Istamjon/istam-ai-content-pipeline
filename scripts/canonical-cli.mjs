@@ -81,5 +81,24 @@ if (cmd === "regen") {
   process.exit(0);
 }
 
-console.error("Usage: list | show | regen");
+/** Clean all stored master bodies + re-derive platform texts (strips ** markdown). */
+if (cmd === "regen-all") {
+  const rows = listCanonical(500);
+  let n = 0;
+  for (const r of rows) {
+    const doc = loadCanonical(r.id);
+    if (!doc) continue;
+    const next = regenerateDerived(doc);
+    const hasStars = /\*\*/.test(next.body || "");
+    console.log(
+      `  ${next.id} v${next.version} bodyLen=${(next.body || "").length}` +
+        (hasStars ? " WARN:** still present" : " clean"),
+    );
+    n++;
+  }
+  console.log(`\nRegenerated ${n} canonical doc(s)`);
+  process.exit(0);
+}
+
+console.error("Usage: list | show | regen | regen-all");
 process.exit(1);

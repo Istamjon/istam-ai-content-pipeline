@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import type { Article } from "../agent/state.js";
 import { brand } from "../config/brand.js";
+import { cleanPostBody } from "../lib/contentClean.js";
 import type { CanonicalContent } from "./types.js";
 import { loadCanonicalByUrl, saveCanonical } from "./store.js";
 import { formatAllFromCanonical } from "./formatFromCanonical.js";
@@ -15,13 +16,19 @@ function contentHash(body: string): string {
 
 /**
  * Build / upsert Canonical Content from pipeline article state.
- * Master body = rewritten (quality-approved) text only.
+ * Master body = rewritten (quality-approved) text only — cleaned of markdown noise.
  */
 export function buildAndSaveCanonical(
   article: Article,
   meta?: { contentType?: string; summary?: string },
 ): CanonicalContent {
-  const body = (article.rewritten || article.translated || article.rawText || "").trim();
+  const raw = (
+    article.rewritten ||
+    article.translated ||
+    article.rawText ||
+    ""
+  ).trim();
+  const body = cleanPostBody(raw);
   if (!body) {
     throw new Error("Cannot build canonical: empty body");
   }
@@ -36,6 +43,7 @@ export function buildAndSaveCanonical(
     doc = {
       ...existing,
       title: article.title || existing.title,
+      body: existing.body !== body ? body : existing.body,
       imagePath: article.imagePath || existing.imagePath,
       imagePrompt: article.imagePrompt || existing.imagePrompt,
       summary: meta?.summary || existing.summary,
@@ -83,12 +91,22 @@ export function buildAndSaveCanonical(
 
 /**
  * Re-format platforms after manual body edit (no AI).
+ * Also re-cleans master body (strips leftover ** markdown from older saves).
  */
 export function regenerateDerived(doc: CanonicalContent): CanonicalContent {
-  const next: CanonicalContent = {
+  const cleaned = cleanPostBody(doc.body || "");
+  const bodyChanged = cleaned !== (doc.body || "").trim();
+  const nextBody = cleaned || doc.body;
+  const base: CanonicalContent = {
     ...doc,
-    derived: formatAllFromCanonical(doc),
+    body: nextBody,
+    contentHash: contentHash(nextBody),
+    version: bodyChanged ? doc.version + 1 : doc.version,
     updatedAt: new Date().toISOString(),
+  };
+  const next: CanonicalContent = {
+    ...base,
+    derived: formatAllFromCanonical(base),
   };
   return saveCanonical(next);
 }
