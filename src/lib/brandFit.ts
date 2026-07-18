@@ -227,7 +227,6 @@ const PREFERRED_SOURCES: Array<{
     aiOnly: true,
     minScore: 5,
   },
-  { host: "deepmind.google", boost: 4, label: "src-deepmind" },
   // TDS agentic category still hosts some off-topic; require real AI signal
   {
     host: "towardsdatascience.com",

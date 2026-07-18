@@ -273,7 +273,7 @@ export { platformLimits } from "./platformTextLimits.js";
  * Only these hosts are crawled — OpenAI/Anthropic/etc. removed (403 noise + lower priority).
  *
  * Tier A (highest trust / AI engineering focus):
- *   Actualize, Agentic Engineer, Skywork, AI Agent Store, DeepMind
+ *   Actualize, Agentic Engineer, Skywork, AI Agent Store
  * Tier B (agentic/fullstack — stricter brand-fit):
  *   Towards Data Science Agentic AI, Plain English Fullstack
  */
@@ -307,11 +307,6 @@ export const sources = [
       "/claw-setup",
       "/news/guides-and-tutorials", // tag index only
     ],
-  },
-  {
-    url: "https://deepmind.google/blog/",
-    name: "DeepMind",
-    tier: "primary" as const,
   },
   // Tier B — community / education (brand-fit requires strong AI signals)
   {

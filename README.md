@@ -67,7 +67,8 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 - [The Agentic Engineer](https://www.the-agentic-engineer.com/blog)
 - [Skywork AI](https://skywork.ai/blog/)
 - [AI Agent Store News](https://aiagentstore.ai/news)
-- [DeepMind](https://deepmind.google/blog/)
+- [Towards Data Science — Agentic AI](https://towardsdatascience.com/category/artificial-intelligence/agentic-ai/)
+- [Plain English — Fullstack](https://plainenglish.io/topics/fullstack)
 
 ---
 
