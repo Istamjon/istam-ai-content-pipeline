@@ -8,6 +8,18 @@ export type TempImageHours = 1 | 12 | 24 | 72;
 const LITTERBOX_API = "https://litterbox.catbox.moe/resources/internals/api.php";
 const CATBOX_API = "https://catbox.moe/user/api.php";
 
+export type ImageHostName = "litterbox" | "catbox" | "0x0" | "imgbb";
+
+export type EnsurePublicImageOptions = {
+  /**
+   * Host try-order. Instagram Graph crawlers often fail on litter.catbox.moe —
+   * prefer `["catbox","litterbox","0x0"]` for IG.
+   */
+  prefer?: ImageHostName[];
+  /** Skip hosts already tried (e.g. retry after Meta reject). */
+  skipHosts?: string[];
+};
+
 /**
  * Resolve a publicly reachable HTTPS URL for a local image.
  * Instagram / Threads Graph APIs need a public image_url.
@@ -21,6 +33,7 @@ const CATBOX_API = "https://catbox.moe/user/api.php";
  */
 export async function ensurePublicImageUrl(
   imagePath?: string,
+  options?: EnsurePublicImageOptions,
 ): Promise<{ url?: string; error?: string; temporary?: boolean; host?: string }> {
   if (!imagePath) {
     return { error: "No image path provided" };
@@ -35,8 +48,8 @@ export async function ensurePublicImageUrl(
   }
 
   const errors: string[] = [];
-  const hosts: Array<{
-    name: string;
+  const allHosts: Array<{
+    name: ImageHostName;
     temporary: boolean;
     run: () => Promise<string>;
   }> = [
@@ -58,10 +71,22 @@ export async function ensurePublicImageUrl(
   ];
 
   if (env.IMGBB_API_KEY) {
-    hosts.push({
+    allHosts.push({
       name: "imgbb",
       temporary: false,
       run: () => uploadToImgbb(imagePath),
+    });
+  }
+
+  const skip = new Set((options?.skipHosts || []).map((h) => h.toLowerCase()));
+  const prefer = options?.prefer;
+  let hosts = allHosts.filter((h) => !skip.has(h.name));
+  if (prefer?.length) {
+    const order = new Map(prefer.map((n, i) => [n, i]));
+    hosts = [...hosts].sort((a, b) => {
+      const ia = order.has(a.name) ? (order.get(a.name) as number) : 100;
+      const ib = order.has(b.name) ? (order.get(b.name) as number) : 100;
+      return ia - ib;
     });
   }
 
@@ -306,6 +331,7 @@ function contentTypeFor(filePath: string): string {
  */
 export async function ensurePublicMediaUrl(
   mediaPath?: string,
+  options?: EnsurePublicImageOptions,
 ): Promise<{ url?: string; error?: string; temporary?: boolean; host?: string }> {
-  return ensurePublicImageUrl(mediaPath);
+  return ensurePublicImageUrl(mediaPath, options);
 }
