@@ -204,6 +204,10 @@ export async function pollinationsText(
 
 const POLLINATIONS_IMAGE_PROVIDER = "pollinations";
 
+/** Cache public URL for brand face so we do not re-upload every generation. */
+let faceUrlCache: { key: string; url: string; until: number } | null = null;
+const FACE_URL_TTL_MS = 6 * 60 * 60 * 1000;
+
 export function isPollinationsImageConfigured(): boolean {
   return Boolean(env.POLLINATIONS_API_KEY);
 }
@@ -222,32 +226,123 @@ export function canUsePollinationsImageToday(): {
   return { ok: b.remaining > 0, used: b.used, limit: b.limit, remaining: b.remaining };
 }
 
+export type PollinationsFaceRef = {
+  path?: string;
+  mimeType?: string;
+  base64?: string;
+  buffer?: Buffer;
+};
+
+export type PollinationsImageOptions = {
+  /** Brand face for identity (image= URL / multipart). */
+  face?: PollinationsFaceRef | null;
+};
+
 /**
- * Pollinations text-to-image (default model: gpt-image-2).
- * Used in the image waterfall right after Nano Banana fails.
- * @see https://gen.pollinations.ai/image/{prompt}?model=gpt-image-2
+ * Models known to accept Pollinations `image=` reference (identity / img2img).
+ * @see https://github.com/pollinations/pollinations APIDOCS — kontext, gptimage, nanobanana
  */
-export async function pollinationsImage(prompt: string): Promise<Buffer> {
-  if (!env.POLLINATIONS_API_KEY) {
-    throw new Error(
-      "POLLINATIONS_API_KEY required for gpt-image-2. Get a key at https://enter.pollinations.ai",
+function faceModelCandidates(primary: string): string[] {
+  const out: string[] = [];
+  const push = (m: string) => {
+    const t = m.trim();
+    if (t && !out.includes(t)) out.push(t);
+  };
+  push(primary);
+  push("kontext");
+  push("gptimage");
+  push("nanobanana");
+  push("gpt-image-2");
+  return out;
+}
+
+/**
+ * Host face.jpg publicly (Catbox/Litterbox/…) so Pollinations can fetch it.
+ * Falls back to data: URL if all hosts fail (some gateways accept it).
+ */
+async function resolveFaceImageUrl(
+  face: PollinationsFaceRef,
+): Promise<{ url: string; via: string }> {
+  const pathKey = face.path || "";
+  let mtime = 0;
+  if (pathKey) {
+    try {
+      const { default: fs } = await import("fs");
+      mtime = fs.statSync(pathKey).mtimeMs;
+    } catch {
+      /* ignore */
+    }
+  }
+  const cacheKey = `${pathKey}|${mtime}|${face.base64?.slice(0, 32) || ""}`;
+  if (
+    faceUrlCache &&
+    faceUrlCache.key === cacheKey &&
+    faceUrlCache.until > Date.now()
+  ) {
+    return { url: faceUrlCache.url, via: "cache" };
+  }
+
+  if (pathKey) {
+    const { ensurePublicImageUrl } = await import("./imageHost.js");
+    const hosted = await ensurePublicImageUrl(pathKey, {
+      prefer: ["catbox", "0x0", "litterbox", "imgbb"],
+    });
+    if (hosted.url) {
+      faceUrlCache = {
+        key: cacheKey,
+        url: hosted.url,
+        until: Date.now() + FACE_URL_TTL_MS,
+      };
+      return { url: hosted.url, via: hosted.host || "host" };
+    }
+    console.warn(
+      `[pollinations-image] face host failed: ${hosted.error?.slice(0, 160)}`,
     );
   }
 
-  const budget = canUsePollinationsImageToday();
-  if (!budget.ok) {
-    throw new Error(
-      `Pollinations image daily limit ${budget.used}/${budget.limit} (UTC)`,
-    );
+  // data: URI fallback (works on some Pollinations gateways; not all)
+  if (face.base64) {
+    const mime = face.mimeType || "image/jpeg";
+    const dataUrl = `data:${mime};base64,${face.base64}`;
+    return { url: dataUrl, via: "data-uri" };
+  }
+  if (face.buffer?.length) {
+    const mime = face.mimeType || "image/jpeg";
+    const dataUrl = `data:${mime};base64,${face.buffer.toString("base64")}`;
+    return { url: dataUrl, via: "data-uri" };
   }
 
-  const model = env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2";
-  const width = Math.min(2048, Math.max(256, env.IMAGE_WIDTH || 1024));
-  const height = Math.min(2048, Math.max(256, env.IMAGE_HEIGHT || 1024));
-  const safePrompt = prompt.trim().slice(0, 2000);
-  if (!safePrompt) throw new Error("Pollinations image: empty prompt");
+  throw new Error(
+    "Pollinations face: cannot host face.jpg (need public URL or base64)",
+  );
+}
 
-  // GET /image/{prompt}?model=&width=&height=&key=
+function validateImageBuffer(
+  buf: Buffer,
+  ctype: string,
+  model: string,
+): Buffer {
+  if (buf.length < 500) {
+    const peek = buf.toString("utf8").slice(0, 200);
+    throw new Error(
+      `Pollinations image too small (${buf.length}b) model=${model} content-type=${ctype} body=${peek}`,
+    );
+  }
+  if (ctype.includes("json") || ctype.includes("text")) {
+    throw new Error(
+      `Pollinations image returned non-image (${ctype}) model=${model}: ${buf.toString("utf8").slice(0, 200)}`,
+    );
+  }
+  return buf;
+}
+
+async function fetchImageGet(
+  prompt: string,
+  model: string,
+  width: number,
+  height: number,
+  imageUrl?: string,
+): Promise<Buffer> {
   const params = new URLSearchParams({
     model,
     width: String(width),
@@ -256,12 +351,11 @@ export async function pollinationsImage(prompt: string): Promise<Buffer> {
     enhance: "false",
     key: env.POLLINATIONS_API_KEY,
   });
+  if (imageUrl) {
+    params.set("image", imageUrl);
+  }
   const url =
-    `${baseUrl()}/image/${encodeURIComponent(safePrompt)}?${params.toString()}`;
-
-  console.log(
-    `[pollinations-image] model=${model} ${width}x${height} promptLen=${safePrompt.length} budget=${budget.used}/${budget.limit || "∞"}`,
-  );
+    `${baseUrl()}/image/${encodeURIComponent(prompt)}?${params.toString()}`;
 
   const response = await fetch(url, {
     method: "GET",
@@ -272,31 +366,229 @@ export async function pollinationsImage(prompt: string): Promise<Buffer> {
   if (!response.ok) {
     const errBody = await response.text().catch(() => "");
     throw new Error(
-      `Pollinations image failed: ${response.status} ${response.statusText} ${errBody.slice(0, 220)}`,
+      `HTTP ${response.status}: ${errBody.slice(0, 220) || response.statusText}`,
     );
   }
 
   const ctype = (response.headers.get("content-type") || "").toLowerCase();
   const buf = Buffer.from(await response.arrayBuffer());
-  if (buf.length < 500) {
-    const peek = buf.toString("utf8").slice(0, 200);
-    throw new Error(
-      `Pollinations image too small (${buf.length}b) content-type=${ctype} body=${peek}`,
-    );
+  return validateImageBuffer(buf, ctype, model);
+}
+
+/**
+ * Multipart POST — some Pollinations models accept file upload as reference.
+ * Tries OpenAI-style /v1/images/edits and generic form POST.
+ */
+async function fetchImageMultipart(
+  prompt: string,
+  model: string,
+  width: number,
+  height: number,
+  face: PollinationsFaceRef,
+): Promise<Buffer> {
+  const bytes =
+    face.buffer ||
+    (face.base64 ? Buffer.from(face.base64, "base64") : null);
+  if (!bytes?.length && !face.path) {
+    throw new Error("multipart face: no buffer/path");
   }
-  // Reject JSON error payloads disguised as 200
-  if (ctype.includes("json") || ctype.includes("text")) {
+
+  let fileBytes: Buffer;
+  let filename = "face.jpg";
+  const mime = face.mimeType || "image/jpeg";
+  if (face.path) {
+    const { default: fs } = await import("fs");
+    const { default: path } = await import("path");
+    fileBytes = fs.readFileSync(face.path);
+    filename = path.basename(face.path) || filename;
+  } else {
+    fileBytes = bytes!;
+  }
+
+  const endpoints = [
+    `${baseUrl()}/v1/images/edits`,
+    `${baseUrl()}/v1/images/generations`,
+    `${baseUrl()}/image`,
+  ];
+
+  let lastErr: Error | null = null;
+  for (const endpoint of endpoints) {
+    try {
+      // Fresh FormData per attempt (body stream can only be consumed once)
+      const blob = new Blob([new Uint8Array(fileBytes)], { type: mime });
+      const form = new FormData();
+      form.append("prompt", prompt);
+      form.append("model", model);
+      form.append("size", `${width}x${height}`);
+      form.append("nologo", "true");
+      form.append("image", blob, filename);
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: authHeaders({ Accept: "image/*,application/json" }),
+        body: form,
+        signal: AbortSignal.timeout(180_000),
+      });
+      const ctype = (response.headers.get("content-type") || "").toLowerCase();
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        throw new Error(
+          `HTTP ${response.status} ${endpoint}: ${errBody.slice(0, 180)}`,
+        );
+      }
+      if (ctype.includes("json")) {
+        const json = (await response.json()) as {
+          data?: Array<{ b64_json?: string; url?: string }>;
+        };
+        const first = json.data?.[0];
+        if (first?.b64_json) {
+          return Buffer.from(first.b64_json, "base64");
+        }
+        if (first?.url) {
+          const imgRes = await fetch(first.url, {
+            signal: AbortSignal.timeout(120_000),
+          });
+          if (!imgRes.ok) throw new Error(`download ${imgRes.status}`);
+          const buf = Buffer.from(await imgRes.arrayBuffer());
+          return validateImageBuffer(
+            buf,
+            imgRes.headers.get("content-type") || "image/*",
+            model,
+          );
+        }
+        throw new Error("JSON response missing image data");
+      }
+      const buf = Buffer.from(await response.arrayBuffer());
+      return validateImageBuffer(buf, ctype, model);
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+      console.warn(
+        `[pollinations-image] multipart ${endpoint} failed: ${lastErr.message.slice(0, 140)}`,
+      );
+    }
+  }
+  throw lastErr || new Error("multipart face failed");
+}
+
+/**
+ * Pollinations image generation.
+ * - Text-only: default model (gpt-image-2)
+ * - With face: host face.jpg → `image=` query (kontext / gptimage / nanobanana)
+ *   so identity can be preserved when Nano/Skywork are exhausted.
+ * @see https://gen.pollinations.ai/image/{prompt}?model=kontext&image=…
+ */
+export async function pollinationsImage(
+  prompt: string,
+  options?: PollinationsImageOptions,
+): Promise<Buffer> {
+  if (!env.POLLINATIONS_API_KEY) {
     throw new Error(
-      `Pollinations image returned non-image (${ctype}): ${buf.toString("utf8").slice(0, 200)}`,
+      "POLLINATIONS_API_KEY required for images. Get a key at https://enter.pollinations.ai",
     );
   }
 
-  trackRequest();
-  const used = incrementProviderImageUsage(POLLINATIONS_IMAGE_PROVIDER, 1);
-  console.log(
-    `[pollinations-image] OK model=${model} bytes=${buf.length} daily=${used}/${budget.limit || "∞"}`,
+  const budget = canUsePollinationsImageToday();
+  if (!budget.ok) {
+    throw new Error(
+      `Pollinations image daily limit ${budget.used}/${budget.limit} (UTC)`,
+    );
+  }
+
+  const width = Math.min(2048, Math.max(256, env.IMAGE_WIDTH || 1024));
+  const height = Math.min(2048, Math.max(256, env.IMAGE_HEIGHT || 1024));
+  const safePrompt = prompt.trim().slice(0, 2000);
+  if (!safePrompt) throw new Error("Pollinations image: empty prompt");
+
+  const face = options?.face;
+  let faceImageUrl: string | undefined;
+  let faceVia = "";
+
+  if (face?.path || face?.base64 || face?.buffer) {
+    try {
+      const resolved = await resolveFaceImageUrl(face);
+      faceImageUrl = resolved.url;
+      faceVia = resolved.via;
+      console.log(
+        `[pollinations-image] faceRef=yes via=${faceVia} url=${faceImageUrl.slice(0, 72)}…`,
+      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(`[pollinations-image] face resolve failed: ${msg.slice(0, 180)}`);
+      // Continue without face only if caller did not require identity at pipeline level
+      throw new Error(`Pollinations face identity unavailable: ${msg}`);
+    }
+  }
+
+  const models = faceImageUrl
+    ? faceModelCandidates(env.POLLINATIONS_FACE_MODEL || "kontext")
+    : [env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2"];
+
+  let lastErr: unknown;
+  for (const model of models) {
+    try {
+      console.log(
+        `[pollinations-image] model=${model} ${width}x${height} promptLen=${safePrompt.length} ` +
+          `budget=${budget.used}/${budget.limit || "∞"}` +
+          (faceImageUrl ? ` faceRef=yes(${faceVia})` : ""),
+      );
+      const buf = await fetchImageGet(
+        safePrompt,
+        model,
+        width,
+        height,
+        faceImageUrl,
+      );
+      trackRequest();
+      const used = incrementProviderImageUsage(POLLINATIONS_IMAGE_PROVIDER, 1);
+      console.log(
+        `[pollinations-image] OK model=${model} bytes=${buf.length} daily=${used}/${budget.limit || "∞"}` +
+          (faceImageUrl ? " faceRef=yes" : ""),
+      );
+      return buf;
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(
+        `[pollinations-image] model=${model} failed: ${msg.slice(0, 200)}`,
+      );
+    }
+  }
+
+  // Last resort for face: multipart upload of local file
+  if (face && (face.path || face.buffer || face.base64)) {
+    for (const model of faceModelCandidates(
+      env.POLLINATIONS_FACE_MODEL || "kontext",
+    ).slice(0, 3)) {
+      try {
+        console.log(`[pollinations-image] multipart face model=${model}`);
+        const buf = await fetchImageMultipart(
+          safePrompt,
+          model,
+          width,
+          height,
+          face,
+        );
+        trackRequest();
+        const used = incrementProviderImageUsage(POLLINATIONS_IMAGE_PROVIDER, 1);
+        console.log(
+          `[pollinations-image] OK multipart model=${model} bytes=${buf.length} daily=${used}/${budget.limit || "∞"} faceRef=yes`,
+        );
+        return buf;
+      } catch (e) {
+        lastErr = e;
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(
+          `[pollinations-image] multipart model=${model}: ${msg.slice(0, 160)}`,
+        );
+      }
+    }
+  }
+
+  throw new Error(
+    `Pollinations image failed: ${
+      lastErr instanceof Error ? lastErr.message : String(lastErr)
+    }`,
   );
-  return buf;
 }
 
 export function logPollinationsImageBudget(): void {

@@ -86,6 +86,15 @@ export const env = {
   SKYWORK_ASPECT_RATIO: process.env.SKYWORK_ASPECT_RATIO || "1:1",
   /** Optional source_platform field for Skywork gateway */
   SKYWORK_SOURCE_PLATFORM: process.env.SKYWORK_SOURCE_PLATFORM || "",
+  /**
+   * When brand face.jpg is present, only use identity-capable image providers
+   * (Nano Banana, Skywork, Pollinations with image= URL). Cloudflare/Horde
+   * are text-only and invent a random person — skipped when true.
+   * Default true. Set REQUIRE_BRAND_FACE=false to allow CF/Horde fallbacks.
+   */
+  REQUIRE_BRAND_FACE: !["0", "false", "no", "off"].includes(
+    (process.env.REQUIRE_BRAND_FACE || "true").toLowerCase().trim(),
+  ),
   /** Secret key sk_… from enter.pollinations.ai (text + image). */
   POLLINATIONS_API_KEY: process.env.POLLINATIONS_API_KEY || "",
   /**
@@ -110,6 +119,14 @@ export const env = {
     if (!raw || raw === "disabled") return "gpt-image-2";
     return raw;
   })(),
+  /**
+   * Pollinations model when face.jpg is available (image-to-image / identity).
+   * Models that accept `image=` ref: kontext, gptimage, nanobanana, seedream5, …
+   * Default: kontext (documented img2img). Override if your key tier differs.
+   */
+  POLLINATIONS_FACE_MODEL: (
+    process.env.POLLINATIONS_FACE_MODEL || "kontext"
+  ).trim(),
   /**
    * Soft daily Pollinations image gens (UTC). 0 = unlimited soft cap.
    */

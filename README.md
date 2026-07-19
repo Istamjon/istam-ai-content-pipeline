@@ -116,13 +116,26 @@ ENABLED_PLATFORMS=telegram,linkedin,facebook,instagram,threads
 Nano Banana (Gemini) → Skywork Image API → Pollinations gpt-image-2 → Cloudflare FLUX.2 → AI Horde
 ```
 
-| Provider | Role |
-|----------|------|
-| **Nano Banana** | Primary Gemini image when Free/Paid quota allows |
-| **Skywork** | Account credits / daily benefit after Nano fails |
-| **Pollinations** | gpt-image-2 after Skywork fails |
-| **Cloudflare** | Free neurons ~10k/day **per account** (multi-account rotation) |
-| **AI Horde** | Community free GPU fallback (queue/slow) |
+| Provider | Role | `face.jpg` identity |
+|----------|------|---------------------|
+| **Nano Banana** | Primary Gemini image when Free/Paid quota allows | Yes (image+text) |
+| **Skywork** | Account credits / daily benefit after Nano fails | Yes (edit + `source_images`) |
+| **Pollinations** | After Skywork fails; face via hosted URL + `image=` | Yes (`kontext` / `gptimage` / `nanobanana`) |
+| **Cloudflare** | Free neurons ~10k/day **per account** (multi-account rotation) | No (text only) |
+| **AI Horde** | Community free GPU fallback (queue/slow) | No (text only) |
+
+Pollinations face path: upload `face.jpg` to Catbox/Litterbox → `GET /image/{prompt}?model=kontext&image={publicUrl}`. Env: `POLLINATIONS_FACE_MODEL` (default `kontext`).
+
+### Brand face (`data/brand/face.jpg`)
+
+Identity-preserving covers need the real photo bytes on a multimodal provider.
+
+| Situation | Result |
+|-----------|--------|
+| File missing / wrong path / `BRAND_FACE_IMAGE` | Prompt has generic person, no likeness |
+| Nano Banana + Skywork both fail/exhausted | With default `REQUIRE_BRAND_FACE=true` → **no image** (does not invent a random face) |
+| `REQUIRE_BRAND_FACE=false` | Falls through to Pollinations/CF/Horde — person will **not** match `face.jpg` |
+| File very large (e.g. >400KB / multi-MB) | Prefer ~512–1024px JPEG; optional `sharp` auto-downscales for APIs |
 
 Soft caps (env):
 
@@ -132,6 +145,7 @@ Soft caps (env):
 - `DAILY_IMAGE_TOTAL` (all CF accounts combined)
 - `DAILY_IMAGE_LIMIT` (per CF account)
 - `DAILY_HORDE_LIMIT`
+- `REQUIRE_BRAND_FACE` (default `true` when you want identity-only)
 
 **Policy:** no image → **do not publish**.
 

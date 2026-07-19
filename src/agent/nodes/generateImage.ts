@@ -18,7 +18,7 @@ function ensureImagesDir(): void {
 
 /**
  * Generate post image:
- *   Nano Banana → Skywork → Pollinations gpt-image-2 → Cloudflare → AI Horde.
+ *   Nano Banana → Skywork → Pollinations (face via image=) → Cloudflare → AI Horde.
  * On total failure → no imagePath → graph skips publish.
  */
 export async function generateImage(
