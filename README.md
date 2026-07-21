@@ -61,14 +61,32 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 | **Color** | `#036158` (teal) |
 | **Image presets** | `workflow` · `infrastructure` · `engineering` · `agents` · `dataflow` (premium social cover diagrams) |
 
-### Content sources (primary)
+### Content sources
+
+**AI engineering (primary)**
 
 - [Actualize AI](https://actualize.co/ai-engineering-blog/)
 - [The Agentic Engineer](https://www.the-agentic-engineer.com/blog)
 - [Skywork AI](https://skywork.ai/blog/)
 - [AI Agent Store News](https://aiagentstore.ai/news)
+- [LangChain Blog](https://blog.langchain.dev/)
+- [Anthropic Engineering](https://www.anthropic.com/engineering)
+- [LlamaIndex Blog](https://www.llamaindex.ai/blog)
+- [Hugging Face Blog](https://huggingface.co/blog)
+
+**Community / fullstack**
+
 - [Towards Data Science — Agentic AI](https://towardsdatascience.com/category/artificial-intelligence/agentic-ai/)
 - [Plain English — Fullstack](https://plainenglish.io/topics/fullstack)
+
+**UX/UI + product frontend**
+
+- [web.dev Blog](https://web.dev/blog/)
+- [Nielsen Norman Group](https://www.nngroup.com/articles/)
+- [Josh W Comeau](https://www.joshwcomeau.com/)
+- [Vercel Blog](https://vercel.com/blog)
+- [Chrome Developers Blog](https://developer.chrome.com/blog)
+- [Smashing Magazine](https://www.smashingmagazine.com/articles/)
 
 ---
 

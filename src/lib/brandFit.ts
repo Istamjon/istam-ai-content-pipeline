@@ -1,6 +1,6 @@
 /**
- * Brand-fit filter for Istam Obidov AI Engineering pipeline.
- * Prefers primary AI-engineering sources; rejects gaming / lifestyle / SEO bait.
+ * Brand-fit filter for Istam Obidov AI Engineering + Product UX/UI pipeline.
+ * Prefers AI-engineering + practical product UI sources; rejects gaming / lifestyle / SEO bait.
  */
 
 export type BrandFitResult = {
@@ -119,6 +119,47 @@ const POSITIVE: Array<{ re: RegExp; w: number; label: string }> = [
     label: "dev",
   },
   { re: /\b(sdk|open\s*source|github)\b/i, w: 1, label: "dev-tools" },
+  // Product UX/UI (AI apps, design systems, a11y — not pure fashion/lifestyle)
+  {
+    re: /\b(ux|user\s+experience|ui\s*\/?\s*ux|product\s+design|interaction\s+design|interface\s+design)\b/i,
+    w: 4,
+    label: "ux",
+  },
+  {
+    re: /\b(user\s+interface|ui\s+design|frontend\s+design|web\s+design|visual\s+design)\b/i,
+    w: 3,
+    label: "ui",
+  },
+  {
+    re: /\b(design\s+system|design\s+token|component\s+library|atomic\s+design|storybook)\b/i,
+    w: 4,
+    label: "design-system",
+  },
+  {
+    re: /\b(a11y|accessib(le|ility)|wcag|aria\b|screen\s+reader|inclusive\s+design)\b/i,
+    w: 4,
+    label: "a11y",
+  },
+  {
+    re: /\b(figma|prototyp(e|ing)|wireframe|usability|heuristic|information\s+architecture)\b/i,
+    w: 3,
+    label: "design-tools",
+  },
+  {
+    re: /\b(chatbot\s+ux|conversational\s+ui|agent\s+ui|llm\s+ui|ai\s+product\s+ux|human[- ]in[- ]the[- ]loop\s+ui)\b/i,
+    w: 5,
+    label: "ai-product-ux",
+  },
+  {
+    re: /\b(core\s+web\s+vitals|cls\b|lcp\b|inp\b|web\s+performance|responsive\s+design|mobile[- ]first)\b/i,
+    w: 3,
+    label: "web-ux",
+  },
+  {
+    re: /\b(tailwind|shadcn|radix|framer\s+motion|css\s+grid|flexbox|typography|color\s+contrast)\b/i,
+    w: 2,
+    label: "frontend-ui",
+  },
 ];
 
 /** Strong AI engineering (not generic lifestyle) */
@@ -150,6 +191,21 @@ const STRONG_STACK_LABELS = new Set([
   "python-stack",
   "apis",
   "production",
+]);
+
+/**
+ * Product UX/UI signals — NN/g, web.dev, Smashing, Josh Comeau, Vercel UI posts.
+ * Keeps pure fashion/lifestyle out (those lack these labels).
+ */
+const STRONG_UX_LABELS = new Set([
+  "ux",
+  "ui",
+  "design-system",
+  "a11y",
+  "design-tools",
+  "ai-product-ux",
+  "web-ux",
+  "frontend-ui",
 ]);
 
 /** Hard off-brand / SEO-bait / entertainment */
@@ -215,9 +271,15 @@ const PREFERRED_SOURCES: Array<{
   /** Higher bar after boost for noisy general blogs */
   minScore?: number;
 }> = [
+  // Tier A — AI engineering
   { host: "actualize.co", boost: 6, label: "src-actualize" },
   { host: "the-agentic-engineer.com", boost: 6, label: "src-agentic-eng" },
   { host: "skywork.ai", boost: 5, label: "src-skywork" },
+  { host: "blog.langchain.dev", boost: 6, label: "src-langchain" },
+  { host: "langchain.dev", boost: 5, label: "src-langchain-alt" },
+  { host: "anthropic.com", boost: 6, label: "src-anthropic" },
+  { host: "llamaindex.ai", boost: 5, label: "src-llamaindex" },
+  { host: "huggingface.co", boost: 5, label: "src-huggingface" },
   // Agent directory news — mixed listicles; AI/agent only (not bare Next.js SEO)
   {
     host: "aiagentstore.ai",
@@ -235,11 +297,54 @@ const PREFERRED_SOURCES: Array<{
     requireStrongAi: true,
     minScore: 5,
   },
-  // Fullstack topic is noisy — only keep clear AI/agent/LLM posts
+  // Fullstack topic is noisy — only keep clear AI/agent/LLM/stack posts
   {
     host: "plainenglish.io",
     boost: 2,
     label: "src-plainenglish",
+    requireStrongAi: true,
+    minScore: 6,
+  },
+  // Tier C — UX/UI + product frontend (need UX or stack signal, not pure marketing)
+  {
+    host: "web.dev",
+    boost: 4,
+    label: "src-webdev",
+    requireStrongAi: true,
+    minScore: 5,
+  },
+  {
+    host: "nngroup.com",
+    boost: 5,
+    label: "src-nngroup",
+    requireStrongAi: true,
+    minScore: 5,
+  },
+  {
+    host: "joshwcomeau.com",
+    boost: 4,
+    label: "src-joshwcomeau",
+    requireStrongAi: true,
+    minScore: 5,
+  },
+  {
+    host: "vercel.com",
+    boost: 3,
+    label: "src-vercel",
+    requireStrongAi: true,
+    minScore: 6,
+  },
+  {
+    host: "developer.chrome.com",
+    boost: 3,
+    label: "src-chrome-dev",
+    requireStrongAi: true,
+    minScore: 5,
+  },
+  {
+    host: "smashingmagazine.com",
+    boost: 3,
+    label: "src-smashing",
     requireStrongAi: true,
     minScore: 6,
   },
@@ -284,10 +389,14 @@ function hasStrongStack(positives: string[]): boolean {
   return positives.some((p) => STRONG_STACK_LABELS.has(p));
 }
 
-/** Topic is on-brand for secondary sources: AI *or* modern full-stack. */
+function hasStrongUx(positives: string[]): boolean {
+  return positives.some((p) => STRONG_UX_LABELS.has(p));
+}
+
+/** Topic is on-brand for secondary sources: AI *or* full-stack *or* product UX/UI. */
 function hasStrongTopic(positives: string[]): boolean {
   const content = positives.filter((p) => !p.startsWith("src-"));
-  return hasStrongAi(content) || hasStrongStack(content);
+  return hasStrongAi(content) || hasStrongStack(content) || hasStrongUx(content);
 }
 
 /**
@@ -374,14 +483,15 @@ export function scoreBrandFit(input: {
     return {
       ok: false,
       score,
-      reason: "no AI Engineering / full-stack (React/Next/Node/Python/API) signals",
+      reason:
+        "no AI Engineering / full-stack / UX-UI signals (agents, React/Next, design system, a11y…)",
       positives,
       negatives,
       sourceBoost,
     };
   }
 
-  // Noisy hubs: require AI *or* modern stack; aiOnly hosts need real AI/agent signal
+  // Noisy hubs: require AI *or* stack *or* UX; aiOnly hosts need real AI/agent signal
   if (src?.requireStrongAi) {
     const contentPos = positives.filter((p) => !p.startsWith("src-"));
     const topicOk = src.aiOnly
@@ -393,7 +503,7 @@ export function scoreBrandFit(input: {
         score,
         reason: src.aiOnly
           ? `weak AI signal for ${src.label} (need agents/LLM/RAG/automation — not bare stack SEO)`
-          : `weak topic for ${src.label} (need AI agents/LLM/RAG or React/Next/Node/Python/Django/API)`,
+          : `weak topic for ${src.label} (need AI, React/Next/Node/Python/API, or UX/UI/a11y/design system)`,
         positives,
         negatives,
         sourceBoost,

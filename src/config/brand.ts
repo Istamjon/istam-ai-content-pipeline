@@ -28,6 +28,12 @@ export const brand = {
       "APIs",
       "JavaScript",
       "TypeScript",
+      // Product UI (AI apps + modern web)
+      "UX/UI",
+      "Product Design",
+      "Design Systems",
+      "Accessibility",
+      "Frontend UX",
     ],
   },
 
@@ -92,6 +98,14 @@ export const brand = {
     "APIs",
     "JavaScript",
     "TypeScript",
+    // Product UI for AI apps + modern web
+    "UX/UI",
+    "Product Design",
+    "Design Systems",
+    "Accessibility (a11y)",
+    "AI Product UI",
+    "Chatbot / Agent UX",
+    "Frontend UX",
   ],
 
   contentRules: [
@@ -209,7 +223,7 @@ export const brand = {
   },
 
   footerTitle: "Author: Istam Obidov",
-  footerTagline: "AI Engineering | AI Agents | Automation",
+  footerTagline: "AI Engineering | AI Agents | Product UX/UI",
 
   /** Brand color system (image + UI) */
   colors: {
@@ -270,15 +284,14 @@ export { platformLimits } from "./platformTextLimits.js";
 
 /**
  * Content sources (crawl order). Brand-fit ranks by score + preferred host boost.
- * Only these hosts are crawled — OpenAI/Anthropic/etc. removed (403 noise + lower priority).
+ * Only these hosts are crawled.
  *
- * Tier A (highest trust / AI engineering focus):
- *   Actualize, Agentic Engineer, Skywork, AI Agent Store
- * Tier B (agentic/fullstack — stricter brand-fit):
- *   Towards Data Science Agentic AI, Plain English Fullstack
+ * Tier A — AI engineering (official + specialist blogs)
+ * Tier B — community / education (stricter brand-fit)
+ * Tier C — UX/UI + product frontend (practical product design for apps)
  */
 export const sources = [
-  // Tier A — primary AI engineering
+  // ── Tier A — primary AI engineering ──────────────────────────
   {
     url: "https://actualize.co/ai-engineering-blog/",
     name: "Actualize AI",
@@ -308,7 +321,32 @@ export const sources = [
       "/news/guides-and-tutorials", // tag index only
     ],
   },
-  // Tier B — community / education (brand-fit requires strong AI signals)
+  {
+    url: "https://blog.langchain.dev/",
+    name: "LangChain Blog",
+    tier: "primary" as const,
+  },
+  {
+    url: "https://www.anthropic.com/engineering",
+    name: "Anthropic Engineering",
+    tier: "primary" as const,
+    pathInclude: ["/engineering"],
+  },
+  {
+    url: "https://www.llamaindex.ai/blog",
+    name: "LlamaIndex Blog",
+    tier: "primary" as const,
+    pathInclude: ["/blog"],
+  },
+  {
+    url: "https://huggingface.co/blog",
+    name: "Hugging Face Blog",
+    tier: "primary" as const,
+    pathInclude: ["/blog/"],
+    pathExclude: ["/blog/community", "/blog/tags"],
+  },
+
+  // ── Tier B — community / education ───────────────────────────
   {
     url: "https://towardsdatascience.com/category/artificial-intelligence/agentic-ai/",
     name: "Towards Data Science — Agentic AI",
@@ -318,6 +356,44 @@ export const sources = [
     url: "https://plainenglish.io/topics/fullstack",
     name: "Plain English — Fullstack",
     tier: "secondary" as const,
+  },
+
+  // ── Tier C — UX/UI + product frontend ────────────────────────
+  {
+    url: "https://web.dev/blog/",
+    name: "web.dev Blog",
+    tier: "secondary" as const,
+    pathInclude: ["/blog/"],
+  },
+  {
+    url: "https://www.nngroup.com/articles/",
+    name: "Nielsen Norman Group",
+    tier: "secondary" as const,
+    pathInclude: ["/articles/"],
+  },
+  {
+    url: "https://www.joshwcomeau.com/",
+    name: "Josh W Comeau",
+    tier: "secondary" as const,
+  },
+  {
+    url: "https://vercel.com/blog",
+    name: "Vercel Blog",
+    tier: "secondary" as const,
+    pathInclude: ["/blog/"],
+  },
+  {
+    url: "https://developer.chrome.com/blog",
+    name: "Chrome Developers Blog",
+    tier: "secondary" as const,
+    pathInclude: ["/blog/"],
+  },
+  {
+    url: "https://www.smashingmagazine.com/articles/",
+    name: "Smashing Magazine",
+    tier: "secondary" as const,
+    pathInclude: ["/"],
+    pathExclude: ["/printed-books", "/events", "/membership"],
   },
 ];
 
