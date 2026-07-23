@@ -123,14 +123,26 @@ jobs:
               -w /app \
               pipeline node /app/scripts/force-face-check.mjs
 
-            echo "=== FORCE ONE PIPELINE RUN (one-shot) ==="
+            echo "=== FORCE ONE PIPELINE RUN (one-shot, may take 10–25 min) ==="
+            set +e
             docker compose run --rm --no-deps \
               -v "$APP_DIR/data:/app/data" \
               -v "$APP_DIR/scripts:/app/scripts:ro" \
               -w /app \
               -e CRON_RUN_ON_START=false \
               -e DRY_RUN=false \
-              pipeline node /app/scripts/force-one-pipeline.mjs
+              pipeline node /app/scripts/force-one-pipeline.mjs \
+              2>&1 | tee data/force-one-last.log
+            rc=${PIPESTATUS[0]}
+            set -e
+            echo "force-one exit=$rc"
+            tail -n 40 data/force-one-last.log || true
+            if [ "$rc" != "0" ]; then
+              echo "::error::force-one-pipeline failed exit=$rc"
+              # Still bring scheduler back up
+              docker compose up -d || true
+              exit "$rc"
+            fi
 
             # Leave long-running scheduler up for daily slots
             docker compose up -d
