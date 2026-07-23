@@ -183,13 +183,16 @@ TASK: Write an ORIGINAL social post for Istam Obidov. Do NOT copy sentences from
 FACT GROUNDING (critical — violations = fail):
 1) Use ONLY facts from SOURCE MATERIAL and ALLOWED FACTS below.
 2) Do not introduce tools/products/numbers not listed in the source.
-3) Do not merge this article with other topics you "know" from outside the source.
-4) Teaching structure (hook, steps, limitation) is OK; inventing content for steps is NOT.
-5) If ALLOWED FACTS is non-empty, every technical claim in the post should map to one of them or the source.
+3) Do not invent statistics, percentages, "Nx" multipliers, or survey numbers.
+4) Do not merge this article with other topics you "know" from outside the source.
+5) Teaching structure (hook, steps, limitation) is OK; inventing content for steps is NOT.
+6) If ALLOWED FACTS is non-empty, every technical claim in the post should map to one of them or the source.
+7) Prefer qualitative claims over numbers when the source has no exact figures.
 
 LENGTH:
 - Target 700–1600 characters.
-- Hard max ~1800 characters. Complete every sentence. Never truncate mid-sentence.
+- Hard max ~1800 characters. Complete every sentence. Never truncate mid-sentence or mid-word.
+- End with a complete bullet under "Asosiy faktlar:" — never cut a word short.
 
 POST REQUIREMENTS:
 1) Language: Uzbek (Latin), professional and clear.

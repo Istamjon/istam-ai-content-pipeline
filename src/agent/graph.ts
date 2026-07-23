@@ -28,9 +28,9 @@ const routeAfterQualityCheck = (
   state: GraphState,
 ): "generateImagePrompt" | "rewrite" | "fetchArticle" => {
   if (state.quality?.ok) return "generateImagePrompt";
-  // retryCount is incremented in rewrite; allow one rewrite + one retry (2 total)
-  if (state.retryCount < 2) return "rewrite";
-  // Exhausted retries — do NOT publish this article
+  // rewrite increments retryCount; allow up to 3 rewrite attempts for daily reliability
+  if (state.retryCount < 3) return "rewrite";
+  // Exhausted retries — do NOT publish this article; try next in batch
   console.warn(
     "[graph] quality failed after retries — skip publish, next article",
   );

@@ -14,9 +14,11 @@ import {
 import { checkAndAlertTokenExpiry } from "./oauth/tokenExpiryAlert.js";
 
 /** Max delayed retries when a slot runs but nothing publishes (quality fail, etc.). */
-const SLOT_MAX_RETRIES = 2;
+const SLOT_MAX_RETRIES = 3;
 /** Wait before re-trying a slot that produced no successful publish. */
-const SLOT_RETRY_MS = 25 * 60 * 1000;
+const SLOT_RETRY_MS = 18 * 60 * 1000;
+/** How many successful multi-platform publishes we aim for per local day. */
+const DAILY_MIN_PUBLISHES = 1;
 
 type RunOutcome = {
   /** Pipeline actually started and finished (not skipped due to busy). */
@@ -100,7 +102,6 @@ export function startScheduler(): void {
       return { attempted: true, published };
     } catch (error) {
       console.error("[Scheduler] Pipeline failed:", error);
-      // Hard crash: treat as attempted but not published so slot can retry.
       return { attempted: true, published: false };
     } finally {
       running = false;
@@ -108,7 +109,7 @@ export function startScheduler(): void {
   };
 
   if (env.CRON_RANDOM) {
-    startRandomDailyScheduler(runOnce);
+    startGuaranteedDailyScheduler(runOnce);
   } else {
     startFixedScheduler(runOnce);
   }
@@ -123,7 +124,6 @@ export function startScheduler(): void {
     );
   }
 
-  // Immediate check on process start (deduped if already sent today)
   void runTokenAlert("startup");
 
   if (env.CRON_RUN_ON_START) {
@@ -137,20 +137,25 @@ export function startScheduler(): void {
 }
 
 /**
- * Random times every local day (different plan each day).
- * Uses setTimeout for today's remaining slots; rolls over at local midnight.
+ * Guaranteed daily algorithm (best for free-tier + multi-platform):
  *
- * Reliability rules:
- * - Missed (past) unfired slots → catch-up immediately (restart-safe)
- * - Slot marked fired only after at least one successful publish
- * - No-publish runs get up to SLOT_MAX_RETRIES delayed retries
+ * 1) Random times inside the day window (natural cadence)
+ * 2) SERIAL processing — never pile catch-up slots on top of a running pipeline
+ * 3) Missed slots after restart → process earliest first, then next (queue)
+ * 4) No-publish → retry slot (up to SLOT_MAX_RETRIES) with backoff
+ * 5) Daily guarantee: if zero publishes by late afternoon, force one extra run
+ * 6) Slot marked fired only after successful publish (or retries exhausted)
  */
-function startRandomDailyScheduler(
+function startGuaranteedDailyScheduler(
   runOnce: (reason: string) => Promise<RunOutcome>,
 ): void {
   const timers = new Set<ReturnType<typeof setTimeout>>();
-  /** How many no-publish retries already scheduled/used for HH:MM today. */
   const slotRetries = new Map<string, number>();
+  /** FIFO of slots waiting while pipeline is busy or for serial catch-up */
+  const pendingQueue: string[] = [];
+  let processingQueue = false;
+  let publishesToday = 0;
+  let guaranteeArmed = false;
 
   const clearTimers = () => {
     for (const t of timers) clearTimeout(t);
@@ -165,61 +170,139 @@ function startRandomDailyScheduler(
     timers.add(handle);
   };
 
-  const fireSlot = (t: string, reason: string): void => {
+  const enqueueSlot = (t: string): void => {
     if (isSlotFired(t)) return;
-    void (async () => {
-      try {
-        const outcome = await runOnce(reason);
-        if (!outcome.attempted) {
-          // Busy — try again soon so the slot is not lost.
-          console.warn(
-            `[Scheduler] slot ${t} busy — re-queue in 2 min (${reason})`,
-          );
-          armTimeout(2 * 60 * 1000, () => fireSlot(t, `${reason} requeue`));
-          return;
-        }
-        if (outcome.published) {
-          markSlotFired(t);
-          console.log(`[Scheduler] slot ${t} published — marked fired`);
-          return;
-        }
-        // Ran but nothing published (quality fail, empty sources, etc.)
-        const n = (slotRetries.get(t) || 0) + 1;
-        slotRetries.set(t, n);
-        if (n <= SLOT_MAX_RETRIES) {
-          const mins = Math.round(SLOT_RETRY_MS / 60000);
-          console.warn(
-            `[Scheduler] slot ${t} no publish — retry ${n}/${SLOT_MAX_RETRIES} in ~${mins} min`,
-          );
-          armTimeout(SLOT_RETRY_MS, () =>
-            fireSlot(t, `random ${t} retry${n}`),
-          );
-        } else {
-          // Avoid infinite loops for a bad content day.
-          markSlotFired(t);
-          console.warn(
-            `[Scheduler] slot ${t} exhausted ${SLOT_MAX_RETRIES} retries with no publish — marked fired`,
-          );
-        }
-      } catch (e) {
-        console.warn(`[Scheduler] slot ${t} failed (not marked fired):`, e);
+    if (pendingQueue.includes(t)) return;
+    pendingQueue.push(t);
+    void drainQueue();
+  };
+
+  const fireSlotDirect = async (t: string, reason: string): Promise<void> => {
+    if (isSlotFired(t)) return;
+    try {
+      const outcome = await runOnce(reason);
+      if (!outcome.attempted) {
+        // Busy — re-queue without burning retries
+        console.warn(
+          `[Scheduler] slot ${t} busy — queue again in 3 min (${reason})`,
+        );
+        armTimeout(3 * 60 * 1000, () => enqueueSlot(t));
+        return;
       }
-    })();
+      if (outcome.published) {
+        markSlotFired(t);
+        publishesToday += 1;
+        console.log(
+          `[Scheduler] slot ${t} published — marked fired (dayOk=${publishesToday})`,
+        );
+        return;
+      }
+      const n = (slotRetries.get(t) || 0) + 1;
+      slotRetries.set(t, n);
+      if (n <= SLOT_MAX_RETRIES) {
+        const mins = Math.round(SLOT_RETRY_MS / 60000);
+        console.warn(
+          `[Scheduler] slot ${t} no publish — retry ${n}/${SLOT_MAX_RETRIES} in ~${mins} min`,
+        );
+        armTimeout(SLOT_RETRY_MS, () => enqueueSlot(t));
+      } else {
+        markSlotFired(t);
+        console.warn(
+          `[Scheduler] slot ${t} exhausted ${SLOT_MAX_RETRIES} retries with no publish — marked fired`,
+        );
+      }
+    } catch (e) {
+      console.warn(`[Scheduler] slot ${t} failed (not marked fired):`, e);
+    }
+  };
+
+  const drainQueue = async (): Promise<void> => {
+    if (processingQueue) return;
+    processingQueue = true;
+    try {
+      while (pendingQueue.length > 0) {
+        const t = pendingQueue.shift()!;
+        if (isSlotFired(t)) continue;
+        await fireSlotDirect(t, `queue ${t}`);
+      }
+    } finally {
+      processingQueue = false;
+    }
+  };
+
+  const armDailyGuarantee = (schedule: DailySchedule): void => {
+    if (guaranteeArmed) return;
+    guaranteeArmed = true;
+    // Force at least one publish attempt late in the window if day is empty
+    const endH = env.CRON_WINDOW_END_HOUR;
+    const guaranteeHhmm = `${String(Math.max(env.CRON_WINDOW_START_HOUR, endH - 2)).padStart(2, "0")}:15`;
+    const ms = msUntilLocalHhmm(guaranteeHhmm);
+    if (ms < 0) {
+      // Already past guarantee time — if nothing published yet, enqueue soon
+      armTimeout(5 * 60 * 1000, () => {
+        if (publishesToday < DAILY_MIN_PUBLISHES) {
+          console.warn(
+            `[Scheduler] DAILY GUARANTEE (late): 0 publishes today — force run`,
+          );
+          void runOnce("daily-guarantee").then((o) => {
+            if (o.published) publishesToday += 1;
+          });
+        }
+      });
+      return;
+    }
+    armTimeout(ms, () => {
+      if (publishesToday >= DAILY_MIN_PUBLISHES) {
+        console.log(
+          `[Scheduler] Daily guarantee skip — already published ${publishesToday} today`,
+        );
+        return;
+      }
+      console.warn(
+        `[Scheduler] DAILY GUARANTEE ${guaranteeHhmm}: 0 publishes — force pipeline`,
+      );
+      void runOnce("daily-guarantee").then((o) => {
+        if (o.published) {
+          publishesToday += 1;
+        } else if (!o.published && o.attempted) {
+          // One more shot after backoff
+          armTimeout(SLOT_RETRY_MS, () => {
+            if (publishesToday < DAILY_MIN_PUBLISHES) {
+              void runOnce("daily-guarantee-retry").then((r) => {
+                if (r.published) publishesToday += 1;
+              });
+            }
+          });
+        }
+      });
+    });
+    console.log(
+      `[Scheduler] Daily guarantee armed at ${guaranteeHhmm} (if 0 publishes)`,
+    );
   };
 
   const armDay = (schedule: DailySchedule) => {
     clearTimers();
     slotRetries.clear();
+    pendingQueue.length = 0;
+    publishesToday = schedule.fired?.length
+      ? schedule.fired.length
+      : 0;
+    // fired may include failed exhaust — treat conservatively: only count after publish
+    // We don't know which were real publishes; start from 0 and rely on guarantee
+    publishesToday = 0;
+    guaranteeArmed = false;
+
     const now = nowLocalHhmm();
     console.log(
-      `[Scheduler] Random mode: ${schedule.date} → ${schedule.times.length} slots: ${schedule.times.join(", ")}`,
+      `[Scheduler] Guaranteed-daily mode: ${schedule.date} → ${schedule.times.length} slots: ${schedule.times.join(", ")}`,
     );
     console.log(
-      `[Scheduler] Window ${env.CRON_WINDOW_START_HOUR}:00–${env.CRON_WINDOW_END_HOUR}:00 local, min gap ${env.CRON_MIN_GAP_MINUTES}m`,
+      `[Scheduler] Window ${env.CRON_WINDOW_START_HOUR}:00–${env.CRON_WINDOW_END_HOUR}:00 local, min gap ${env.CRON_MIN_GAP_MINUTES}m, min publishes/day=${DAILY_MIN_PUBLISHES}`,
     );
 
-    let armed = 0;
-    let catchUpIndex = 0;
+    let futureArmed = 0;
+    const missed: string[] = [];
 
     for (const t of schedule.times) {
       if (isSlotFired(t)) {
@@ -228,25 +311,34 @@ function startRandomDailyScheduler(
       }
       const ms = msUntilLocalHhmm(t);
       if (ms < 0) {
-        // Missed while process was down / deploying — catch up (stagger if several).
-        const delay = catchUpIndex * 5000;
-        catchUpIndex += 1;
-        console.log(
-          `[Scheduler] slot ${t} missed (${now}) — catch-up in ${Math.round(delay / 1000)}s`,
-        );
-        armTimeout(delay, () => fireSlot(t, `catch-up ${t}`));
-        armed += 1;
+        missed.push(t);
         continue;
       }
-
-      armTimeout(ms, () => fireSlot(t, `random ${t}`));
+      armTimeout(ms, () => enqueueSlot(t));
       const mins = Math.round(ms / 60000);
       console.log(`[Scheduler] Armed ${t} (in ~${mins} min)`);
-      armed += 1;
+      futureArmed += 1;
     }
+
+    // SERIAL catch-up: only enqueue earliest missed first; drainQueue runs one-by-one
+    if (missed.length > 0) {
+      console.log(
+        `[Scheduler] ${missed.length} missed slot(s) → serial catch-up: ${missed.join(", ")}`,
+      );
+      for (const t of missed) {
+        pendingQueue.push(t);
+      }
+      // Stagger start slightly so container is fully up
+      armTimeout(8_000, () => {
+        void drainQueue();
+      });
+    }
+
     console.log(
-      `[Scheduler] ${armed} remaining slot(s) today. New random plan at local midnight.`,
+      `[Scheduler] ${futureArmed} future + ${missed.length} catch-up slot(s). New plan at local midnight.`,
     );
+
+    armDailyGuarantee(schedule);
 
     armTimeout(msUntilNextLocalMidnight(), () => {
       console.log("[Scheduler] Local day rolled — generating new random schedule");

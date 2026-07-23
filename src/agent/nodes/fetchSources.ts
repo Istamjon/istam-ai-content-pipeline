@@ -48,10 +48,12 @@ export async function fetchSources(
       scored.push({ article, score: fit.score, reason: fit.reason });
     }
 
-    // Prefer higher brand-fit (includes primary-source boost)
+    // Prefer higher brand-fit (primary hosts already boosted in scoreBrandFit)
     scored.sort((a, b) => b.score - a.score);
+    // Daily reliability: larger batch so quality failures can fall through to next article
+    const batchSize = Math.max(env.MAX_ARTICLES_PER_RUN, 5);
     const newArticles = scored.map((s) => s.article);
-    const batch = newArticles.slice(0, env.MAX_ARTICLES_PER_RUN);
+    const batch = newArticles.slice(0, batchSize);
 
     console.log(
       `[fetchSources] Found ${articles.length} total, ` +

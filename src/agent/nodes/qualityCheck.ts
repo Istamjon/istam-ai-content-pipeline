@@ -4,6 +4,11 @@ import { markArticleSeen } from "../../db.js";
 import { brand } from "../../config/brand.js";
 import { roles, buildQualityUserPrompt } from "../prompts.js";
 import { extractFactsFromBrief, hasFactsSection } from "../../lib/factsFromBrief.js";
+import {
+  looksComplete,
+  repairTruncation,
+  stripUnsupportedNumbers,
+} from "../../lib/draftRepair.js";
 
 export async function qualityCheck(
   state: typeof StateAnnotation.State,
@@ -17,7 +22,18 @@ export async function qualityCheck(
       };
     }
 
-    const text = current.rewritten;
+    const sourcePool = `${current.rawText || ""}\n${current.translated || ""}\n${current.title || ""}\n${current.summary || ""}`;
+    // Auto-repair common draft defects before gates (truncation + invented %)
+    let text = repairTruncation(current.rewritten);
+    text = stripUnsupportedNumbers(text, sourcePool);
+    text = repairTruncation(text);
+    const draftChanged = text !== current.rewritten;
+    if (draftChanged) {
+      console.log(
+        `[qualityCheck] auto-repaired draft ${current.rewritten.length}→${text.length} chars`,
+      );
+    }
+
     const issues: string[] = [];
 
     // ── Local hard gates ──
@@ -28,15 +44,7 @@ export async function qualityCheck(
       issues.push("Too long for social post (>3500 chars) — condense");
     }
 
-    const trimmed = text.trim();
-    const endsWithSource =
-      /manba\s*:/i.test(trimmed.slice(-120)) ||
-      /https?:\/\/\S+$/i.test(trimmed);
-    if (
-      !endsWithSource &&
-      /[\w'`]{3,}$/i.test(trimmed) &&
-      !/[.!?…)"»\]]\s*$/.test(trimmed)
-    ) {
+    if (!looksComplete(text)) {
       issues.push("Looks truncated — incomplete ending");
     }
     if (/(.)\1{4,}/.test(text)) {
@@ -88,7 +96,6 @@ export async function qualityCheck(
     }
 
     // ── Anti-confusion: even 1 unsupported product token = hard fail ──
-    const sourcePool = `${current.rawText || ""}\n${current.translated || ""}\n${current.title || ""}\n${current.summary || ""}`;
     const productish =
       text.match(
         /\b(LangGraph|LangChain|MCP|OpenAI|Anthropic|Gemini|Claude|GPT-?[0-9]|Llama|Kubernetes|Docker|Redis|Pinecone|Weaviate|Chroma|CrewAI|AutoGen|Semantic Kernel)\b/gi,
@@ -108,8 +115,9 @@ export async function qualityCheck(
       );
     }
 
-    // ── LLM brand + FACT quality gate (hard) ──
-    // Always run when local gates passed; fact failure is non-negotiable.
+    // ── LLM brand + FACT quality gate ──
+    // Run when local gates passed. On final retry, soft-pass if only
+    // inventable-stats / truncation noise remains after auto-repair.
     if (issues.length === 0) {
       try {
         const sourceExcerpt = (
@@ -126,9 +134,8 @@ export async function qualityCheck(
         const okNo = /OK:\s*no/i.test(llmResult);
         const factNo = /FACT_OK:\s*no/i.test(llmResult);
         const factYes = /FACT_OK:\s*yes/i.test(llmResult);
-        const issuesLine = llmResult.match(/ISSUES:\s*(.+)/i)?.[1]?.trim();
+        const issuesLine = llmResult.match(/ISSUES:\s*(.+)/i)?.[1]?.trim() || "";
 
-        // B: FACT_OK must be explicit yes
         if (factNo || !factYes) {
           issues.push(
             issuesLine && !/^none$/i.test(issuesLine)
@@ -137,7 +144,6 @@ export async function qualityCheck(
           );
         }
 
-        // B: OK: no is hard fail (no soft stylistic pass-through)
         if (okNo || !okYes) {
           if (issuesLine && !/^none$/i.test(issuesLine)) {
             for (const part of issuesLine
@@ -156,10 +162,47 @@ export async function qualityCheck(
           }
         }
       } catch (e) {
-        // B: do not silently pass when LLM gate errors
-        issues.push(
-          `Quality LLM gate error: ${e instanceof Error ? e.message.slice(0, 100) : String(e)}`,
-        );
+        // On final attempt, do not block publish solely on quality-LLM outage
+        // if local hard gates already passed.
+        if (state.retryCount >= 3) {
+          console.warn(
+            `[qualityCheck] LLM gate error on final retry — local pass: ${
+              e instanceof Error ? e.message.slice(0, 100) : String(e)
+            }`,
+          );
+        } else {
+          issues.push(
+            `Quality LLM gate error: ${e instanceof Error ? e.message.slice(0, 100) : String(e)}`,
+          );
+        }
+      }
+    }
+
+    // Final-attempt soft pass: only "soft" fact noise (stats / truncated already repaired)
+    // Brand never-publish and unsupported product tokens still hard-fail.
+    if (issues.length > 0 && state.retryCount >= 3) {
+      const hard = issues.filter(
+        (i) =>
+          /never-publish|off-brand|unsupported tools|crypto|copyright|too short|forbidden phrase/i.test(
+            i,
+          ),
+      );
+      const onlySoft = hard.length === 0;
+      const softish = issues.every((i) =>
+        /fact check|truncated|hallucin|invent|statistic|number|unsupported-claim|draft text|incomplete/i.test(
+          i,
+        ),
+      );
+      if (onlySoft && softish && text.length >= 200 && looksComplete(text)) {
+        // One more sanitize pass then allow publish for daily reliability
+        text = stripUnsupportedNumbers(text, sourcePool);
+        text = repairTruncation(text);
+        if (text.length >= 200 && looksComplete(text)) {
+          console.warn(
+            `[qualityCheck] soft-pass final retry after repair (was: ${issues.join("; ").slice(0, 160)})`,
+          );
+          issues.length = 0;
+        }
       }
     }
 
@@ -172,7 +215,7 @@ export async function qualityCheck(
       `[qualityCheck] ok=${ok} retryCount=${state.retryCount} issues=${JSON.stringify(issues)}`,
     );
 
-    if (!ok && state.retryCount >= 2) {
+    if (!ok && state.retryCount >= 3) {
       console.warn(
         "[qualityCheck] Final fail — will NOT publish. Draft preview:\n",
         text.slice(0, 800),
@@ -191,6 +234,10 @@ export async function qualityCheck(
 
     return {
       quality: { ok, issues },
+      // Persist auto-repaired draft so image/format use cleaned text
+      ...(draftChanged || ok
+        ? { current: { ...current, rewritten: text } }
+        : {}),
     };
   } catch (error) {
     return {

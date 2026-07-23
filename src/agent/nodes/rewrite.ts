@@ -3,6 +3,10 @@ import { pollinationsText } from "../../lib/pollinations.js";
 import { roles, buildRewriteUserPrompt } from "../prompts.js";
 import { cleanPostBody } from "../../lib/contentClean.js";
 import { ensureFactsSection } from "../../lib/factsFromBrief.js";
+import {
+  repairTruncation,
+  stripUnsupportedNumbers,
+} from "../../lib/draftRepair.js";
 
 export async function rewrite(
   state: typeof StateAnnotation.State,
@@ -37,15 +41,16 @@ export async function rewrite(
       .replace(/\n*\s*(Manba|Source|URL)\s*:\s*\S+/gi, "")
       .replace(/\n*https?:\/\/\S+\s*$/gi, "")
       .trim();
-    if (rewritten.length > 2200) {
-      const cut = rewritten.slice(0, 2100);
+    if (rewritten.length > 2000) {
+      const cut = rewritten.slice(0, 1900);
       const lastStop = Math.max(
         cut.lastIndexOf("."),
         cut.lastIndexOf("!"),
         cut.lastIndexOf("?"),
+        cut.lastIndexOf("…"),
         cut.lastIndexOf("\n"),
       );
-      rewritten = (lastStop > 800 ? cut.slice(0, lastStop + 1) : cut).trim();
+      rewritten = (lastStop > 600 ? cut.slice(0, lastStop + 1) : cut).trim();
     }
     rewritten = rewritten
       .replace(/^(Here is|Quyida|Mana)\b[\s\S]*?:\s*/i, "")
@@ -53,8 +58,12 @@ export async function rewrite(
     rewritten = cleanPostBody(rewritten);
     // E: guarantee 3–5 source-grounded "Asosiy faktlar" bullets when FACTS exist
     rewritten = ensureFactsSection(rewritten, current.summary, 5);
-    // Facts from brief may carry markdown; clean once more
     rewritten = cleanPostBody(rewritten);
+    // Auto-repair: complete ending + drop invented % not in source/brief
+    rewritten = repairTruncation(rewritten);
+    const sourcePool = `${current.rawText || ""}\n${current.translated || ""}\n${current.summary || ""}\n${current.title || ""}`;
+    rewritten = stripUnsupportedNumbers(rewritten, sourcePool);
+    rewritten = repairTruncation(rewritten);
     console.log(`[rewrite] length=${rewritten.length} chars`);
 
     return {

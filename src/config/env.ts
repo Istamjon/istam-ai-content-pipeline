@@ -384,7 +384,7 @@ export const env = {
    */
   MAX_ARTICLES_PER_RUN: Math.max(
     1,
-    parseInt(process.env.MAX_ARTICLES_PER_RUN || "3", 10) || 3,
+    parseInt(process.env.MAX_ARTICLES_PER_RUN || "5", 10) || 5,
   ),
   /** Soft daily publish cap per platform (UTC date). Default 4 = 4 posts/day stack. */
   DAILY_LIMIT_TELEGRAM: parseInt(process.env.DAILY_LIMIT_TELEGRAM || "4", 10),
