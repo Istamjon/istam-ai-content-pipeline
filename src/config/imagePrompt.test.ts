@@ -25,20 +25,22 @@ describe("imagePrompt", () => {
   it("titleToCoverHeading shortens and cleans titles", () => {
     const h = titleToCoverHeading(
       "Introducing GPU-Resident Top-K for Agentic RAG Pipelines in Production",
-      52,
     );
-    expect(h.length).toBeLessThanOrEqual(53);
+    expect(h.length).toBeLessThanOrEqual(32);
+    expect(h.split(/\s+/).length).toBeLessThanOrEqual(5);
     expect(h.toLowerCase()).not.toMatch(/^introducing/);
     expect(h).toMatch(/GPU|RAG|Agentic|Top-K/i);
   });
 
-  it("pickCoverHeading prefers Uzbek rewritten hook over English title", () => {
+  it("pickCoverHeading prefers short power phrase from Uzbek hook", () => {
     const h = pickCoverHeading({
       title: "Introducing Multi-Agent Orchestration in Production",
       rewritten:
         "Agentlar zanjiri ishlab chiqarishda qanday ishlaydi?\n\nAsosiy faktlar:\n• LangGraph\n• orchestrator",
     });
-    expect(h.toLowerCase()).toMatch(/agentlar|zanjiri|ishlab/);
+    expect(h.length).toBeLessThanOrEqual(32);
+    expect(h.split(/\s+/).length).toBeLessThanOrEqual(5);
+    expect(h.toLowerCase()).toMatch(/agentlar|zanjiri/);
     expect(h.toLowerCase()).not.toMatch(/^introducing/);
     expect(looksLikeUzbekLatin(h) || /agentlar/i.test(h)).toBe(true);
   });
@@ -110,8 +112,10 @@ describe("imagePrompt", () => {
     expect(preset).toBe("workflow");
     expect(composition).toBe("critical_path_glow");
     expect(pose).toBe("pointing_critical_path");
-    expect(heading.length).toBeGreaterThan(5);
-    expect(heading.toLowerCase()).toMatch(/ishlab|agent|boshqaramiz|oqim/);
+    expect(heading.length).toBeGreaterThan(3);
+    expect(heading.length).toBeLessThanOrEqual(32);
+    expect(heading.split(/\s+/).length).toBeLessThanOrEqual(5);
+    expect(heading.toLowerCase()).toMatch(/agent|oqim|boshqar|ishlab/);
     expect(prompt.length).toBeGreaterThan(500);
 
     expect(prompt).toMatch(/FULL-BLEED|full-bleed|edge-to-edge/i);
@@ -120,13 +124,13 @@ describe("imagePrompt", () => {
     expect(prompt).toMatch(/face\.jpg/);
     expect(prompt).toMatch(/ORIGINAL FACE REFERENCE/i);
     expect(prompt).toMatch(/NEW POSE|POSE LOCK|ORIGINAL FACE REFERENCE|face identity/i);
-    expect(prompt).toMatch(/MUST HAVE #2 — ON-IMAGE TITLE|ON-IMAGE TITLE/i);
+    expect(prompt).toMatch(/MUST HAVE #2 — POWER TITLE|POWER TITLE/i);
     expect(prompt).toContain(`"${heading}"`);
+    expect(prompt).toMatch(/single line|ONE line|one line/i);
     expect(prompt).toMatch(/MUST NOT — LOGO|no IO|No brand badge|no logo/i);
     expect(prompt).not.toMatch(/MUST HAVE #3 — LOGO/);
     expect(prompt).toMatch(/#036158/);
     expect(prompt).toMatch(/pointing|critical path/i);
-    // Models were painting "Uzbek" on covers when the word was in the visual brief
     expect(prompt).not.toMatch(/white Uzbek heading|crisp Uzbek heading|HEADING in OʻZBEK|UZBEK HEADING/i);
     expect(prompt).toMatch(/forbidden words on image: Uzbek|Never paint language\/meta/i);
   });

@@ -274,30 +274,120 @@ function hashSeed(s: string): number {
   return h >>> 0;
 }
 
+/** Default on-image title budget — short = readable + premium on mobile. */
+export const COVER_HEADING_MAX_LEN = 32;
+/** Prefer 2–6 words for power headlines. */
+export const COVER_HEADING_MAX_WORDS = 5;
+
+const HEADING_STOP = new Set(
+  [
+    "the",
+    "a",
+    "an",
+    "and",
+    "or",
+    "of",
+    "to",
+    "for",
+    "in",
+    "on",
+    "with",
+    "from",
+    "how",
+    "why",
+    "what",
+    "when",
+    "your",
+    "you",
+    "our",
+    "this",
+    "that",
+    "into",
+    "using",
+    "va",
+    "uchun",
+    "bilan",
+    "yoki",
+    "ham",
+    "shu",
+    "bu",
+    "esa",
+    "deb",
+    "da",
+    "ga",
+    "ni",
+    "ning",
+  ].map((w) => w.toLowerCase()),
+);
+
 /**
- * Short, punchy cover heading from post title (on-image text).
- * Kept short so models render readable letters.
+ * Short, punchy cover heading for on-image text.
+ * Goal: 2–5 strong words, ~≤32 chars — large premium type, not a paragraph.
  */
-export function titleToCoverHeading(title: string, maxLen = 52): string {
+export function titleToCoverHeading(
+  title: string,
+  maxLen = COVER_HEADING_MAX_LEN,
+): string {
   let t = title
     .replace(/https?:\/\/\S+/gi, " ")
-    .replace(/[|/·•]+/g, " — ")
+    .replace(/[|/·•]+/g, " ")
+    .replace(/[?!…]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 
-  // Drop common blog fluff prefixes (EN + UZ)
+  // Drop blog fluff / weak openers (EN + UZ)
   t = t
-    .replace(/^(introducing|announcing|how to|how\s+|why\s+|what is)\s+/i, "")
+    .replace(
+      /^(introducing|announcing|how to|how\s+|why\s+|what is|a playbook for|the complete guide to)\s+/i,
+      "",
+    )
     .replace(/^(yangi\s+maqola[:\s]+|maqola[:\s]+)/i, "")
+    .replace(
+      /^(ishlab\s+chiqarishda|productionda|amaliyotda|bugun|endi|nima\s+uchun|qanday\s+)/i,
+      "",
+    )
+    .replace(/\s+(qanday\s+ishlaydi|nima\s+uchun\s+muhim)\??$/i, "")
+    .replace(/[:;—–-].*$/, "") // keep power phrase before colon/dash
     .trim();
+
+  // Prefer first clause if sentence is long
+  const clause = t.split(/[.!?]/)[0]?.trim() || t;
+  t = clause;
+
+  // Tokenize and keep strongest words first (drop glue words if over budget)
+  let words = t
+    .split(/\s+/)
+    .map((w) => w.replace(/^[^A-Za-z0-9oʻgʻOʻGʻ']+|[^A-Za-z0-9oʻgʻOʻGʻ']+$/gi, ""))
+    .filter(Boolean);
+
+  if (words.length > COVER_HEADING_MAX_WORDS) {
+    const core = words.filter((w) => !HEADING_STOP.has(w.toLowerCase()));
+    words =
+      core.length >= 2
+        ? core.slice(0, COVER_HEADING_MAX_WORDS)
+        : words.slice(0, COVER_HEADING_MAX_WORDS);
+  }
+
+  t = words.join(" ").trim();
+  if (!t) t = "AI Engineering";
+
+  // Title Case light (keep short tech tokens)
+  t = t
+    .split(" ")
+    .map((w) => {
+      if (/^[A-Z0-9+.-]{2,}$/.test(w)) return w; // API, RAG, GPT-4
+      if (w.length <= 2) return w.toLowerCase();
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(" ");
 
   if (t.length <= maxLen) return t;
 
-  // Prefer cut at word boundary
-  const slice = t.slice(0, maxLen - 1);
+  // Hard cut at word boundary — no ugly mid-word; avoid "…" when possible
+  const slice = t.slice(0, maxLen);
   const sp = slice.lastIndexOf(" ");
-  const cut = sp > 20 ? slice.slice(0, sp) : slice;
-  return cut.trimEnd() + "…";
+  const cut = sp >= 8 ? slice.slice(0, sp) : slice.trimEnd();
+  return cut.replace(/[.,;:]+$/, "").trim();
 }
 
 /** Heuristic: Latin-script Uzbek (oʻ/gʻ marks + common function words). */
@@ -319,11 +409,10 @@ export function looksLikeUzbekLatin(text: string): boolean {
 }
 
 /**
- * Prefer Uzbek (Latin) on-image heading.
+ * Prefer short power heading for covers (Latin Uzbek when possible).
  * 1) explicit options.heading
- * 2) first hook line from rewritten Uzbek post
- * 3) title if already Uzbek
- * 4) short technical EN fallback (prompt still asks model for Uzbek — avoided when possible)
+ * 2) first hook line from rewritten post (compressed to power phrase)
+ * 3) title compressed
  */
 export function pickCoverHeading(input: {
   title: string;
@@ -331,7 +420,7 @@ export function pickCoverHeading(input: {
   heading?: string;
   maxLen?: number;
 }): string {
-  const maxLen = input.maxLen ?? 48;
+  const maxLen = input.maxLen ?? COVER_HEADING_MAX_LEN;
   if (input.heading?.trim()) {
     return titleToCoverHeading(input.heading.trim(), maxLen);
   }
@@ -351,7 +440,7 @@ export function pickCoverHeading(input: {
           .replace(/https?:\/\/\S+/gi, "")
           .trim(),
       )
-      .filter((l) => l.length >= 12 && !/^manba\b/i.test(l));
+      .filter((l) => l.length >= 8 && !/^manba\b/i.test(l));
 
     for (const line of lines.slice(0, 4)) {
       // Skip pure English tech dump lines
@@ -359,18 +448,12 @@ export function pickCoverHeading(input: {
         return titleToCoverHeading(line, maxLen);
       }
     }
-    // Any first solid line if Uzbek-looking body overall
     if (looksLikeUzbekLatin(body.slice(0, 400)) && lines[0]) {
       return titleToCoverHeading(lines[0], maxLen);
     }
   }
 
   const title = (input.title || "").trim();
-  if (looksLikeUzbekLatin(title)) {
-    return titleToCoverHeading(title, maxLen);
-  }
-
-  // Last resort: shortened source title (may be EN) — caller should prefer rewritten
   return titleToCoverHeading(title || "AI Engineering", maxLen);
 }
 
@@ -581,11 +664,12 @@ export function topicToCoverNarrative(
     : `Include one professional person as attention anchor with a varied editorial pose.`;
   return (
     `Premium personal-brand social cover for AI Engineering. ` +
-    `On-image title text MUST match exactly these words in quotes (nothing else): "${heading}". ` +
+    `On-image power title MUST match exactly these words in quotes (nothing else): "${heading}". ` +
+    `Title style: short, bold, elegant — one line, huge type. ` +
     `Post topic: ${title.replace(/\s+/g, " ").trim().slice(0, 120)}. ` +
     `Background system visual encodes: ${concepts}. ` +
     `Attention: ${hookLine}. ` +
-    `${personLine} ${poseLine} Full-bleed scene, sharp on-image title only, NO brand logo monogram.`
+    `${personLine} ${poseLine} Full-bleed scene, sharp short title only, NO brand logo monogram.`
   );
 }
 
@@ -631,8 +715,8 @@ function buildMustHaveBlocks(
   return [
     `MUST HAVE #0 — FULL-BLEED CANVAS (critical): The final image IS the social cover — edge-to-edge 1:1. NOT a photo of a poster. NOT artwork inside a wooden/gold/metal picture frame. NOT floating framed art on a wall. NOT phone/laptop/browser mockup. NOT double borders, matte, polaroid, drop-shadow card. Scene fills the square directly.`,
     personBlock,
-    // Do NOT put language names (e.g. "Uzbek") as visual title hints — models paint them as literal cover text.
-    `MUST HAVE #2 — ON-IMAGE TITLE: exact words only in quotes: "${heading}". Clean modern sans-serif, white or white-to-cyan, large for mobile. Latin letters only (no Cyrillic). No extra words, no paraphrase, no gibberish.`,
+    // Do NOT put language names as visual title hints — models paint them as literal cover text.
+    `MUST HAVE #2 — POWER TITLE (short & bold): ONE line only. Exact words in quotes: "${heading}". Huge premium sans-serif (editorial keynote), high contrast white or white-to-cyan on dark, tight tracking, perfect kerning. Title is short on purpose — fill width with SCALE not with more words. Latin letters only. No subtitle, no second line, no extra words, no paraphrase, no gibberish.`,
     `MUST NOT — LOGO / META TEXT: no IO/IstamAI monogram, badge, watermark, or logo. Never paint language/meta labels as text (forbidden words on image: Uzbek, Oʻzbek, Latin, English, Cyrillic).`,
   ];
 }
@@ -668,7 +752,7 @@ export function buildPremiumImagePrompt(
     title: topicTitle,
     rewritten: options?.rewritten,
     heading: options?.heading,
-    maxLen: 48,
+    maxLen: COVER_HEADING_MAX_LEN,
   });
   const seed =
     topicTitle +
@@ -733,11 +817,12 @@ export function buildPremiumImagePrompt(
     `- Absolutely no IO / IstamAI / monogram logo anywhere.`,
     ``,
     `Layout zones:`,
-    `- TOP: TITLE "${heading}" — 1–2 lines, sharp sans, Latin letters only.`,
+    `- TOP band: POWER TITLE "${heading}" — single line, oversized, premium, short.`,
     `- MAIN: PERSON in pose "${poseSpec.label}" + tech hologram mid-ground.`,
+    `- Generous negative space around title so type stays crisp and elegant.`,
     `- No nested rectangles, no poster-on-wall, no device bezel, no logo corner.`,
     ``,
-    `Text rule: the ONLY readable words on the image are exactly: "${heading}". No other labels, no language names, no logo text, no gibberish.`,
+    `Text rule: the ONLY readable words on the image are exactly: "${heading}". Short = beautiful. No subtitle, no other labels, no language names, no logo text, no gibberish.`,
     ``,
     faceRef
       ? `Identity vs pose: reference image face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE). High likeness from face.jpg. New pose (${poseSpec.label}); no cloning face.jpg stance/hands/crop/background.`
