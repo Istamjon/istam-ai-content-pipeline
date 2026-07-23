@@ -19,6 +19,7 @@ import { isPlatformReady } from "../oauth/registry.js";
 import { refreshAllExpiringTokens } from "../oauth/tokenRefresh.js";
 import { deleteLocalImage } from "../lib/imageHost.js";
 import { publishToPlatform, type MediaKind } from "../platforms/index.js";
+import { notifyPublishReport } from "../lib/publishReport.js";
 
 export type ManualMediaKind = "image" | "video" | "none";
 
@@ -276,6 +277,20 @@ export async function publishManualPost(
   const successCount = results.filter((r) => r.status === "success").length;
   const failCount = results.filter((r) => r.status === "failed").length;
   const skipCount = results.filter((r) => r.status === "skipped").length;
+
+  // Same report as pipeline → admins get full platform matrix
+  try {
+    await notifyPublishReport({
+      title: (input.text || "").slice(0, 80) || "Manual bot post",
+      results: results.map((r) => ({
+        platform: r.platform,
+        status: r.status,
+        error: r.error,
+      })),
+    });
+  } catch (e) {
+    console.warn("[manualPublish] report notify failed:", e);
+  }
 
   return { results, successCount, failCount, skipCount };
 }

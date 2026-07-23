@@ -136,13 +136,13 @@ async function waitForContainerReady(
 }
 
 function isRetriablePublishError(msg: string): boolean {
-  return /not ready|in progress|wait|media id is not available|try again|temporarily|processing|not available/i.test(
+  return /not ready|in progress|wait|media id is not available|try again|temporarily|processing|not available|unknown error|unexpected|please retry|service unavailable|timeout|rate limit|OAuthException/i.test(
     msg,
   );
 }
 
 function isHostFetchError(msg: string): boolean {
-  return /download|fetch|unable to|could not|invalid image|unsupported|format|image_url|media url|cannot load|url/i.test(
+  return /download|fetch|unable to|could not|invalid image|unsupported|format|image_url|media url|cannot load|url|unknown error/i.test(
     msg,
   );
 }
@@ -258,8 +258,8 @@ export async function publishToInstagram(
     const triedHosts: string[] = [];
     let lastError = "Instagram publish failed";
 
-    // Up to 2 different public hosts (Meta sometimes rejects one CDN)
-    for (let hostRound = 0; hostRound < 2; hostRound++) {
+    // Up to 3 different public hosts (Meta often returns "unknown error" on one CDN)
+    for (let hostRound = 0; hostRound < 3; hostRound++) {
       const hosted = video
         ? await ensurePublicMediaUrl(mediaLocal)
         : await ensurePublicImageUrl(mediaLocal, {
@@ -344,13 +344,14 @@ export async function publishToInstagram(
         }
       }
 
-      // If publish failed with host-related / media-id issues, try next host
+      // If publish failed with host-related / media-id / unknown Meta errors, try next host
       if (
         !video &&
-        hostRound === 0 &&
+        hostRound < 2 &&
         (isHostFetchError(lastError) || isRetriablePublishError(lastError))
       ) {
         console.warn(`[instagram] retrying with alternate public host…`);
+        await sleep(2000 * (hostRound + 1));
         continue;
       }
       break;
