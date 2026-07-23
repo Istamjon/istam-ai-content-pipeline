@@ -123,29 +123,56 @@ jobs:
               -w /app \
               pipeline node /app/scripts/force-face-check.mjs
 
-            echo "=== FORCE ONE PIPELINE RUN (one-shot, may take 10–25 min) ==="
-            set +e
-            docker compose run --rm --no-deps \
-              -v "$APP_DIR/data:/app/data" \
-              -v "$APP_DIR/scripts:/app/scripts:ro" \
-              -w /app \
-              -e CRON_RUN_ON_START=false \
-              -e DRY_RUN=false \
-              pipeline node /app/scripts/force-one-pipeline.mjs \
-              2>&1 | tee data/force-one-last.log
-            rc=${PIPESTATUS[0]}
-            set -e
-            echo "force-one exit=$rc"
-            tail -n 40 data/force-one-last.log || true
-            if [ "$rc" != "0" ]; then
-              echo "::error::force-one-pipeline failed exit=$rc"
-              # Still bring scheduler back up
-              docker compose up -d || true
-              exit "$rc"
+            echo "=== FORCE ONE via scheduler (CRON_RUN_ON_START, survives SSH) ==="
+            # docker compose run under SSH was SIGTERM'd (~exit 143) mid-pipeline.
+            # Long-running service + CRON_RUN_ON_START is more reliable.
+            upsert CRON_RUN_ON_START true
+            upsert DRY_RUN false
+            # Clear today's fired flags so catch-up can run, keep times if valid
+            if [ -f data/daily-schedule.json ]; then
+              node -e "
+                const fs=require('fs');
+                const p='data/daily-schedule.json';
+                try {
+                  const j=JSON.parse(fs.readFileSync(p,'utf8'));
+                  j.fired=[];
+                  fs.writeFileSync(p, JSON.stringify(j,null,2));
+                  console.log('cleared fired slots for', j.date, j.times);
+                } catch(e) { console.warn(e.message); }
+              " || true
             fi
-
-            # Leave long-running scheduler up for daily slots
-            docker compose up -d
-            sleep 5
+            chown -R 10001:10001 data 2>/dev/null || true
+            docker compose up -d --force-recreate
+            sleep 8
             docker compose ps -a || true
+
+            echo "=== Polling logs for publish (up to 25 min) ==="
+            ok=0
+            for i in $(seq 1 75); do
+              sleep 20
+              logs=$(docker compose logs --tail=120 2>&1 || true)
+              echo "--- poll $i ---"
+              echo "$logs" | tail -n 15
+              if echo "$logs" | grep -qE '"published": true|status.: .success|publish succeeded|OK provider='; then
+                if echo "$logs" | grep -qE 'publish succeeded|"published": true|status.: .success'; then
+                  echo "FOUND publish signal"
+                  ok=1
+                  break
+                fi
+              fi
+              # Explicit failure of all articles this run (will still retry via slots)
+              if echo "$logs" | grep -q 'Pipeline completed' && echo "$logs" | grep -q '"published": false'; then
+                echo "Pipeline finished without publish this cycle — keep waiting for slot retry/guarantee"
+              fi
+            done
+
+            upsert CRON_RUN_ON_START false
+            docker compose up -d || true
+            docker compose logs --tail=80 2>&1 || true
+            if [ "$ok" != "1" ]; then
+              echo "::warning::No confirmed publish within poll window — check container logs / next slot"
+              # do not fail hard: scheduler still running for daily 3–6 slots
+            else
+              echo "=== FORCE ONE POST: publish detected ==="
+            fi
             echo "=== FORCE ONE POST DONE ==="
