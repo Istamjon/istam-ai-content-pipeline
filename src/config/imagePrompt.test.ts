@@ -85,13 +85,15 @@ describe("imagePrompt", () => {
       true,
       "pointing_critical_path",
     );
-    expect(n).toMatch(/Uzbek|heading MUST/i);
+    expect(n).toMatch(/title text MUST match|exactly these words/i);
     expect(n).toMatch(/face\.jpg|ORIGINAL FACE REFERENCE|identity/i);
     expect(n).toMatch(/NEW body pose|NEW POSE|pose recipe/i);
     expect(n).toMatch(/NO brand logo/i);
+    // Language name must not appear as "draw this" title copy
+    expect(n).not.toMatch(/MUST be Uzbek|white Uzbek|crisp Uzbek/i);
   });
 
-  it("buildPremiumImagePrompt: person, uzbek heading, pose, full-bleed, no logo", () => {
+  it("buildPremiumImagePrompt: person, exact heading, pose, full-bleed, no logo, no language-label text", () => {
     const { prompt, preset, composition, pose, heading } =
       buildPremiumImagePrompt(
         "Tail Control for Agentic Workflows",
@@ -118,11 +120,14 @@ describe("imagePrompt", () => {
     expect(prompt).toMatch(/face\.jpg/);
     expect(prompt).toMatch(/ORIGINAL FACE REFERENCE/i);
     expect(prompt).toMatch(/NEW POSE|POSE LOCK|ORIGINAL FACE REFERENCE|face identity/i);
-    expect(prompt).toMatch(/MUST HAVE #2 — HEADING|OʻZBEK|Uzbek/i);
+    expect(prompt).toMatch(/MUST HAVE #2 — ON-IMAGE TITLE|ON-IMAGE TITLE/i);
     expect(prompt).toContain(`"${heading}"`);
     expect(prompt).toMatch(/MUST NOT — LOGO|no IO|No brand badge|no logo/i);
     expect(prompt).not.toMatch(/MUST HAVE #3 — LOGO/);
     expect(prompt).toMatch(/#036158/);
     expect(prompt).toMatch(/pointing|critical path/i);
+    // Models were painting "Uzbek" on covers when the word was in the visual brief
+    expect(prompt).not.toMatch(/white Uzbek heading|crisp Uzbek heading|HEADING in OʻZBEK|UZBEK HEADING/i);
+    expect(prompt).toMatch(/forbidden words on image: Uzbek|Never paint language\/meta/i);
   });
 });

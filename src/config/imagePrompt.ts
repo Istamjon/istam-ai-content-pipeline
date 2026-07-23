@@ -581,11 +581,11 @@ export function topicToCoverNarrative(
     : `Include one professional person as attention anchor with a varied editorial pose.`;
   return (
     `Premium personal-brand social cover for AI Engineering. ` +
-    `On-image heading MUST be Uzbek (Latin script) and read exactly: "${heading}". ` +
+    `On-image title text MUST match exactly these words in quotes (nothing else): "${heading}". ` +
     `Post topic: ${title.replace(/\s+/g, " ").trim().slice(0, 120)}. ` +
     `Background system visual encodes: ${concepts}. ` +
     `Attention: ${hookLine}. ` +
-    `${personLine} ${poseLine} Full-bleed scene, crisp Uzbek heading, NO brand logo monogram.`
+    `${personLine} ${poseLine} Full-bleed scene, sharp on-image title only, NO brand logo monogram.`
   );
 }
 
@@ -631,8 +631,9 @@ function buildMustHaveBlocks(
   return [
     `MUST HAVE #0 — FULL-BLEED CANVAS (critical): The final image IS the social cover — edge-to-edge 1:1. NOT a photo of a poster. NOT artwork inside a wooden/gold/metal picture frame. NOT floating framed art on a wall. NOT phone/laptop/browser mockup. NOT double borders, matte, polaroid, drop-shadow card. Scene fills the square directly.`,
     personBlock,
-    `MUST HAVE #2 — HEADING in OʻZBEK (Latin): crisp cover title overlaid ON the scene in Uzbek Latin script (not English sentences, not Cyrillic). Clean modern sans-serif. Exact words in double quotes: "${heading}". High contrast white or white-to-cyan. Large hierarchy for mobile. Latin letters only. No misspellings, no extra words, no gibberish, no English paraphrase of the heading.`,
-    `MUST NOT — LOGO: Do NOT render IO monogram, IstamAI badge, brand logo mark, corner logo sticker, watermark logo, or any logo emblem. No brand badge at all.`,
+    // Do NOT put language names (e.g. "Uzbek") as visual title hints — models paint them as literal cover text.
+    `MUST HAVE #2 — ON-IMAGE TITLE: exact words only in quotes: "${heading}". Clean modern sans-serif, white or white-to-cyan, large for mobile. Latin letters only (no Cyrillic). No extra words, no paraphrase, no gibberish.`,
+    `MUST NOT — LOGO / META TEXT: no IO/IstamAI monogram, badge, watermark, or logo. Never paint language/meta labels as text (forbidden words on image: Uzbek, Oʻzbek, Latin, English, Cyrillic).`,
   ];
 }
 
@@ -713,7 +714,7 @@ export function buildPremiumImagePrompt(
     `COMPOSITION (${hook.label}): ${hook.layout}.`,
     `Eye-catch: ${hook.eyeCatch}.`,
     `${p.coverFraming}.`,
-    `Colors: brand teal #036158, cyan #5EEAD4, white Uzbek heading, deep black field.`,
+    `Colors: brand teal #036158, cyan #5EEAD4, white title text, deep black field.`,
     `Style: Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
   ]
     .filter(Boolean)
@@ -728,30 +729,35 @@ export function buildPremiumImagePrompt(
     `Professional framing rules:`,
     `- Full bleed to all edges — zero picture-frame, zero white margin card.`,
     `- Person and holograms in ONE continuous scene (same light, same depth).`,
-    `- Heading is on-canvas overlay only — Uzbek Latin, not paper inside a frame.`,
+    `- Title is on-canvas overlay only — not paper inside a frame.`,
     `- Absolutely no IO / IstamAI / monogram logo anywhere.`,
     ``,
     `Layout zones:`,
-    `- TOP: UZBEK HEADING "${heading}" — 1–2 lines, sharp sans, Latin script.`,
+    `- TOP: TITLE "${heading}" — 1–2 lines, sharp sans, Latin letters only.`,
     `- MAIN: PERSON in pose "${poseSpec.label}" + tech hologram mid-ground.`,
     `- No nested rectangles, no poster-on-wall, no device bezel, no logo corner.`,
     ``,
-    `Text: only the heading words in Uzbek Latin. Exact spelling: "${heading}". No English title. No logo text. No gibberish.`,
+    `Text rule: the ONLY readable words on the image are exactly: "${heading}". No other labels, no language names, no logo text, no gibberish.`,
     ``,
     faceRef
       ? `Identity vs pose: reference image face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE). High likeness from face.jpg. New pose (${poseSpec.label}); no cloning face.jpg stance/hands/crop/background.`
       : `Person: photoreal professional AI creator vibe. ONE person only. Pose: ${poseSpec.label}.`,
     ``,
-    `Hard avoid: same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, English-only or Cyrillic heading, misspelled/gibberish text.`,
+    `Hard avoid: same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, painting the words Uzbek/Oʻzbek/Latin/English/Cyrillic, misspelled/gibberish text, any title not equal to the quoted heading.`,
   ].join("\n");
 
   let full = (lead + "\n" + extended).trim();
   // Prefer keeping lead (identity + colors + pose) intact when trimming.
-  const maxLen = 3000;
+  // 3200: leave room for longer MUST blocks without cutting brand teal / title rules.
+  const maxLen = 3200;
   if (full.length > maxLen) {
     const leadLen = lead.length;
     if (leadLen >= maxLen - 40) {
-      full = lead.slice(0, maxLen - 10).trimEnd();
+      // Keep color + title anchors even if lead is huge
+      const colorLine = ` Colors: brand teal #036158, cyan #5EEAD4, white title text, deep black field.`;
+      const titleAnchor = ` Exact on-image title: "${heading}".`;
+      const body = lead.slice(0, maxLen - colorLine.length - titleAnchor.length - 20).trimEnd();
+      full = (body + colorLine + titleAnchor).trimEnd();
     } else {
       const budget = maxLen - leadLen - 2;
       full = (lead + "\n" + extended.slice(0, Math.max(0, budget))).trimEnd();

@@ -7,8 +7,13 @@ import { env } from "../config/env.js";
 import {
   getProviderImageBudget,
   incrementProviderImageUsage,
+  utcToday,
   type ImageProviderName,
 } from "../db.js";
+import {
+  formatRotationOrder,
+  orderSlotsForDailyRotation,
+} from "./keyRotation.js";
 
 const PROVIDER_BASE = "nanobanana" as const;
 
@@ -44,6 +49,11 @@ function utcDayKey(): string {
 function pruneExhaustedKeys(): void {
   const day = utcDayKey();
   if (exhaustedDayKey !== day) {
+    if (exhaustedDayKey) {
+      console.log(
+        `[nanobanana] daily rotation reset ${day} (cleared paused keys from ${exhaustedDayKey})`,
+      );
+    }
     exhaustedKeys.clear();
     exhaustedDayKey = day;
     return;
@@ -171,6 +181,31 @@ function markKeyExhausted(slot: NanoBananaKeySlot, reason: string): void {
   );
 }
 
+/** Quota / auth → rotate key. Network/5xx → try next key without long pause. */
+function isQuotaOrAuthFailure(msg: string): boolean {
+  return /429|quota|rate limit|RESOURCE_EXHAUSTED|billing|HTTP 401|HTTP 403|API_KEY_INVALID|PERMISSION_DENIED/i.test(
+    msg,
+  );
+}
+
+function isTransientFailure(msg: string): boolean {
+  return /timeout|ECONNRESET|ENOTFOUND|fetch failed|HTTP 5\d\d|network|aborted|UND_ERR/i.test(
+    msg,
+  );
+}
+
+function orderUsableSlots(slots: NanoBananaKeySlot[]): NanoBananaKeySlot[] {
+  const perKey = env.DAILY_NANOBANANA_LIMIT;
+  return orderSlotsForDailyRotation(
+    slots,
+    (s) =>
+      perKey <= 0
+        ? 999
+        : getProviderImageBudget(s.providerKey, perKey).remaining,
+    "nanobanana",
+  );
+}
+
 function extractImageBuffer(json: unknown): Buffer {
   const obj = json as {
     candidates?: Array<{
@@ -292,22 +327,38 @@ export async function nanoBananaImage(
 
   const face = options?.face;
   const safePrompt = prompt.trim().slice(0, 2500);
-  const usable = slots.filter(canUseKeySlot);
+  const usable = orderUsableSlots(slots.filter(canUseKeySlot));
+  const remMap = (label: string) => {
+    const s = usable.find((x) => x.label === label);
+    if (!s) return 0;
+    if (env.DAILY_NANOBANANA_LIMIT <= 0) return 999;
+    return getProviderImageBudget(s.providerKey, env.DAILY_NANOBANANA_LIMIT)
+      .remaining;
+  };
   console.log(
-    `[nanobanana] generate keys=${usable.map((s) => s.label).join("→") || "none"} models=[${models.slice(0, 3).join(",")}] promptLen=${safePrompt.length} budget=${budget.used}/${budget.limit}` +
+    `[nanobanana] generate day=${utcToday()} rotation=${formatRotationOrder(usable, remMap)} ` +
+      `models=[${models.slice(0, 3).join(",")}] promptLen=${safePrompt.length} ` +
+      `budget=${budget.used}/${budget.limit}` +
       (face ? ` faceRef=yes` : ""),
   );
 
   if (usable.length === 0) {
-    throw new Error("Nano Banana: all keys exhausted or over soft budget");
+    throw new Error(
+      `Nano Banana: all keys exhausted or over soft budget ` +
+        `(day=${utcToday()} used=${budget.used}/${budget.limit} keys=${budget.keys})`,
+    );
   }
 
   let lastErr: unknown;
   for (const slot of usable) {
-    console.log(
-      `[nanobanana] trying ${slot.label} key=…${slot.apiKey.slice(-6)}`,
+    const slotBudget = getProviderImageBudget(
+      slot.providerKey,
+      env.DAILY_NANOBANANA_LIMIT || 999,
     );
-    let keyQuotaHit = false;
+    console.log(
+      `[nanobanana] trying ${slot.label} key=…${slot.apiKey.slice(-6)} remaining=${slotBudget.remaining}`,
+    );
+    let skipKey = false;
 
     for (const model of models) {
       try {
@@ -323,29 +374,30 @@ export async function nanoBananaImage(
         console.warn(
           `[nanobanana] ${slot.label} model=${model} failed: ${msg.slice(0, 200)}`,
         );
-        // 429 / quota → mark key exhausted, rotate to next key
-        if (/429|quota|rate limit|RESOURCE_EXHAUSTED|billing/i.test(msg)) {
+        if (isQuotaOrAuthFailure(msg)) {
           markKeyExhausted(slot, msg);
-          keyQuotaHit = true;
+          skipKey = true;
           break;
         }
-        // 401/403 invalid key → skip this key
-        if (/HTTP 401|HTTP 403|API_KEY_INVALID|PERMISSION_DENIED/i.test(msg)) {
-          markKeyExhausted(slot, msg);
-          keyQuotaHit = true;
-          break;
+        if (isTransientFailure(msg)) {
+          console.log(
+            `[nanobanana] ${slot.label} transient → next model/key (no long pause)`,
+          );
+          // try next model; if last model, fall through to next key
+          continue;
         }
       }
     }
 
-    if (keyQuotaHit) {
-      console.log(`[nanobanana] ${slot.label} → next key`);
+    if (skipKey) {
+      console.log(`[nanobanana] ${slot.label} → next key (quota/auth)`);
       continue;
     }
+    console.log(`[nanobanana] ${slot.label} → next key (models failed)`);
   }
 
   throw new Error(
-    `Nano Banana failed (all keys): ${
+    `Nano Banana failed (all keys day=${utcToday()}): ${
       lastErr instanceof Error ? lastErr.message : String(lastErr)
     }`,
   );

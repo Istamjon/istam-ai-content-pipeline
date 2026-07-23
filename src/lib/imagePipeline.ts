@@ -157,11 +157,15 @@ export async function generateImageBuffer(
 
   // Identity-only mode: do not invent a stranger on text-only CF/Horde.
   if (requireIdentity) {
+    const nb = isNanoBananaConfigured() ? canUseNanoBananaToday() : null;
+    const sw = isSkyworkConfigured() ? canUseSkyworkToday() : null;
     throw new Error(
       `Brand face identity required (face.jpg present, REQUIRE_BRAND_FACE=true) ` +
         `but Nano Banana + Skywork + Pollinations failed/exhausted. ` +
-        `Cloudflare/Horde cannot receive face.jpg.\n` +
-        `Fix: top up Gemini/Skywork/Pollinations or set REQUIRE_BRAND_FACE=false.\n` +
+        `Cloudflare/Horde are text-only — they cannot match face.jpg, so they were skipped.\n` +
+        `Budgets: nanobanana=${nb ? `${nb.used}/${nb.limit} rem=${nb.remaining} keys=${nb.keys}` : "off"} ` +
+        `skywork=${sw ? `${sw.used}/${sw.limit} rem=${sw.remaining} keys=${sw.keys}` : "off"}\n` +
+        `Fix: wait for UTC day reset / top up Gemini·Skywork·Pollinations keys, or set REQUIRE_BRAND_FACE=false (random face).\n` +
         `- ${errors.join("\n- ")}`,
     );
   }

@@ -68,6 +68,8 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 - [Actualize AI](https://actualize.co/ai-engineering-blog/)
 - [The Agentic Engineer](https://www.the-agentic-engineer.com/blog)
 - [Skywork AI](https://skywork.ai/blog/)
+- [EasyInsights Blog](https://easyinsights.ai/blog/)
+- [KeyValue Systems Blog](https://www.keyvalue.systems/blog/)
 - [AI Agent Store News](https://aiagentstore.ai/news)
 - [LangChain Blog](https://blog.langchain.dev/)
 - [Anthropic Engineering](https://www.anthropic.com/engineering)
@@ -159,6 +161,7 @@ Soft caps (env):
 
 - `DAILY_NANOBANANA_LIMIT` (default 3 **per key**; multi-key rotation)
 - `SKYWORK_API_KEY` / `_2`…`_5` (or `SKYWORK_API_KEYS`) + `DAILY_SKYWORK_LIMIT` **per key** (default 4; credit fail → next key)
+- Daily loop: soft budgets reset each **UTC day**; key order = day-offset round-robin + highest remaining first (not always key #1)
 - `DAILY_POLLINATIONS_IMAGE_LIMIT`
 - `DAILY_IMAGE_TOTAL` (all CF accounts combined)
 - `DAILY_IMAGE_LIMIT` (per CF account)

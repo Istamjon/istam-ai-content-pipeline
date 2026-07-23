@@ -7,8 +7,13 @@ import { env } from "../config/env.js";
 import {
   getProviderImageBudget,
   incrementProviderImageUsage,
+  utcToday,
   type ImageProviderName,
 } from "../db.js";
+import {
+  formatRotationOrder,
+  orderSlotsForDailyRotation,
+} from "./keyRotation.js";
 
 const DEFAULT_GATEWAY = "https://api-tools.skywork.ai/theme-gateway";
 
@@ -47,6 +52,11 @@ function utcDayKey(): string {
 function pruneExhaustedKeys(): void {
   const day = utcDayKey();
   if (exhaustedDayKey !== day) {
+    if (exhaustedDayKey) {
+      console.log(
+        `[skywork] daily rotation reset ${day} (cleared paused keys from ${exhaustedDayKey})`,
+      );
+    }
     exhaustedKeys.clear();
     exhaustedDayKey = day;
     return;
@@ -304,6 +314,24 @@ function isRotatableFailure(msg: string): boolean {
   );
 }
 
+function isTransientFailure(msg: string): boolean {
+  return /timeout|ECONNRESET|ENOTFOUND|fetch failed|HTTP 5\d\d|network|aborted|UND_ERR|empty body|no file_url/i.test(
+    msg,
+  );
+}
+
+function orderUsableSlots(slots: SkyworkKeySlot[]): SkyworkKeySlot[] {
+  const perKey = env.DAILY_SKYWORK_LIMIT;
+  return orderSlotsForDailyRotation(
+    slots,
+    (s) =>
+      perKey <= 0
+        ? 999
+        : getProviderImageBudget(s.providerKey, perKey).remaining,
+    "skywork",
+  );
+}
+
 export type SkyworkImageOptions = {
   face?: { mimeType: string; base64: string; path?: string } | null;
 };
@@ -413,23 +441,37 @@ export async function skyworkImage(
   const aspect = resolveAspectRatio();
   const resolution = resolveResolution();
   const face = options?.face;
-  const usable = slots.filter(canUseKeySlot);
+  const usable = orderUsableSlots(slots.filter(canUseKeySlot));
+  const remMap = (label: string) => {
+    const s = usable.find((x) => x.label === label);
+    if (!s) return 0;
+    if (env.DAILY_SKYWORK_LIMIT <= 0) return 999;
+    return getProviderImageBudget(s.providerKey, env.DAILY_SKYWORK_LIMIT)
+      .remaining;
+  };
 
   console.log(
-    `[skywork] generate keys=${usable.map((s) => s.label).join("→") || "none"} ` +
+    `[skywork] generate day=${utcToday()} rotation=${formatRotationOrder(usable, remMap)} ` +
       `resolution=${resolution} aspect=${aspect || "auto"} promptLen=${safePrompt.length} ` +
       `budget=${budget.used}/${budget.limit || "∞"}` +
       (face ? " faceRef=yes(edit)" : ""),
   );
 
   if (usable.length === 0) {
-    throw new Error("Skywork: all keys exhausted or over soft budget");
+    throw new Error(
+      `Skywork: all keys exhausted or over soft budget ` +
+        `(day=${utcToday()} used=${budget.used}/${budget.limit || "∞"} keys=${budget.keys})`,
+    );
   }
 
   let lastErr: unknown;
   for (const slot of usable) {
+    const slotBudget = getProviderImageBudget(
+      slot.providerKey,
+      env.DAILY_SKYWORK_LIMIT || 999,
+    );
     console.log(
-      `[skywork] trying ${slot.label} key=…${slot.apiKey.slice(-6)}`,
+      `[skywork] trying ${slot.label} key=…${slot.apiKey.slice(-6)} remaining=${slotBudget.remaining}`,
     );
     try {
       const buffer = await generateOnceWithKey(
@@ -452,17 +494,22 @@ export async function skyworkImage(
       );
       if (isRotatableFailure(msg)) {
         markKeyExhausted(slot, msg);
-        console.log(`[skywork] ${slot.label} → next key`);
+        console.log(`[skywork] ${slot.label} → next key (credits/quota/auth)`);
         continue;
       }
-      // Non-rotatable (network/parse) — still try next key once
-      console.log(`[skywork] ${slot.label} non-quota error → try next key`);
+      if (isTransientFailure(msg)) {
+        console.log(
+          `[skywork] ${slot.label} transient → next key (no long pause)`,
+        );
+        continue;
+      }
+      console.log(`[skywork] ${slot.label} other error → next key`);
       continue;
     }
   }
 
   throw new Error(
-    `Skywork failed (all keys): ${
+    `Skywork failed (all keys day=${utcToday()}): ${
       lastErr instanceof Error ? lastErr.message : String(lastErr)
     }`,
   );

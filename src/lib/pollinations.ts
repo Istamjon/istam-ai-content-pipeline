@@ -513,9 +513,14 @@ export async function pollinationsImage(
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.warn(`[pollinations-image] face resolve failed: ${msg.slice(0, 180)}`);
-      // Continue without face only if caller did not require identity at pipeline level
-      throw new Error(`Pollinations face identity unavailable: ${msg}`);
+      console.warn(
+        `[pollinations-image] face.jpg host failed (Litterbox/Catbox/…): ${msg.slice(0, 180)}`,
+      );
+      // Do not fall back to text-only — that invents a random face (breaks brand identity).
+      // Pipeline will try multipart next, then next provider / fail if REQUIRE_BRAND_FACE.
+      throw new Error(
+        `Pollinations face identity unavailable (could not host face.jpg for image= URL): ${msg}`,
+      );
     }
   }
 

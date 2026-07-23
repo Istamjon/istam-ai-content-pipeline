@@ -308,6 +308,18 @@ export const sources = [
     tier: "primary" as const,
   },
   {
+    url: "https://easyinsights.ai/blog/",
+    name: "EasyInsights Blog",
+    tier: "primary" as const,
+    pathInclude: ["/blog/"],
+  },
+  {
+    url: "https://www.keyvalue.systems/blog/",
+    name: "KeyValue Systems Blog",
+    tier: "primary" as const,
+    pathInclude: ["/blog/"],
+  },
+  {
     url: "https://aiagentstore.ai/news",
     name: "AI Agent Store News",
     tier: "primary" as const,
