@@ -118,7 +118,7 @@ jobs:
               pipeline node --input-type=module -e "
             import { loadBrandFace, logBrandFace } from './dist/lib/brandFace.js';
             logBrandFace();
-            const f = loadBrandFace();
+            const f = await loadBrandFace();
             if (!f) { console.error('NO FACE'); process.exit(2); }
             console.log('OK face bytes', f.buffer.length);
             "
@@ -127,6 +127,7 @@ jobs:
             docker compose run --rm --no-deps \
               -v "$APP_DIR/data:/app/data" \
               -e CRON_RUN_ON_START=false \
+              -e DRY_RUN=false \
               pipeline node --input-type=module -e "
             import 'dotenv/config';
             import { graph, graphInvokeConfig } from './dist/agent/graph.js';
