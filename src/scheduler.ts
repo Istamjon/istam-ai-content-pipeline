@@ -294,11 +294,15 @@ function startGuaranteedDailyScheduler(
     guaranteeArmed = false;
 
     const now = nowLocalHhmm();
+    const lo = Math.min(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
+    const hi = Math.max(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
     console.log(
-      `[Scheduler] Guaranteed-daily mode: ${schedule.date} → ${schedule.times.length} slots: ${schedule.times.join(", ")}`,
+      `[Scheduler] Guaranteed-daily mode: ${schedule.date} → ${schedule.times.length} slots ` +
+        `(policy ${lo}–${hi}/day): ${schedule.times.join(", ")}`,
     );
     console.log(
-      `[Scheduler] Window ${env.CRON_WINDOW_START_HOUR}:00–${env.CRON_WINDOW_END_HOUR}:00 local, min gap ${env.CRON_MIN_GAP_MINUTES}m, min publishes/day=${DAILY_MIN_PUBLISHES}`,
+      `[Scheduler] Window ${env.CRON_WINDOW_START_HOUR}:00–${env.CRON_WINDOW_END_HOUR}:00 local, ` +
+        `gap≥${env.CRON_MIN_GAP_MINUTES}m (adaptive), min publishes/day=${DAILY_MIN_PUBLISHES}`,
     );
 
     let futureArmed = 0;

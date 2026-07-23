@@ -333,13 +333,29 @@ export const env = {
     .filter(Boolean),
   /**
    * If true (default): generate random post times every local calendar day.
-   * Slot count = CRON_SLOTS_PER_DAY; times differ each day and are persisted.
+   * Each day picks a random slot count in [CRON_SLOTS_MIN, CRON_SLOTS_MAX].
+   * CRON_SLOTS_PER_DAY is legacy fixed count (used only when MIN=MAX unset path).
    */
   CRON_RANDOM: process.env.CRON_RANDOM !== "false",
-  /** How many pipeline runs per day when CRON_RANDOM=true (default 4). */
+  /**
+   * Legacy fixed slots/day. If CRON_SLOTS_MIN/MAX not set, both default from this (or 3–6).
+   */
   CRON_SLOTS_PER_DAY: Math.max(
     1,
     Math.min(48, parseInt(process.env.CRON_SLOTS_PER_DAY || "4", 10) || 4),
+  ),
+  /**
+   * Inclusive min random slots per local day (default 3).
+   * Each day: uniform random count in [MIN, MAX] for free-tier + engagement balance.
+   */
+  CRON_SLOTS_MIN: Math.max(
+    1,
+    Math.min(24, parseInt(process.env.CRON_SLOTS_MIN || "3", 10) || 3),
+  ),
+  /** Inclusive max random slots per local day (default 6). */
+  CRON_SLOTS_MAX: Math.max(
+    1,
+    Math.min(48, parseInt(process.env.CRON_SLOTS_MAX || "6", 10) || 6),
   ),
   /** Local hour window start for random slots (0–23). */
   CRON_WINDOW_START_HOUR: Math.max(
@@ -386,15 +402,15 @@ export const env = {
     1,
     parseInt(process.env.MAX_ARTICLES_PER_RUN || "5", 10) || 5,
   ),
-  /** Soft daily publish cap per platform (UTC date). Default 4 = 4 posts/day stack. */
-  DAILY_LIMIT_TELEGRAM: parseInt(process.env.DAILY_LIMIT_TELEGRAM || "4", 10),
-  DAILY_LIMIT_LINKEDIN: parseInt(process.env.DAILY_LIMIT_LINKEDIN || "4", 10),
-  /** 0 = unlimited (no soft daily cap for Facebook). Prefer 4 for 4 posts/day policy. */
-  DAILY_LIMIT_FACEBOOK: parseInt(process.env.DAILY_LIMIT_FACEBOOK || "4", 10),
-  DAILY_LIMIT_INSTAGRAM: parseInt(process.env.DAILY_LIMIT_INSTAGRAM || "4", 10),
-  DAILY_LIMIT_X: parseInt(process.env.DAILY_LIMIT_X || "4", 10),
-  DAILY_LIMIT_THREADS: parseInt(process.env.DAILY_LIMIT_THREADS || "4", 10),
-  DAILY_LIMIT_BLOGGER: parseInt(process.env.DAILY_LIMIT_BLOGGER || "4", 10),
+  /** Soft daily publish cap per platform (UTC date). Default 6 matches CRON_SLOTS_MAX. */
+  DAILY_LIMIT_TELEGRAM: parseInt(process.env.DAILY_LIMIT_TELEGRAM || "6", 10),
+  DAILY_LIMIT_LINKEDIN: parseInt(process.env.DAILY_LIMIT_LINKEDIN || "6", 10),
+  /** 0 = unlimited (no soft daily cap for Facebook). */
+  DAILY_LIMIT_FACEBOOK: parseInt(process.env.DAILY_LIMIT_FACEBOOK || "6", 10),
+  DAILY_LIMIT_INSTAGRAM: parseInt(process.env.DAILY_LIMIT_INSTAGRAM || "6", 10),
+  DAILY_LIMIT_X: parseInt(process.env.DAILY_LIMIT_X || "6", 10),
+  DAILY_LIMIT_THREADS: parseInt(process.env.DAILY_LIMIT_THREADS || "6", 10),
+  DAILY_LIMIT_BLOGGER: parseInt(process.env.DAILY_LIMIT_BLOGGER || "6", 10),
   /** Max posts in a Threads reply chain (root + replies). */
   THREADS_MAX_PARTS: Math.max(
     1,

@@ -54,8 +54,10 @@ async function logAiConfig(): Promise<void> {
   );
   logAllImageBudgets();
   if (env.CRON_RANDOM) {
+    const lo = Math.min(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
+    const hi = Math.max(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
     console.log(
-      `[AI] Schedule: RANDOM ${env.CRON_SLOTS_PER_DAY}/day ` +
+      `[AI] Schedule: RANDOM ${lo}–${hi} slots/day (picked each local day) ` +
         `window=${env.CRON_WINDOW_START_HOUR}:00–${env.CRON_WINDOW_END_HOUR}:00 ` +
         `gap≥${env.CRON_MIN_GAP_MINUTES}m maxArticles/run=${env.MAX_ARTICLES_PER_RUN}`,
     );

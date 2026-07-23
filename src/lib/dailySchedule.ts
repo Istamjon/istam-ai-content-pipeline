@@ -117,28 +117,86 @@ export function generateRandomTimes(
   return best.map(minutesToHhmm);
 }
 
+/**
+ * Pick how many posts to schedule today — uniform random in [min, max].
+ * Improves load balance vs always-4 (API free tiers + engagement cadence).
+ */
+export function pickDailySlotCount(
+  min = env.CRON_SLOTS_MIN,
+  max = env.CRON_SLOTS_MAX,
+): number {
+  let lo = Math.min(min, max);
+  let hi = Math.max(min, max);
+  lo = Math.max(1, Math.min(48, lo));
+  hi = Math.max(lo, Math.min(48, hi));
+  if (lo === hi) return lo;
+  return lo + Math.floor(Math.random() * (hi - lo + 1));
+}
+
+/**
+ * Adaptive gap: keep preferred min gap when window allows; shrink so N slots fit.
+ */
+export function adaptiveMinGap(
+  count: number,
+  startHour: number,
+  endHour: number,
+  preferredGap: number,
+): number {
+  const start = startHour * 60;
+  const windowEnd = Math.min(24 * 60 - 1, Math.max(start + 60, endHour * 60));
+  const span = Math.max(60, windowEnd - start);
+  if (count <= 1) return preferredGap;
+  // Need (count-1) gaps inside the window
+  const maxGap = Math.floor(span / (count - 1 + 0.5));
+  const gap = Math.min(preferredGap, Math.max(40, maxGap));
+  return gap;
+}
+
 /** Load today's schedule or create a new random one for the local day. */
 export function getOrCreateTodaySchedule(): DailySchedule {
   const today = localDateKey();
   const existing = loadRaw();
+  const minS = Math.min(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
+  const maxS = Math.max(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
+
   if (existing && existing.date === today && existing.times?.length) {
-    return {
-      date: existing.date,
-      times: existing.times,
-      fired: existing.fired || [],
-    };
+    const n = existing.times.length;
+    // Keep stable day plan unless policy range changed (e.g. 3–6 after old fixed 4)
+    if (n >= minS && n <= maxS) {
+      return {
+        date: existing.date,
+        times: existing.times,
+        fired: existing.fired || [],
+      };
+    }
+    console.log(
+      `[schedule] Regenerating day plan — ${n} slots outside ${minS}–${maxS}`,
+    );
   }
 
-  const times = generateRandomTimes(
-    env.CRON_SLOTS_PER_DAY,
+  const count = pickDailySlotCount(minS, maxS);
+  const gap = adaptiveMinGap(
+    count,
     env.CRON_WINDOW_START_HOUR,
     env.CRON_WINDOW_END_HOUR,
     env.CRON_MIN_GAP_MINUTES,
   );
-  const schedule: DailySchedule = { date: today, times, fired: [] };
+  const times = generateRandomTimes(
+    count,
+    env.CRON_WINDOW_START_HOUR,
+    env.CRON_WINDOW_END_HOUR,
+    gap,
+  );
+  // Preserve already-fired times that still fall on the new plan day (rare regen mid-day)
+  const prevFired =
+    existing?.date === today
+      ? (existing.fired || []).filter((t) => times.includes(t))
+      : [];
+  const schedule: DailySchedule = { date: today, times, fired: prevFired };
   save(schedule);
   console.log(
-    `[schedule] New random day plan ${today}: ${times.join(", ")} (${times.length} slots)`,
+    `[schedule] New random day plan ${today}: ${times.join(", ")} ` +
+      `(${times.length} slots, range ${minS}–${maxS}, gap≥${gap}m)`,
   );
   return schedule;
 }

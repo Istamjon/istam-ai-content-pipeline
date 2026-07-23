@@ -79,14 +79,16 @@ jobs:
               fi
             }
 
-            # 4 posts/day policy
+            # 3–6 random posts/day policy
+            upsert CRON_SLOTS_MIN 3
+            upsert CRON_SLOTS_MAX 6
             upsert CRON_SLOTS_PER_DAY 4
-            upsert DAILY_LIMIT_TELEGRAM 4
-            upsert DAILY_LIMIT_LINKEDIN 4
-            upsert DAILY_LIMIT_FACEBOOK 4
-            upsert DAILY_LIMIT_INSTAGRAM 4
-            upsert DAILY_LIMIT_THREADS 4
-            upsert DAILY_LIMIT_X 4
+            upsert DAILY_LIMIT_TELEGRAM 6
+            upsert DAILY_LIMIT_LINKEDIN 6
+            upsert DAILY_LIMIT_FACEBOOK 6
+            upsert DAILY_LIMIT_INSTAGRAM 6
+            upsert DAILY_LIMIT_THREADS 6
+            upsert DAILY_LIMIT_X 6
             upsert DRY_RUN false
             upsert CRON_RUN_ON_START false
 

@@ -200,7 +200,7 @@ Quality rules (high level):
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `CRON_RANDOM` | `true` | Random times each local day |
-| `CRON_SLOTS_PER_DAY` | `3` | Posts per day (social-safe) |
+| `CRON_SLOTS_MIN` / `CRON_SLOTS_MAX` | `3` / `6` | Random posts per day (picked each local day) |
 | `CRON_WINDOW_START_HOUR` | `8` | Window start |
 | `CRON_WINDOW_END_HOUR` | `21` | Window end |
 | `CRON_MIN_GAP_MINUTES` | `180` | Min gap between slots |
@@ -385,7 +385,8 @@ DAILY_LIMIT_THREADS=3
 ```env
 DRY_RUN=false
 CRON_RANDOM=true
-CRON_SLOTS_PER_DAY=3
+CRON_SLOTS_MIN=3
+CRON_SLOTS_MAX=6
 CRON_WINDOW_START_HOUR=8
 CRON_WINDOW_END_HOUR=21
 CRON_MIN_GAP_MINUTES=180
