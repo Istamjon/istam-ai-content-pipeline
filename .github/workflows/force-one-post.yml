@@ -112,41 +112,25 @@ jobs:
             docker rm -f istam-ai-pipeline 2>/dev/null || true
             sleep 2
 
+            # Mount repo scripts/ (uses top-level await as .mjs module file — not node -e)
+            test -f scripts/force-face-check.mjs
+            test -f scripts/force-one-pipeline.mjs
+
             echo "=== face check (one-shot container) ==="
             docker compose run --rm --no-deps \
               -v "$APP_DIR/data:/app/data" \
-              pipeline node --input-type=module -e "
-            import { loadBrandFace, logBrandFace } from './dist/lib/brandFace.js';
-            logBrandFace();
-            const f = await loadBrandFace();
-            if (!f) { console.error('NO FACE'); process.exit(2); }
-            console.log('OK face bytes', f.buffer.length);
-            "
+              -v "$APP_DIR/scripts:/app/scripts:ro" \
+              -w /app \
+              pipeline node /app/scripts/force-face-check.mjs
 
             echo "=== FORCE ONE PIPELINE RUN (one-shot) ==="
             docker compose run --rm --no-deps \
               -v "$APP_DIR/data:/app/data" \
+              -v "$APP_DIR/scripts:/app/scripts:ro" \
+              -w /app \
               -e CRON_RUN_ON_START=false \
               -e DRY_RUN=false \
-              pipeline node --input-type=module -e "
-            import 'dotenv/config';
-            import { graph, graphInvokeConfig } from './dist/agent/graph.js';
-            import { createEmptyState } from './dist/agent/state.js';
-            import { logAllImageBudgets } from './dist/lib/imagePipeline.js';
-            logAllImageBudgets();
-            console.log('invoke start', new Date().toISOString());
-            const r = await graph.invoke(createEmptyState(), graphInvokeConfig);
-            const pub = r.publishResults || [];
-            const ok = pub.filter(p => p.status === 'success').length;
-            console.log('=== PUBLISH RESULTS ===');
-            console.log(JSON.stringify(pub, null, 2));
-            console.log('successCount', ok);
-            console.log('title', r.current?.title);
-            console.log('image', r.current?.imagePath);
-            console.log('quality', JSON.stringify(r.quality));
-            console.log('errors', r.errors);
-            if (ok < 1) process.exit(3);
-            "
+              pipeline node /app/scripts/force-one-pipeline.mjs
 
             # Leave long-running scheduler up for daily slots
             docker compose up -d
