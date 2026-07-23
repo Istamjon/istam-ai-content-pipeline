@@ -1,14 +1,21 @@
 import fs from "fs";
 import path from "path";
 import { env } from "../config/env.js";
+import { loadTokens } from "../oauth/tokenStore.js";
 
 /** Litterbox allowed expiry windows (auto-delete on their servers). */
 export type TempImageHours = 1 | 12 | 24 | 72;
 
 const LITTERBOX_API = "https://litterbox.catbox.moe/resources/internals/api.php";
 const CATBOX_API = "https://catbox.moe/user/api.php";
+const GRAPH = "https://graph.facebook.com/v19.0";
+
+/** Browser-like UA — free hosts block empty/datacenter default agents (403). */
+const UPLOAD_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
 export type ImageHostName =
+  | "facebook"
   | "litterbox"
   | "catbox"
   | "0x0"
@@ -17,24 +24,27 @@ export type ImageHostName =
 
 export type EnsurePublicImageOptions = {
   /**
-   * Host try-order. Instagram Graph crawlers often fail on litter.catbox.moe —
-   * prefer `["catbox","litterbox","0x0"]` for IG.
+   * Host try-order. For Instagram prefer Meta CDN first:
+   * `["facebook","catbox","transfer","imgbb",...]`
    */
   prefer?: ImageHostName[];
   /** Skip hosts already tried (e.g. retry after Meta reject). */
   skipHosts?: string[];
+  /**
+   * When true (default for IG/Threads prefer list), try Facebook Page
+   * unpublished photo → fbcdn URL first (Meta can always fetch own CDN).
+   */
+  tryFacebookCdn?: boolean;
 };
 
 /**
  * Resolve a publicly reachable HTTPS URL for a local image.
  * Instagram / Threads Graph APIs need a public image_url.
  *
- * Waterfall (free hosts; first success wins):
- * 1. Already http(s) → as-is
- * 2. Litterbox temporary upload (auto-delete after IMAGE_TEMP_HOURS)
- * 3. Catbox permanent free host (Litterbox often 500 on VDS/datacenter IPs)
- * 4. 0x0.st null pointer (temporary-ish free host)
- * 5. Optional ImgBB if IMGBB_API_KEY set
+ * Waterfall (first success wins):
+ * 1. Already http(s)
+ * 2. Facebook Page unpublished photo → scontent.fbcdn (best for IG)
+ * 3. Catbox / transfer.sh / ImgBB / Litterbox / 0x0
  */
 export async function ensurePublicImageUrl(
   imagePath?: string,
@@ -53,6 +63,29 @@ export async function ensurePublicImageUrl(
   }
 
   const errors: string[] = [];
+  const tryFb =
+    options?.tryFacebookCdn !== false &&
+    !(options?.skipHosts || []).some((h) => h.toLowerCase() === "facebook");
+
+  // Prefer Meta CDN when FB page credentials exist (fixes VDS free-host 403)
+  if (tryFb) {
+    try {
+      const fb = await uploadToFacebookCdn(imagePath);
+      console.log(
+        `[imageHost] OK host=facebook url=${fb.url.slice(0, 80)}`,
+      );
+      return {
+        url: fb.url,
+        temporary: true,
+        host: "facebook",
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`facebook: ${msg.slice(0, 160)}`);
+      console.warn(`[imageHost] facebook CDN failed:`, msg.slice(0, 200));
+    }
+  }
+
   const allHosts: Array<{
     name: ImageHostName;
     temporary: boolean;
@@ -64,14 +97,14 @@ export async function ensurePublicImageUrl(
       run: () => uploadToCatbox(imagePath),
     },
     {
-      name: "litterbox",
-      temporary: true,
-      run: () => uploadToLitterbox(imagePath, env.IMAGE_TEMP_HOURS),
-    },
-    {
       name: "transfer",
       temporary: true,
       run: () => uploadToTransferSh(imagePath),
+    },
+    {
+      name: "litterbox",
+      temporary: true,
+      run: () => uploadToLitterbox(imagePath, env.IMAGE_TEMP_HOURS),
     },
     {
       name: "0x0",
@@ -81,7 +114,8 @@ export async function ensurePublicImageUrl(
   ];
 
   if (env.IMGBB_API_KEY) {
-    allHosts.push({
+    // Prefer ImgBB early when key is set (reliable for Meta crawlers)
+    allHosts.unshift({
       name: "imgbb",
       temporary: false,
       run: () => uploadToImgbb(imagePath),
@@ -89,6 +123,7 @@ export async function ensurePublicImageUrl(
   }
 
   const skip = new Set((options?.skipHosts || []).map((h) => h.toLowerCase()));
+  skip.add("facebook"); // already tried above
   const prefer = options?.prefer;
   let hosts = allHosts.filter((h) => !skip.has(h.name));
   if (prefer?.length) {
@@ -216,6 +251,71 @@ function readImageBlob(imagePath: string): { blob: Blob; filename: string } {
 }
 
 /**
+ * Upload unpublished photo to Facebook Page → return fbcdn source URL.
+ * Instagram Graph can always fetch Meta CDN (fixes free-host 403 from VDS).
+ */
+async function uploadToFacebookCdn(
+  imagePath: string,
+): Promise<{ url: string }> {
+  const fb = loadTokens("facebook");
+  const token = (fb?.accessToken || env.FACEBOOK_PAGE_TOKEN || "").trim();
+  const pageId = String(fb?.userId || env.FACEBOOK_PAGE_ID || "").trim();
+  if (!token || !pageId || pageId === "0") {
+    throw new Error("Facebook page token/id missing (run npm run auth:facebook)");
+  }
+
+  const buf = fs.readFileSync(imagePath);
+  const filename = path.basename(imagePath) || "cover.jpg";
+  const form = new FormData();
+  form.append(
+    "source",
+    new Blob([buf], { type: contentTypeFor(imagePath) }),
+    filename,
+  );
+  form.append("published", "false");
+  form.append("temporary", "true");
+  form.append("access_token", token);
+
+  const createRes = await fetch(
+    `${GRAPH}/${encodeURIComponent(pageId)}/photos`,
+    {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(120_000),
+    },
+  );
+  const created = (await createRes.json()) as {
+    id?: string;
+    error?: { message?: string };
+  };
+  if (created.error?.message || !created.id) {
+    throw new Error(
+      created.error?.message || `FB photo upload HTTP ${createRes.status}`,
+    );
+  }
+
+  const metaRes = await fetch(
+    `${GRAPH}/${encodeURIComponent(created.id)}?fields=images&access_token=${encodeURIComponent(token)}`,
+    { signal: AbortSignal.timeout(30_000) },
+  );
+  const meta = (await metaRes.json()) as {
+    images?: Array<{ source?: string; width?: number; height?: number }>;
+    error?: { message?: string };
+  };
+  if (meta.error?.message) {
+    throw new Error(meta.error.message);
+  }
+  const images = meta.images || [];
+  // Prefer largest
+  images.sort((a, b) => (b.width || 0) - (a.width || 0));
+  const url = images[0]?.source;
+  if (!url || !/^https?:\/\//i.test(url)) {
+    throw new Error("FB photo has no images[].source URL");
+  }
+  return { url };
+}
+
+/**
  * Litterbox — temporary free hosting; file disappears after the chosen window.
  * @see https://litterbox.catbox.moe/
  */
@@ -230,6 +330,7 @@ async function uploadToLitterbox(imagePath: string, hours: number): Promise<stri
   const response = await fetch(LITTERBOX_API, {
     method: "POST",
     body: form,
+    headers: { "User-Agent": UPLOAD_UA },
     signal: AbortSignal.timeout(90_000),
   });
 
@@ -253,6 +354,7 @@ async function uploadToCatbox(imagePath: string): Promise<string> {
   const response = await fetch(CATBOX_API, {
     method: "POST",
     body: form,
+    headers: { "User-Agent": UPLOAD_UA },
     signal: AbortSignal.timeout(90_000),
   });
 
@@ -276,8 +378,7 @@ async function uploadTo0x0(imagePath: string): Promise<string> {
     method: "POST",
     body: form,
     headers: {
-      // Some hosts rate-limit empty UA from datacenter IPs
-      "User-Agent": "istam-ai-content-pipeline/1.0",
+      "User-Agent": UPLOAD_UA,
     },
     signal: AbortSignal.timeout(90_000),
   });
@@ -301,7 +402,7 @@ async function uploadToTransferSh(imagePath: string): Promise<string> {
     method: "PUT",
     headers: {
       "Content-Type": contentTypeFor(imagePath),
-      "User-Agent": "istam-ai-content-pipeline/1.0",
+      "User-Agent": UPLOAD_UA,
       "Max-Downloads": "20",
       "Max-Days": "1",
     },

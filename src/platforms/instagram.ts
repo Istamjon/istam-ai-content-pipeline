@@ -11,12 +11,14 @@ import { loadTokens } from "../oauth/tokenStore.js";
 const GRAPH = "https://graph.facebook.com/v19.0";
 
 /** Meta crawlers often fail on litter.*; prefer stable hosts for IG. */
+/** facebook CDN first — free hosts often 403 from VDS IPs */
 const IG_HOST_PREFER = [
+  "facebook",
+  "imgbb",
   "catbox",
   "transfer",
   "litterbox",
   "0x0",
-  "imgbb",
 ] as const;
 
 function sleep(ms: number): Promise<void> {
@@ -267,10 +269,15 @@ export async function publishToInstagram(
     // Up to 3 different public hosts (Meta often returns "unknown error" on one CDN)
     for (let hostRound = 0; hostRound < 3; hostRound++) {
       const hosted = video
-        ? await ensurePublicMediaUrl(mediaLocal)
+        ? await ensurePublicMediaUrl(mediaLocal, {
+            prefer: [...IG_HOST_PREFER],
+            skipHosts: triedHosts,
+            tryFacebookCdn: true,
+          })
         : await ensurePublicImageUrl(mediaLocal, {
             prefer: [...IG_HOST_PREFER],
             skipHosts: triedHosts,
+            tryFacebookCdn: true,
           });
 
       if (!hosted.url) {

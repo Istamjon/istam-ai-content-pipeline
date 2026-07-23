@@ -4,11 +4,12 @@ import { threadsProvider } from "../oauth/providers/threads.js";
 
 /** Prefer hosts Meta Graph can fetch reliably (same as Instagram). */
 const THREADS_HOST_PREFER = [
+  "facebook",
+  "imgbb",
   "catbox",
   "transfer",
   "litterbox",
   "0x0",
-  "imgbb",
 ] as const;
 
 function sleep(ms: number): Promise<void> {
@@ -151,6 +152,7 @@ export async function publishToThreads(
           : await ensurePublicImageUrl(imagePath, {
               prefer: [...THREADS_HOST_PREFER],
               skipHosts: triedHosts,
+              tryFacebookCdn: true,
             });
         if (hosted.url) {
           publicMediaUrl = hosted.url;
