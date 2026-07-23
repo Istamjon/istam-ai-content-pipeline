@@ -11,7 +11,13 @@ import { loadTokens } from "../oauth/tokenStore.js";
 const GRAPH = "https://graph.facebook.com/v19.0";
 
 /** Meta crawlers often fail on litter.*; prefer stable hosts for IG. */
-const IG_HOST_PREFER = ["catbox", "litterbox", "0x0", "imgbb"] as const;
+const IG_HOST_PREFER = [
+  "catbox",
+  "transfer",
+  "litterbox",
+  "0x0",
+  "imgbb",
+] as const;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -291,8 +297,15 @@ export async function publishToInstagram(
       if (created.error || !created.id) {
         lastError = created.error || "No media ID returned from Instagram";
         console.warn(`[instagram] container create failed: ${lastError.slice(0, 160)}`);
-        if (isHostFetchError(lastError) && !video) {
-          continue; // try next host
+        // Meta often returns opaque "unknown error" for a host it cannot fetch —
+        // try next CDN (do not hard-fail after first host).
+        if ((isHostFetchError(lastError) || isRetriablePublishError(lastError)) && !video) {
+          await sleep(1500 * (hostRound + 1));
+          continue;
+        }
+        if (hostRound < 2 && !video) {
+          await sleep(1500);
+          continue;
         }
         return { success: false, error: lastError };
       }

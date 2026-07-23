@@ -8,7 +8,12 @@ export type TempImageHours = 1 | 12 | 24 | 72;
 const LITTERBOX_API = "https://litterbox.catbox.moe/resources/internals/api.php";
 const CATBOX_API = "https://catbox.moe/user/api.php";
 
-export type ImageHostName = "litterbox" | "catbox" | "0x0" | "imgbb";
+export type ImageHostName =
+  | "litterbox"
+  | "catbox"
+  | "0x0"
+  | "transfer"
+  | "imgbb";
 
 export type EnsurePublicImageOptions = {
   /**
@@ -54,14 +59,19 @@ export async function ensurePublicImageUrl(
     run: () => Promise<string>;
   }> = [
     {
+      name: "catbox",
+      temporary: false,
+      run: () => uploadToCatbox(imagePath),
+    },
+    {
       name: "litterbox",
       temporary: true,
       run: () => uploadToLitterbox(imagePath, env.IMAGE_TEMP_HOURS),
     },
     {
-      name: "catbox",
-      temporary: false,
-      run: () => uploadToCatbox(imagePath),
+      name: "transfer",
+      temporary: true,
+      run: () => uploadToTransferSh(imagePath),
     },
     {
       name: "0x0",
@@ -275,6 +285,32 @@ async function uploadTo0x0(imagePath: string): Promise<string> {
   const text = (await response.text()).trim();
   if (!response.ok || !/^https?:\/\//i.test(text)) {
     throw new Error(`0x0 ${response.status}: ${text.slice(0, 200)}`);
+  }
+  return text.split(/\s+/)[0];
+}
+
+/**
+ * transfer.sh — free temp file host (good Meta image_url fallback when catbox rejected).
+ * @see https://transfer.sh/
+ */
+async function uploadToTransferSh(imagePath: string): Promise<string> {
+  const buf = fs.readFileSync(imagePath);
+  const filename =
+    path.basename(imagePath).replace(/[^a-zA-Z0-9._-]/g, "_") || "image.jpg";
+  const response = await fetch(`https://transfer.sh/${filename}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": contentTypeFor(imagePath),
+      "User-Agent": "istam-ai-content-pipeline/1.0",
+      "Max-Downloads": "20",
+      "Max-Days": "1",
+    },
+    body: buf,
+    signal: AbortSignal.timeout(90_000),
+  });
+  const text = (await response.text()).trim();
+  if (!response.ok || !/^https?:\/\//i.test(text)) {
+    throw new Error(`transfer.sh ${response.status}: ${text.slice(0, 200)}`);
   }
   return text.split(/\s+/)[0];
 }

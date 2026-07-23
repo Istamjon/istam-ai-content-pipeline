@@ -3,7 +3,13 @@ import { ensurePublicImageUrl, ensurePublicMediaUrl } from "../lib/imageHost.js"
 import { threadsProvider } from "../oauth/providers/threads.js";
 
 /** Prefer hosts Meta Graph can fetch reliably (same as Instagram). */
-const THREADS_HOST_PREFER = ["catbox", "litterbox", "0x0", "imgbb"] as const;
+const THREADS_HOST_PREFER = [
+  "catbox",
+  "transfer",
+  "litterbox",
+  "0x0",
+  "imgbb",
+] as const;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
