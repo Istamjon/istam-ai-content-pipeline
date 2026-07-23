@@ -1,14 +1,22 @@
 /**
  * One-shot brand face check (VDS force-one-post).
- * Run inside container: node /app/scripts/force-face-check.mjs
- * (scripts dir mounted or copied)
  */
 import { loadBrandFace, logBrandFace } from "../dist/lib/brandFace.js";
 
-logBrandFace();
-const f = await loadBrandFace();
-if (!f) {
-  console.error("NO FACE");
-  process.exit(2);
+function main() {
+  logBrandFace();
+  return loadBrandFace().then((f) => {
+    if (!f) {
+      console.error("NO FACE");
+      process.exitCode = 2;
+      return;
+    }
+    console.log("OK face bytes", f.buffer.length);
+    process.exitCode = 0;
+  });
 }
-console.log("OK face bytes", f.buffer.length);
+
+main().catch((err) => {
+  console.error("force-face-check fatal:", err);
+  process.exitCode = 1;
+});
