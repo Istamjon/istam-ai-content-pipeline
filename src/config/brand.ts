@@ -292,6 +292,14 @@ export { platformLimits } from "./platformTextLimits.js";
  */
 export const sources = [
   // ── Tier A — primary AI engineering ──────────────────────────
+  // First crawl + highest brand-fit boost (see brandFit PREFERRED_SOURCES)
+  {
+    url: "https://www.chaseai.io/blog",
+    name: "Chase AI Blog",
+    tier: "primary" as const,
+    // Posts: /blog/<slug> — listing/tags stay out via include
+    pathInclude: ["/blog/"],
+  },
   {
     url: "https://actualize.co/ai-engineering-blog/",
     name: "Actualize AI",

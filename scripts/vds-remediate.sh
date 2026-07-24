@@ -49,6 +49,12 @@ fi
 
 echo "=== docker compose rebuild/restart ==="
 docker compose build --pull || docker compose build
+# Safe cache clean (do not wipe latest image)
+set +e
+docker image prune -f 2>/dev/null || true
+docker builder prune -f --filter 'until=48h' 2>/dev/null || docker builder prune -f 2>/dev/null || true
+docker container prune -f 2>/dev/null || true
+set -e
 docker compose up -d --force-recreate
 sleep 6
 docker compose ps -a || true

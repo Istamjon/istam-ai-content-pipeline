@@ -271,7 +271,8 @@ const PREFERRED_SOURCES: Array<{
   /** Higher bar after boost for noisy general blogs */
   minScore?: number;
 }> = [
-  // Tier A — AI engineering
+  // Tier A — AI engineering (highest boost first in ranking)
+  { host: "chaseai.io", boost: 8, label: "src-chaseai" },
   { host: "actualize.co", boost: 6, label: "src-actualize" },
   { host: "the-agentic-engineer.com", boost: 6, label: "src-agentic-eng" },
   { host: "skywork.ai", boost: 5, label: "src-skywork" },

@@ -65,6 +65,7 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 
 **AI engineering (primary)**
 
+- [Chase AI Blog](https://www.chaseai.io/blog) — **first priority**
 - [Actualize AI](https://actualize.co/ai-engineering-blog/)
 - [The Agentic Engineer](https://www.the-agentic-engineer.com/blog)
 - [Skywork AI](https://skywork.ai/blog/)

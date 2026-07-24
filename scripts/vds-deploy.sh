@@ -79,6 +79,30 @@ if [ "$build_ok" != "1" ]; then
   echo "Using existing image istam-ai-content-pipeline:latest"
 fi
 
+echo "=== safe docker cache cleanup (keep running/latest image) ==="
+# Never `docker system prune -af` here — it can delete the image we just built
+# if tagging races, and wipes volume-adjacent build cache mid-deploy.
+set +e
+# Dangling intermediate layers only (untagged)
+docker image prune -f 2>/dev/null || true
+# Builder cache older than 48h (keeps recent rebuilds fast)
+if docker builder prune -f --filter 'until=48h' 2>/dev/null; then
+  :
+else
+  docker builder prune -f 2>/dev/null || true
+fi
+# Stopped containers / unused networks (not volumes — data/ is a bind mount)
+docker container prune -f 2>/dev/null || true
+docker network prune -f 2>/dev/null || true
+# Old unused images except our production tag
+docker images --format '{{.Repository}}:{{.Tag}} {{.ID}}' 2>/dev/null | \
+  grep -E 'istam-ai|none' | grep -v 'istam-ai-content-pipeline:latest' | \
+  awk '{print $2}' | sort -u | while read -r id; do
+    [ -n "$id" ] && docker rmi -f "$id" 2>/dev/null || true
+  done
+df -h /var/lib/docker 2>/dev/null | head -5 || df -h / | head -3 || true
+set -e
+
 echo "=== docker compose up ==="
 # Stop old only when new image is ready (or fallback image exists)
 set +e
