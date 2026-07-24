@@ -83,18 +83,21 @@ jobs:
               fi
             }
 
-            # 3–6 random posts/day policy
+            # Keep random 3–6 policy; platform caps must be >= max slots
             upsert CRON_SLOTS_MIN 3
             upsert CRON_SLOTS_MAX 6
             upsert CRON_SLOTS_PER_DAY 4
+            upsert CRON_RANDOM true
             upsert DAILY_LIMIT_TELEGRAM 6
             upsert DAILY_LIMIT_LINKEDIN 6
             upsert DAILY_LIMIT_FACEBOOK 6
             upsert DAILY_LIMIT_INSTAGRAM 6
             upsert DAILY_LIMIT_THREADS 6
             upsert DAILY_LIMIT_X 6
+            upsert DAILY_LIMIT_BLOGGER 6
             upsert DRY_RUN false
             upsert CRON_RUN_ON_START false
+            upsert TZ Asia/Tashkent
 
             mkdir -p data/brand data/images data/tokens
             # SCP lands as /tmp/istam-brand-face/data/brand/face.jpg

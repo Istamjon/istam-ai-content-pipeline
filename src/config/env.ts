@@ -402,7 +402,7 @@ export const env = {
     1,
     parseInt(process.env.MAX_ARTICLES_PER_RUN || "5", 10) || 5,
   ),
-  /** Soft daily publish cap per platform (UTC date). Default 6 matches CRON_SLOTS_MAX. */
+  /** Soft daily publish cap per platform (local TZ date). Default 6 matches CRON_SLOTS_MAX. */
   DAILY_LIMIT_TELEGRAM: parseInt(process.env.DAILY_LIMIT_TELEGRAM || "6", 10),
   DAILY_LIMIT_LINKEDIN: parseInt(process.env.DAILY_LIMIT_LINKEDIN || "6", 10),
   /** 0 = unlimited (no soft daily cap for Facebook). */

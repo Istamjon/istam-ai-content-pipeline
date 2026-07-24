@@ -146,8 +146,18 @@ export function updatePostStatus(id: number, status: string, error?: string): vo
   );
 }
 
+/** Local calendar day for publish caps (matches CRON schedule TZ). */
+function publishDayKey(): string {
+  // Inline to avoid circular import with dailySchedule → env → db in some paths
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function incrementDailyCount(platform: Platform): number {
-  const today = new Date().toISOString().split("T")[0];
+  const today = publishDayKey();
   const row = db
     .prepare("SELECT count FROM daily_counts WHERE platform = ? AND date = ?")
     .get(platform, today) as { count: number } | undefined;
@@ -159,7 +169,7 @@ export function incrementDailyCount(platform: Platform): number {
 }
 
 export function getDailyCount(platform: Platform): number {
-  const today = new Date().toISOString().split("T")[0];
+  const today = publishDayKey();
   const row = db
     .prepare("SELECT count FROM daily_counts WHERE platform = ? AND date = ?")
     .get(platform, today) as { count: number } | undefined;
@@ -184,7 +194,7 @@ export function insertAnalytics(postId: number, platform: Platform): void {
 }
 
 export function getAiDailyUsage(): number {
-  const today = new Date().toISOString().split("T")[0];
+  const today = publishDayKey();
   const row = db
     .prepare("SELECT request_count FROM ai_daily_usage WHERE date = ?")
     .get(today) as { request_count: number } | undefined;
@@ -193,7 +203,7 @@ export function getAiDailyUsage(): number {
 
 /** Increment AI request counter; returns new count for today. */
 export function incrementAiDailyUsage(by = 1): number {
-  const today = new Date().toISOString().split("T")[0];
+  const today = publishDayKey();
   const row = db
     .prepare("SELECT request_count FROM ai_daily_usage WHERE date = ?")
     .get(today) as { request_count: number } | undefined;

@@ -21,11 +21,20 @@ export type DailySchedule = {
   fired: string[];
 };
 
-function localDateKey(d = new Date()): string {
+/**
+ * Local calendar day (respects process TZ, e.g. Asia/Tashkent).
+ * MUST match daily publish limits — never use UTC ISO date for schedule/caps.
+ */
+export function localDateKey(d = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/** @deprecated alias — same as localDateKey */
+export function localCalendarDate(d = new Date()): string {
+  return localDateKey(d);
 }
 
 function pad2(n: number): string {
@@ -59,6 +68,7 @@ function save(schedule: DailySchedule): void {
 
 /**
  * Pick N random minute-of-day values inside [startHour, endHour) with min gap.
+ * Never schedules past endHour (previous code expanded window when gap×count was large).
  */
 export function generateRandomTimes(
   count: number,
@@ -66,51 +76,67 @@ export function generateRandomTimes(
   endHour: number,
   minGapMinutes: number,
 ): string[] {
-  const start = startHour * 60;
-  const end = Math.max(start + count * minGapMinutes, endHour * 60);
-  const windowEnd = Math.min(24 * 60 - 1, end);
-  const span = windowEnd - start;
-  if (span <= 0 || count <= 0) return [];
+  if (count <= 0) return [];
+  const start = Math.max(0, Math.min(23 * 60, startHour * 60));
+  // endHour is exclusive upper bound of the posting window (e.g. 21 → last minute 20:59)
+  const rawEnd = Math.max(start + 60, endHour * 60);
+  const windowEnd = Math.min(24 * 60 - 1, rawEnd - 1);
+  const span = windowEnd - start + 1;
+  if (span <= 0) return [];
 
-  const maxAttempts = 500;
+  // Fit gap so N slots always stay inside the window
+  const maxGapForCount =
+    count <= 1 ? minGapMinutes : Math.floor((windowEnd - start) / (count - 1));
+  const gap = Math.max(30, Math.min(minGapMinutes, Math.max(30, maxGapForCount)));
+
+  const maxAttempts = 1200;
   let best: number[] = [];
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const picks = new Set<number>();
-    let guard = 0;
-    while (picks.size < count && guard < 2000) {
-      guard++;
-      picks.add(start + Math.floor(Math.random() * span));
+    const picks: number[] = [];
+    // Place first randomly, then place next with min gap (greedy)
+    let cursor = start + Math.floor(Math.random() * Math.max(1, Math.floor(span / 4)));
+    picks.push(cursor);
+    let failed = false;
+    for (let i = 1; i < count; i++) {
+      const minNext = picks[i - 1] + gap;
+      const remainingSlots = count - i;
+      const maxNext = windowEnd - gap * (remainingSlots - 1);
+      if (minNext > maxNext || minNext > windowEnd) {
+        failed = true;
+        break;
+      }
+      const room = Math.max(1, maxNext - minNext + 1);
+      const next = minNext + Math.floor(Math.random() * room);
+      picks.push(Math.min(windowEnd, next));
     }
-    const sorted = [...picks].sort((a, b) => a - b);
-    if (sorted.length < count) continue;
+    if (failed || picks.length < count) continue;
     let ok = true;
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i] - sorted[i - 1] < minGapMinutes) {
+    for (let i = 1; i < picks.length; i++) {
+      if (picks[i] - picks[i - 1] < gap) {
         ok = false;
         break;
       }
     }
-    if (ok) {
-      best = sorted.slice(0, count);
+    if (ok && picks[picks.length - 1] <= windowEnd && picks[0] >= start) {
+      best = picks;
       break;
     }
-    // fallback: keep densest attempt
-    if (sorted.length > best.length) best = sorted.slice(0, count);
   }
 
-  // If random packing failed, place evenly with small jitter
-  if (best.length < count) {
+  // Even spacing fallback (guaranteed min gap + inside window)
+  if (best.length !== count) {
     best = [];
-    const gap = Math.max(minGapMinutes, Math.floor(span / count));
-    for (let i = 0; i < count; i++) {
-      const jitter = Math.floor(Math.random() * Math.min(15, Math.max(1, gap / 3)));
-      const t = Math.min(windowEnd, start + i * gap + jitter);
-      best.push(t);
-    }
-    best = [...new Set(best)].sort((a, b) => a - b);
-    while (best.length < count) {
-      best.push(Math.min(windowEnd, best[best.length - 1] + minGapMinutes));
+    if (count === 1) {
+      best = [start + Math.floor((windowEnd - start) / 2)];
+    } else {
+      const step = Math.max(gap, Math.floor((windowEnd - start) / (count - 1)));
+      // If even step doesn't fit, use max fit spacing
+      const fitStep = Math.floor((windowEnd - start) / (count - 1));
+      const useStep = Math.max(1, Math.min(step, fitStep));
+      for (let i = 0; i < count; i++) {
+        best.push(Math.min(windowEnd, start + i * useStep));
+      }
     }
   }
 

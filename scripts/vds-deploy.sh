@@ -148,25 +148,55 @@ if [ "$RESTART" != "0" ] && [ "$RESTART" != "na" ]; then
   fi
 fi
 
-# Ensure daily policy keys exist (do not overwrite secrets)
-upsert_env() {
+# Ensure daily policy keys exist — only fill MISSING keys (never clobber operator limits)
+set_env_if_missing() {
   key="$1"; val="$2"
   if grep -q "^${key}=" .env 2>/dev/null; then
-    sed -i "s|^${key}=.*|${key}=${val}|" .env
-  else
-    printf '\n%s=%s\n' "$key" "$val" >> .env
+    return 0
+  fi
+  printf '\n%s=%s\n' "$key" "$val" >> .env
+}
+# Align slots (3–6) with per-platform caps (>= max slots so random plan is not wasted)
+set_env_if_missing CRON_RANDOM true
+set_env_if_missing CRON_SLOTS_MIN 3
+set_env_if_missing CRON_SLOTS_MAX 6
+set_env_if_missing CRON_SLOTS_PER_DAY 4
+set_env_if_missing CRON_WINDOW_START_HOUR 8
+set_env_if_missing CRON_WINDOW_END_HOUR 21
+set_env_if_missing CRON_MIN_GAP_MINUTES 150
+set_env_if_missing CRON_RUN_ON_START false
+set_env_if_missing DAILY_LIMIT_TELEGRAM 6
+set_env_if_missing DAILY_LIMIT_LINKEDIN 6
+set_env_if_missing DAILY_LIMIT_FACEBOOK 6
+set_env_if_missing DAILY_LIMIT_INSTAGRAM 6
+set_env_if_missing DAILY_LIMIT_THREADS 6
+set_env_if_missing DAILY_LIMIT_X 6
+set_env_if_missing DAILY_LIMIT_BLOGGER 6
+set_env_if_missing THREADS_MAX_PARTS 6
+set_env_if_missing DRY_RUN false
+set_env_if_missing TZ Asia/Tashkent
+
+# Raise platform caps that are below CRON_SLOTS_MAX (common bug: limit=4 + slots=3–6)
+SLOTS_MAX=$(grep -E '^CRON_SLOTS_MAX=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r' || true)
+SLOTS_MAX=${SLOTS_MAX:-6}
+align_daily_limit() {
+  key="$1"
+  cur=$(grep -E "^${key}=" .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r' || true)
+  if [ -z "$cur" ]; then
+    printf '\n%s=%s\n' "$key" "$SLOTS_MAX" >> .env
+    return 0
+  fi
+  case "$cur" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  if [ "$cur" -lt "$SLOTS_MAX" ] 2>/dev/null; then
+    echo "Align $key: $cur → $SLOTS_MAX (>= CRON_SLOTS_MAX)"
+    sed -i "s|^${key}=.*|${key}=${SLOTS_MAX}|" .env
   fi
 }
-upsert_env CRON_SLOTS_PER_DAY 4
-upsert_env DAILY_LIMIT_TELEGRAM 4
-upsert_env DAILY_LIMIT_LINKEDIN 4
-upsert_env DAILY_LIMIT_FACEBOOK 4
-upsert_env DAILY_LIMIT_INSTAGRAM 4
-upsert_env DAILY_LIMIT_THREADS 4
-upsert_env DAILY_LIMIT_X 4
-upsert_env DAILY_LIMIT_BLOGGER 4
-upsert_env THREADS_MAX_PARTS 6
-upsert_env DRY_RUN false
+for _p in TELEGRAM LINKEDIN FACEBOOK INSTAGRAM THREADS X BLOGGER; do
+  align_daily_limit "DAILY_LIMIT_${_p}"
+done
 # Blog id auto-resolved at runtime; pin known brand defaults if missing
 if ! grep -q '^BLOGGER_URL=.\+' .env 2>/dev/null; then
   upsert_env BLOGGER_URL 'https://istamjon.blogspot.com/'

@@ -193,8 +193,21 @@ function startGuaranteedDailyScheduler(
     void drainQueue();
   };
 
+  const maxSlotsToday = (): number => {
+    const s = getOrCreateTodaySchedule();
+    return Math.max(1, s.times?.length || env.CRON_SLOTS_MAX);
+  };
+
   const fireSlotDirect = async (t: string, reason: string): Promise<void> => {
     if (isSlotFired(t)) return;
+    // Hard day cap: never run more successful pipelines than planned slots
+    if (publishesToday >= maxSlotsToday()) {
+      markSlotFired(t);
+      console.log(
+        `[Scheduler] slot ${t} skipped — day post cap reached (${publishesToday}/${maxSlotsToday()})`,
+      );
+      return;
+    }
     try {
       const outcome = await runOnce(reason);
       if (!outcome.attempted) {
@@ -209,8 +222,15 @@ function startGuaranteedDailyScheduler(
         markSlotFired(t);
         publishesToday += 1;
         console.log(
-          `[Scheduler] slot ${t} published — marked fired (dayOk=${publishesToday})`,
+          `[Scheduler] slot ${t} published — marked fired (dayOk=${publishesToday}/${maxSlotsToday()})`,
         );
+        // Drop remaining catch-up if we already filled today's plan
+        if (publishesToday >= maxSlotsToday()) {
+          pendingQueue.length = 0;
+          console.log(
+            `[Scheduler] Day plan complete (${publishesToday} publishes) — cleared catch-up queue`,
+          );
+        }
         return;
       }
       const n = (slotRetries.get(t) || 0) + 1;
@@ -301,15 +321,10 @@ function startGuaranteedDailyScheduler(
     clearTimers();
     slotRetries.clear();
     pendingQueue.length = 0;
-    publishesToday = schedule.fired?.length
-      ? schedule.fired.length
-      : 0;
-    // fired may include failed exhaust — treat conservatively: only count after publish
-    // We don't know which were real publishes; start from 0 and rely on guarantee
-    publishesToday = 0;
+    // Fired slots ≈ completed attempts (publish or exhausted retries)
+    publishesToday = (schedule.fired || []).length;
     guaranteeArmed = false;
 
-    const now = nowLocalHhmm();
     const lo = Math.min(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
     const hi = Math.max(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
     console.log(
@@ -318,7 +333,8 @@ function startGuaranteedDailyScheduler(
     );
     console.log(
       `[Scheduler] Window ${env.CRON_WINDOW_START_HOUR}:00–${env.CRON_WINDOW_END_HOUR}:00 local, ` +
-        `gap≥${env.CRON_MIN_GAP_MINUTES}m (adaptive), min publishes/day=${DAILY_MIN_PUBLISHES}`,
+        `gap≥${env.CRON_MIN_GAP_MINUTES}m (adaptive), min publishes/day=${DAILY_MIN_PUBLISHES}, ` +
+        `alreadyFired=${publishesToday}`,
     );
 
     let futureArmed = 0;
@@ -340,22 +356,41 @@ function startGuaranteedDailyScheduler(
       futureArmed += 1;
     }
 
-    // SERIAL catch-up: only enqueue earliest missed first; drainQueue runs one-by-one
-    if (missed.length > 0) {
+    // Catch-up: at most 1 missed slot on restart (avoids burning all daily limits at once)
+    if (missed.length > 0 && publishesToday < schedule.times.length) {
+      const catchUp = missed.slice(0, 1);
       console.log(
-        `[Scheduler] ${missed.length} missed slot(s) → serial catch-up: ${missed.join(", ")}`,
+        `[Scheduler] ${missed.length} missed slot(s) → catch-up only earliest: ${catchUp.join(", ")}` +
+          (missed.length > 1
+            ? ` (deferred: ${missed.slice(1).join(", ")})`
+            : ""),
       );
-      for (const t of missed) {
+      for (const t of catchUp) {
         pendingQueue.push(t);
       }
-      // Stagger start slightly so container is fully up
+      // Stagger start so container is fully up
       armTimeout(8_000, () => {
         void drainQueue();
       });
+      // Space remaining missed slots (not all at once)
+      let delay = 45 * 60 * 1000;
+      for (const t of missed.slice(1)) {
+        if (isSlotFired(t)) continue;
+        armTimeout(delay, () => enqueueSlot(t));
+        console.log(
+          `[Scheduler] Deferred catch-up ${t} in ~${Math.round(delay / 60000)} min`,
+        );
+        delay += 45 * 60 * 1000;
+      }
+    } else if (missed.length > 0) {
+      console.log(
+        `[Scheduler] ${missed.length} missed slot(s) skipped — day already filled (${publishesToday})`,
+      );
+      for (const t of missed) markSlotFired(t);
     }
 
     console.log(
-      `[Scheduler] ${futureArmed} future + ${missed.length} catch-up slot(s). New plan at local midnight.`,
+      `[Scheduler] ${futureArmed} future + catch-up planned. New plan at local midnight.`,
     );
 
     armDailyGuarantee(schedule);
