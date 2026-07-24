@@ -1,5 +1,6 @@
 import "dotenv/config";
 import dns from "dns";
+import { Agent, setGlobalDispatcher } from "undici";
 import { startScheduler } from "./scheduler.js";
 import { startTelegramBot } from "./bot/telegramBot.js";
 import { env } from "./config/env.js";
@@ -19,6 +20,18 @@ try {
   dns.setDefaultResultOrder("ipv4first");
 } catch {
   /* Node < 17 */
+}
+// Force dual-stack off at the HTTP client layer (stronger than dns order alone)
+try {
+  setGlobalDispatcher(
+    new Agent({
+      connect: { family: 4, timeout: 20_000 },
+      connections: 32,
+      keepAliveTimeout: 10_000,
+    }),
+  );
+} catch (e) {
+  console.warn("[net] undici IPv4 Agent not applied:", e);
 }
 
 async function logAiConfig(): Promise<void> {

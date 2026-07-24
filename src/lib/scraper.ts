@@ -332,13 +332,11 @@ async function discoverOneSource(config: SourceConfig): Promise<Article[]> {
   let articles: Article[] = [];
   const rssPaths = config.rssPaths ?? defaultRssPaths;
 
-  // Try feed candidates in parallel (first success wins content)
-  const feedUrls = rssPaths.map((p) =>
-    p.startsWith("http") ? p : `${baseUrl}${p}`,
-  );
-  const feedAttempts = await Promise.allSettled(
-    feedUrls.map(async (rssUrl) => {
-      const xml = await fetchHtml(rssUrl, 6_000);
+  // Sequential feed probes (parallel × N sources exhausted VDS sockets + Telegram)
+  for (const p of rssPaths) {
+    const rssUrl = p.startsWith("http") ? p : `${baseUrl}${p}`;
+    try {
+      const xml = await fetchHtml(rssUrl, 5_000);
       if (
         xml.includes("<rss") ||
         xml.includes("<feed") ||
@@ -347,15 +345,13 @@ async function discoverOneSource(config: SourceConfig): Promise<Article[]> {
         xml.includes("<entry")
       ) {
         const parsed = parseFeed(xml, baseUrl);
-        if (parsed.length > 0) return parsed;
+        if (parsed.length > 0) {
+          articles = parsed;
+          break;
+        }
       }
-      throw new Error("empty feed");
-    }),
-  );
-  for (const r of feedAttempts) {
-    if (r.status === "fulfilled" && r.value.length > 0) {
-      articles = r.value;
-      break;
+    } catch {
+      /* next feed path */
     }
   }
 
@@ -388,12 +384,35 @@ async function discoverOneSource(config: SourceConfig): Promise<Article[]> {
   return articles;
 }
 
+/** Bound concurrency — full parallel on 19 sources freezes VDS egress. */
+async function mapPool<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      try {
+        results[i] = { status: "fulfilled", value: await fn(items[i], i) };
+      } catch (reason) {
+        results[i] = { status: "rejected", reason };
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export async function discoverSources(configs: SourceConfig[]): Promise<Article[]> {
   const allArticles: Article[] = [];
   const globalSeen = new Set<string>();
 
-  // Sources in parallel — avoids multi-minute sequential hangs
-  const results = await Promise.allSettled(configs.map((c) => discoverOneSource(c)));
+  // Prefer listed order (Chase AI first) with small pool so primary finishes early
+  const results = await mapPool(configs, 3, (c) => discoverOneSource(c));
 
   for (let i = 0; i < results.length; i++) {
     const r = results[i];

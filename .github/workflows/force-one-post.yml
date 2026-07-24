@@ -9,6 +9,10 @@ name: Force One Post VDS
 on:
   workflow_dispatch:
 
+concurrency:
+  group: deploy-vds
+  cancel-in-progress: false
+
 jobs:
   run-once:
     name: One publish with brand face

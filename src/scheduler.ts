@@ -68,6 +68,9 @@ export function startScheduler(): void {
    * - published=true  → mark slot fired
    * - attempted && !published → leave unfired / schedule retry (caller decides)
    */
+  /** Hard cap so a hung scrape/image provider cannot block all day slots. */
+  const PIPELINE_TIMEOUT_MS = 18 * 60 * 1000;
+
   const runOnce = async (reason: string): Promise<RunOutcome> => {
     if (running) {
       console.log(`[Scheduler] Previous run still in progress, skipping (${reason})`);
@@ -79,7 +82,20 @@ export function startScheduler(): void {
     );
     try {
       await runTokenAlert(reason);
-      const result = await graph.invoke(createEmptyState(), graphInvokeConfig);
+      const invokePromise = graph.invoke(createEmptyState(), graphInvokeConfig);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(
+            new Error(
+              `Pipeline timeout after ${Math.round(PIPELINE_TIMEOUT_MS / 60000)}m (${reason})`,
+            ),
+          );
+        }, PIPELINE_TIMEOUT_MS);
+      });
+      const result = await Promise.race([invokePromise, timeoutPromise]).finally(() => {
+        if (timer) clearTimeout(timer);
+      });
       const published = hasSuccessfulPublish(result.publishResults);
       console.log("[Scheduler] Pipeline completed");
       console.log(
