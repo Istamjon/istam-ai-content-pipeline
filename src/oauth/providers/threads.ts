@@ -2,8 +2,16 @@ import { env } from "../../config/env.js";
 import { loadTokens, saveTokens } from "../tokenStore.js";
 import type { AuthCredentials, OAuthProvider, StoredTokens } from "../types.js";
 
-/** Threads uses Meta OAuth (threads_basic, threads_content_publish). */
-const SCOPES = ["threads_basic", "threads_content_publish"].join(",");
+/**
+ * Threads OAuth scopes.
+ * - threads_manage_replies is required for multi-part reply chains (reply_to_id).
+ *   Without it Meta returns "Application does not have permission for this action".
+ */
+const SCOPES = [
+  "threads_basic",
+  "threads_content_publish",
+  "threads_manage_replies",
+].join(",");
 
 function redirectUri(): string {
   return (

@@ -1,6 +1,7 @@
 import { env } from "../config/env.js";
 import { ensurePublicImageUrl, ensurePublicMediaUrl } from "../lib/imageHost.js";
 import { threadsProvider } from "../oauth/providers/threads.js";
+import { loadTokens } from "../oauth/tokenStore.js";
 
 /** Prefer hosts Meta Graph can fetch reliably (same as Instagram). */
 const THREADS_HOST_PREFER = [
@@ -135,9 +136,28 @@ export async function publishToThreads(
       return { success: false, error: "Threads: empty text" };
     }
 
-    const safe = chain.map((p) =>
+    let safe = chain.map((p) =>
       p.length > 500 ? p.slice(0, 499).replace(/\s+\S*$/, "") + "…" : p,
     );
+
+    // Stored token scopes: without manage_replies, reply chains fail at part 2.
+    // Collapse to a single post so publish still succeeds until re-auth.
+    const storedScopes = loadTokens("threads")?.scopes || "";
+    const canManageReplies =
+      /threads_manage_replies/i.test(storedScopes) ||
+      /threads_manage_replies/i.test(process.env.THREADS_SCOPES || "");
+    if (!canManageReplies && safe.length > 1) {
+      const merged = safe.join("\n\n");
+      safe = [
+        merged.length > 500
+          ? merged.slice(0, 499).replace(/\s+\S*$/, "") + "…"
+          : merged,
+      ];
+      console.warn(
+        "[threads] Token lacks threads_manage_replies — single post " +
+          `(re-auth with: npm run auth -- threads). parts collapsed ${chain.length}→1`,
+      );
+    }
 
     const video = isVideoPath(imagePath, mediaKind);
     const triedHosts: string[] = [];

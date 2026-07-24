@@ -1,4 +1,5 @@
 import "dotenv/config";
+import dns from "dns";
 import { startScheduler } from "./scheduler.js";
 import { startTelegramBot } from "./bot/telegramBot.js";
 import { env } from "./config/env.js";
@@ -11,6 +12,14 @@ import {
   getCloudflareAccounts,
 } from "./lib/cloudflareImage.js";
 import { releaseTransientFetchSkips } from "./db.js";
+
+// Many VDS hosts have broken/partial IPv6 — Node would otherwise prefer AAAA and
+// fail with opaque "fetch failed" to api.telegram.org and other APIs.
+try {
+  dns.setDefaultResultOrder("ipv4first");
+} catch {
+  /* Node < 17 */
+}
 
 async function logAiConfig(): Promise<void> {
   await initCloudflareAccounts();

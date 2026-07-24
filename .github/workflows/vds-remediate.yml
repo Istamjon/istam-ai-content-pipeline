@@ -1,0 +1,55 @@
+# Diagnose + fix common VDS issues (Telegram IPv4, restart, getMe).
+name: VDS Remediate
+
+on:
+  workflow_dispatch:
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check secrets
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_USER: ${{ secrets.VDS_USER }}
+          VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+        run: |
+          [ -n "$VDS_HOST" ] && [ -n "$VDS_USER" ] && [ -n "$VDS_SSH_KEY" ] || {
+            echo "::error::Missing VDS_* secrets"
+            exit 1
+          }
+
+      - name: Remediate over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 20m
+          script_stop: false
+          envs: REMOTE_APP_DIR
+          script: |
+            set -e
+            APP_DIR="${REMOTE_APP_DIR:-}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d "$HOME/istam-ai-content-pipeline" ] && APP_DIR="$HOME/istam-ai-content-pipeline"
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /root/istam-ai-content-pipeline ] && APP_DIR=/root/istam-ai-content-pipeline
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /opt/istam-ai-content-pipeline ] && APP_DIR=/opt/istam-ai-content-pipeline
+            fi
+            echo "APP_DIR=$APP_DIR"
+            test -n "$APP_DIR" && test -d "$APP_DIR"
+            cd "$APP_DIR"
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+            echo "HEAD=$(git rev-parse --short HEAD)"
+            chmod +x scripts/vds-remediate.sh scripts/vds-deploy.sh
+            bash scripts/vds-remediate.sh

@@ -32,7 +32,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production \
     npm_config_update_notifier=false \
-    DATA_DIR=/app/data
+    DATA_DIR=/app/data \
+    NODE_OPTIONS=--dns-result-order=ipv4first
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates tini \

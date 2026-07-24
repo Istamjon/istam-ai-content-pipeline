@@ -563,6 +563,7 @@ export function startTelegramBot(): void {
 }
 
 async function pollLoop(): Promise<void> {
+  let consecutiveFails = 0;
   while (running) {
     try {
       expireOldDrafts();
@@ -571,6 +572,7 @@ async function pollLoop(): Promise<void> {
         timeout: 25,
         allowed_updates: ["message", "callback_query"],
       });
+      consecutiveFails = 0;
 
       for (const u of updates) {
         offset = u.update_id + 1;
@@ -580,9 +582,25 @@ async function pollLoop(): Promise<void> {
       const msg = e instanceof Error ? e.message : String(e);
       // Timeout on long-poll is normal if AbortSignal fires; network blips retry
       if (!/aborted|timeout/i.test(msg)) {
-        console.warn("[telegramBot] poll error:", msg.slice(0, 200));
+        consecutiveFails += 1;
+        // Rate-limit spam: log every failure at first, then every 15th
+        if (consecutiveFails <= 3 || consecutiveFails % 15 === 0) {
+          console.warn(
+            `[telegramBot] poll error (n=${consecutiveFails}):`,
+            msg.slice(0, 200),
+          );
+          if (/fetch failed|ECONNREFUSED|ENOTFOUND|network/i.test(msg)) {
+            console.warn(
+              "[telegramBot] Hint: VDS may block Telegram or prefer broken IPv6. " +
+                "Container uses NODE_OPTIONS=--dns-result-order=ipv4first. " +
+                "Test: curl -4 -I https://api.telegram.org",
+            );
+          }
+        }
       }
-      await sleep(2000);
+      // Back off harder on repeated network failures (avoid log flood + busy-loop)
+      const backoff = Math.min(60_000, 2000 * Math.max(1, consecutiveFails));
+      await sleep(backoff);
     }
   }
 }

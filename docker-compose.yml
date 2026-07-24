@@ -19,6 +19,8 @@ services:
       # Local day window for CRON_RANDOM (Uzbekistan)
       TZ: ${TZ:-Asia/Tashkent}
       NODE_ENV: production
+      # Prefer IPv4 — broken IPv6 on many VDS causes Telegram "fetch failed"
+      NODE_OPTIONS: ${NODE_OPTIONS:---dns-result-order=ipv4first}
       # Do not open OAuth server in this container
       DRY_RUN: ${DRY_RUN:-false}
       # After deploy/restart: fire one pipeline immediately (still keeps daily slots)
