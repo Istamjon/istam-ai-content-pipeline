@@ -1,9 +1,74 @@
 import { StateAnnotation, Article, GraphUpdate } from "../state.js";
 import { sources } from "../../config/brand.js";
-import { discoverSources } from "../../lib/scraper.js";
+import { discoverSources, shuffleInPlace } from "../../lib/scraper.js";
 import { isArticleSeen, markArticleSeen } from "../../db.js";
 import { env } from "../../config/env.js";
 import { scoreBrandFit } from "../../lib/brandFit.js";
+
+type ScoredArticle = { article: Article; score: number; reason: string };
+
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
+ * Pick a batch that rotates across hosts so we never stick to one blog
+ * (e.g. always Chase AI just because it has the highest source boost).
+ *
+ * - Brand-fit still gates inclusion (primary + secondary that pass).
+ * - Host order is shuffled each run.
+ * - Within a host, top candidates are lightly shuffled (score still matters).
+ * - Round-robin across hosts → diverse sources in the batch.
+ */
+function selectDiverseBatch(
+  scored: ScoredArticle[],
+  batchSize: number,
+): ScoredArticle[] {
+  if (scored.length === 0 || batchSize <= 0) return [];
+
+  const byHost = new Map<string, ScoredArticle[]>();
+  for (const row of scored) {
+    const host = hostnameOf(row.article.url);
+    const list = byHost.get(host) ?? [];
+    list.push(row);
+    byHost.set(host, list);
+  }
+
+  // Within host: prefer higher score, then shuffle among the top few
+  // so the same post is not always first from that site.
+  for (const [host, list] of byHost) {
+    list.sort((a, b) => b.score - a.score);
+    const topN = Math.min(5, list.length);
+    const top = list.slice(0, topN);
+    shuffleInPlace(top);
+    byHost.set(host, [...top, ...list.slice(topN)]);
+  }
+
+  const hosts = shuffleInPlace([...byHost.keys()]);
+  const pointers = new Map(hosts.map((h) => [h, 0]));
+  const selected: ScoredArticle[] = [];
+
+  while (selected.length < batchSize) {
+    let added = false;
+    for (const host of hosts) {
+      if (selected.length >= batchSize) break;
+      const list = byHost.get(host)!;
+      const idx = pointers.get(host)!;
+      if (idx < list.length) {
+        selected.push(list[idx]!);
+        pointers.set(host, idx + 1);
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
+
+  return selected;
+}
 
 export async function fetchSources(
   _state: typeof StateAnnotation.State,
@@ -11,10 +76,10 @@ export async function fetchSources(
   try {
     console.log(
       `[fetchSources] Discovering from ${sources.length} brand sources ` +
-        `(${sources.map((s) => s.name).join(", ")})...`,
+        `(random order; primary + secondary)…`,
     );
     const articles = await discoverSources(sources);
-    const scored: Array<{ article: Article; score: number; reason: string }> = [];
+    const scored: ScoredArticle[] = [];
     let rejected = 0;
 
     for (const article of articles) {
@@ -48,20 +113,21 @@ export async function fetchSources(
       scored.push({ article, score: fit.score, reason: fit.reason });
     }
 
-    // Prefer higher brand-fit (primary hosts already boosted in scoreBrandFit)
-    scored.sort((a, b) => b.score - a.score);
-    // Daily reliability: larger batch so quality failures can fall through to next article
+    // Diverse hosts (not pure score sort — that always locked onto one primary blog)
     const batchSize = Math.max(env.MAX_ARTICLES_PER_RUN, 5);
-    const newArticles = scored.map((s) => s.article);
-    const batch = newArticles.slice(0, batchSize);
+    const batchRows = selectDiverseBatch(scored, batchSize);
+    const batch = batchRows.map((s) => s.article);
+    const hostSet = new Set(batch.map((a) => hostnameOf(a.url)));
 
     console.log(
       `[fetchSources] Found ${articles.length} total, ` +
-        `${newArticles.length} brand-fit unseen, rejected=${rejected}, batch=${batch.length}`,
+        `${scored.length} brand-fit unseen, rejected=${rejected}, ` +
+        `batch=${batch.length} from ${hostSet.size} host(s): ${[...hostSet].join(", ")}`,
     );
-    for (const row of scored.slice(0, batch.length)) {
+    for (const row of batchRows) {
       console.log(
-        `  - [score=${row.score}] ${row.article.title.slice(0, 70)} | ${row.article.url}`,
+        `  - [score=${row.score}] [${hostnameOf(row.article.url)}] ` +
+          `${row.article.title.slice(0, 60)} | ${row.article.url}`,
       );
     }
 

@@ -384,6 +384,17 @@ async function discoverOneSource(config: SourceConfig): Promise<Article[]> {
   return articles;
 }
 
+/** Fisher–Yates shuffle (in place). Avoids always crawling / ranking in fixed list order. */
+export function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j]!;
+    arr[j] = tmp!;
+  }
+  return arr;
+}
+
 /** Bound concurrency — full parallel on 19 sources freezes VDS egress. */
 async function mapPool<T, R>(
   items: T[],
@@ -411,16 +422,25 @@ export async function discoverSources(configs: SourceConfig[]): Promise<Article[
   const allArticles: Article[] = [];
   const globalSeen = new Set<string>();
 
-  // Prefer listed order (Chase AI first) with small pool so primary finishes early
-  const results = await mapPool(configs, 3, (c) => discoverOneSource(c));
+  // Random crawl order each run so primary + secondary get equal discovery chance
+  // (fixed list order used to favor Chase AI / early hosts every time).
+  const order = shuffleInPlace([...configs]);
+  console.log(
+    `[scraper] Crawl order (shuffled): ${order.map((c) => c.name).join(" → ")}`,
+  );
 
+  const results = await mapPool(order, 3, (c) => discoverOneSource(c));
+
+  // Merge in shuffled order, but also shuffle each source's items lightly
+  // so RSS "newest first" does not always win the first slot for that host.
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
     if (r.status === "rejected") {
-      console.error(`Failed to discover sources from ${configs[i].url}:`, r.reason);
+      console.error(`Failed to discover sources from ${order[i]?.url}:`, r.reason);
       continue;
     }
-    for (const a of r.value) {
+    const items = shuffleInPlace([...r.value]);
+    for (const a of items) {
       if (!globalSeen.has(a.url)) {
         globalSeen.add(a.url);
         allArticles.push(a);
@@ -428,7 +448,8 @@ export async function discoverSources(configs: SourceConfig[]): Promise<Article[
     }
   }
 
-  return allArticles;
+  // Final mix so downstream filters do not see blocks of one host
+  return shuffleInPlace(allArticles);
 }
 
 export async function fetchArticleContent(

@@ -271,11 +271,14 @@ const PREFERRED_SOURCES: Array<{
   /** Higher bar after boost for noisy general blogs */
   minScore?: number;
 }> = [
-  // Tier A — AI engineering (highest boost first in ranking)
-  { host: "chaseai.io", boost: 8, label: "src-chaseai" },
+  // Tier A — primary AI engineering (boost helps pass brand-fit; batch pick is host-diverse)
+  // Keep boosts close so ranking does not hard-lock onto a single blog.
+  { host: "chaseai.io", boost: 6, label: "src-chaseai" },
   { host: "actualize.co", boost: 6, label: "src-actualize" },
   { host: "the-agentic-engineer.com", boost: 6, label: "src-agentic-eng" },
   { host: "skywork.ai", boost: 5, label: "src-skywork" },
+  { host: "easyinsights.ai", boost: 5, label: "src-easyinsights" },
+  { host: "keyvalue.systems", boost: 5, label: "src-keyvalue" },
   { host: "blog.langchain.dev", boost: 6, label: "src-langchain" },
   { host: "langchain.dev", boost: 5, label: "src-langchain-alt" },
   { host: "anthropic.com", boost: 6, label: "src-anthropic" },

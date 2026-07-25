@@ -283,16 +283,18 @@ export type Brand = typeof brand;
 export { platformLimits } from "./platformTextLimits.js";
 
 /**
- * Content sources (crawl order). Brand-fit ranks by score + preferred host boost.
+ * Content sources. Crawl order is shuffled each run (see discoverSources).
+ * Batch selection rotates across hosts so we do not stick to one blog.
+ * Brand-fit still uses score + preferred host boost (see brandFit PREFERRED_SOURCES).
  * Only these hosts are crawled.
  *
- * Tier A — AI engineering (official + specialist blogs)
+ * Tier A — primary AI engineering (official + specialist blogs)
  * Tier B — community / education (stricter brand-fit)
  * Tier C — UX/UI + product frontend (practical product design for apps)
  */
 export const sources = [
   // ── Tier A — primary AI engineering ──────────────────────────
-  // First crawl + highest brand-fit boost (see brandFit PREFERRED_SOURCES)
+  // Preferred hosts (boost in brandFit); discovery order is random each run
   {
     url: "https://www.chaseai.io/blog",
     name: "Chase AI Blog",
