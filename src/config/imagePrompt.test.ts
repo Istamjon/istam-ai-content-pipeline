@@ -90,7 +90,7 @@ describe("imagePrompt", () => {
     expect(n).toMatch(/title text MUST match|exactly these words/i);
     expect(n).toMatch(/face\.jpg|ORIGINAL FACE REFERENCE|identity/i);
     expect(n).toMatch(/NEW body pose|NEW POSE|pose recipe/i);
-    expect(n).toMatch(/NO brand logo/i);
+    expect(n).toMatch(/NO brand logo|no logo/i);
     // Language name must not appear as "draw this" title copy
     expect(n).not.toMatch(/MUST be Uzbek|white Uzbek|crisp Uzbek/i);
   });
@@ -117,21 +117,31 @@ describe("imagePrompt", () => {
     expect(heading.split(/\s+/).length).toBeLessThanOrEqual(5);
     expect(heading.toLowerCase()).toMatch(/agent|oqim|boshqar|ishlab/);
     expect(prompt.length).toBeGreaterThan(500);
+    // Length upper bound: Nano Banana safe limit
+    expect(prompt.length).toBeLessThanOrEqual(2800);
 
     expect(prompt).toMatch(/FULL-BLEED|full-bleed|edge-to-edge/i);
     expect(prompt).toMatch(/picture frame|phone mockup/i);
-    expect(prompt).toMatch(/MUST HAVE #1 — PERSON|IDENTITY|PERSON/i);
+    // Prompt must include [MANDATORY PERSON] or [IDENTITY + NEW POSE]
+    expect(prompt).toMatch(/\[MANDATORY PERSON|MANDATORY PERSON|IDENTITY \+|MUST appear/i);
     expect(prompt).toMatch(/face\.jpg/);
     expect(prompt).toMatch(/ORIGINAL FACE REFERENCE/i);
-    expect(prompt).toMatch(/NEW POSE|POSE LOCK|ORIGINAL FACE REFERENCE|face identity/i);
-    expect(prompt).toMatch(/MUST HAVE #2 — POWER TITLE|POWER TITLE/i);
+    expect(prompt).toMatch(/NEW POSE|POSE LOCK|face identity|NEW POSE/i);
+    // Title text section with spell-exactly rule
+    expect(prompt).toMatch(/\[TITLE TEXT\]|POWER TITLE/i);
+    expect(prompt).toMatch(/spell exactly|character by character/i);
     expect(prompt).toContain(`"${heading}"`);
     expect(prompt).toMatch(/single line|ONE line|one line/i);
-    expect(prompt).toMatch(/MUST NOT — LOGO|no IO|No brand badge|no logo/i);
+    // No logo
+    expect(prompt).toMatch(/\[NO LOGO\]|no IO|no logo/i);
     expect(prompt).not.toMatch(/MUST HAVE #3 — LOGO/);
     expect(prompt).toMatch(/#036158/);
     expect(prompt).toMatch(/pointing|critical path/i);
-    expect(prompt).not.toMatch(/white Uzbek heading|crisp Uzbek heading|HEADING in OʻZBEK|UZBEK HEADING/i);
+    expect(prompt).not.toMatch(/white Uzbek heading|crisp Uzbek heading|HEADING in Oʻzbek|UZBEK HEADING/i);
     expect(prompt).toMatch(/forbidden words on image: Uzbek|Never paint language\/meta/i);
+    // Must not reference removed providers
+    expect(prompt).not.toMatch(/Cloudflare|\bHorde\b|AI Horde|Pollinations image/i);
+    // Person must NOT be blocked
+    expect(prompt).not.toMatch(/HARD NO: people|HARD NO: faces|NO: people, faces/i);
   });
 });

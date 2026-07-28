@@ -54,15 +54,8 @@ async function loadMods() {
   );
   const { nanoBananaImage, isNanoBananaConfigured, canUseNanoBananaToday } =
     await import(dist("dist/lib/nanoBananaImage.js"));
-  const {
-    cloudflareImage,
-    isCloudflareImageConfigured,
-    canGenerateImageToday,
-    initCloudflareAccounts,
-    getCloudflareAccounts,
-  } = await import(dist("dist/lib/cloudflareImage.js"));
-  const { hordeImage, isHordeConfigured, canUseHordeToday } = await import(
-    dist("dist/lib/hordeImage.js")
+  const { skyworkImage, isSkyworkConfigured, canUseSkyworkToday } = await import(
+    dist("dist/lib/skyworkImage.js")
   );
   const { publishToPlatform } = await import(dist("dist/platforms/index.js"));
   const { refreshAllExpiringTokens, tokenStatusReport } = await import(
@@ -75,14 +68,9 @@ async function loadMods() {
     nanoBananaImage,
     isNanoBananaConfigured,
     canUseNanoBananaToday,
-    cloudflareImage,
-    isCloudflareImageConfigured,
-    canGenerateImageToday,
-    initCloudflareAccounts,
-    getCloudflareAccounts,
-    hordeImage,
-    isHordeConfigured,
-    canUseHordeToday,
+    skyworkImage,
+    isSkyworkConfigured,
+    canUseSkyworkToday,
     publishToPlatform,
     refreshAllExpiringTokens,
     tokenStatusReport,
@@ -97,22 +85,17 @@ function saveBuffer(dir, name, buffer, ext) {
 }
 
 async function testImages(m) {
-  console.log("\n========== IMAGE PROVIDERS ==========");
-  await m.initCloudflareAccounts();
+  console.log("\n========== IMAGE PROVIDERS (Nano Banana + Skywork) ==========");
   m.logAllImageBudgets();
-  console.log(
-    "CF accounts:",
-    m.getCloudflareAccounts().map((a) => a.label).join(", ") || "(none)",
-  );
   console.log("NanoBanana configured:", m.isNanoBananaConfigured());
   console.log("NanoBanana budget:", m.canUseNanoBananaToday());
-  console.log("Cloudflare budget:", m.canGenerateImageToday());
-  console.log("Horde configured:", m.isHordeConfigured(), m.canUseHordeToday());
+  console.log("Skywork configured:", m.isSkyworkConfigured());
+  console.log("Skywork budget:", m.canUseSkyworkToday());
 
   const outDir = path.join(root, "data/images/full-live-test");
   let lastImagePath = null;
 
-  // Individual providers (best-effort)
+  // Individual provider test: Nano Banana
   if (m.isNanoBananaConfigured() && m.canUseNanoBananaToday().ok) {
     try {
       const t0 = Date.now();
@@ -139,64 +122,11 @@ async function testImages(m) {
     });
   }
 
-  if (m.isCloudflareImageConfigured() && m.canGenerateImageToday().ok) {
-    try {
-      const t0 = Date.now();
-      const buf = await m.cloudflareImage(IMAGE_PROMPT);
-      const file = saveBuffer(outDir, "cloudflare", buf, "jpg");
-      lastImagePath = lastImagePath || file;
-      push("images", {
-        ok: true,
-        name: "cloudflare",
-        detail: `${buf.length}b ${Date.now() - t0}ms → ${path.basename(file)}`,
-      });
-    } catch (e) {
-      push("images", {
-        ok: false,
-        name: "cloudflare",
-        detail: (e instanceof Error ? e.message : String(e)).slice(0, 200),
-      });
-    }
-  } else {
-    push("images", {
-      ok: false,
-      name: "cloudflare",
-      detail: "skipped (not configured or budget)",
-    });
-  }
-
-  if (m.isHordeConfigured() && m.canUseHordeToday().ok) {
-    try {
-      const t0 = Date.now();
-      const buf = await m.hordeImage(IMAGE_PROMPT);
-      const file = saveBuffer(outDir, "horde", buf, "webp");
-      lastImagePath = lastImagePath || file;
-      push("images", {
-        ok: true,
-        name: "horde",
-        detail: `${buf.length}b ${Date.now() - t0}ms → ${path.basename(file)}`,
-      });
-    } catch (e) {
-      push("images", {
-        ok: false,
-        name: "horde",
-        detail: (e instanceof Error ? e.message : String(e)).slice(0, 200),
-      });
-    }
-  } else {
-    push("images", {
-      ok: false,
-      name: "horde",
-      detail: "skipped (not configured or budget)",
-    });
-  }
-
-  // Waterfall (what pipeline uses)
+  // Waterfall (Nano → Skywork)
   try {
     const t0 = Date.now();
     const { buffer, provider } = await m.generateImageBuffer(IMAGE_PROMPT);
-    const ext = provider === "nanobanana" ? "png" : provider === "horde" ? "webp" : "jpg";
-    const file = saveBuffer(outDir, `waterfall-${provider}`, buffer, ext);
+    const file = saveBuffer(outDir, `waterfall-${provider}`, buffer, "png");
     lastImagePath = file;
     push("images", {
       ok: true,

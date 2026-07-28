@@ -1,4 +1,8 @@
 /**
+ * DEPRECATED: Cloudflare Workers AI image has been removed from the image pipeline.
+ * The active image waterfall is: Nano Banana → Skywork.
+ * This script is kept for reference only and is no longer needed for operations.
+ *
  * Resolve Cloudflare Account IDs for all configured tokens and print rotation status.
  *   node scripts/cf-resolve-accounts.mjs
  */

@@ -99,7 +99,7 @@ OUTPUT LANGUAGE: English keys (OK / ISSUES / FACT_OK) as specified; issue text s
 Image prompts: config/imagePrompt.ts — full-bleed covers with:
 (1) person (identity from data/brand/face.jpg when present), (2) crisp HEADING text,
 (3) topic tech hologram. NO IO/logo monogram. No picture frames / mockups.
-Brand teal accents only. Pipeline: Nano Banana → Skywork → Pollinations → CF → Horde.`,
+Brand teal accents only. Pipeline: Nano Banana → Skywork.`,
 } as const;
 
 // ─── User prompt builders ─────────────────────────────────────────────────

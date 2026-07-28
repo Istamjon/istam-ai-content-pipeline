@@ -18,7 +18,7 @@ function ensureImagesDir(): void {
 
 /**
  * Generate post image:
- *   Nano Banana → Skywork → Pollinations (face via image=) → Cloudflare → AI Horde.
+ *   Nano Banana → Skywork (both support brand face identity).
  * On total failure → no imagePath → graph skips publish.
  */
 export async function generateImage(
@@ -44,14 +44,8 @@ export async function generateImage(
     logAllImageBudgets();
 
     const { buffer, provider } = await generateImageBuffer(current.imagePrompt);
-    const ext =
-      provider === "horde"
-        ? "webp"
-        : provider === "nanobanana" ||
-            provider === "skywork" ||
-            provider === "pollinations"
-          ? "png"
-          : "jpg";
+    // Both Nano Banana and Skywork return PNG buffers.
+    const ext = "png";
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     const filepath = path.join(imagesDir, filename);
     fs.writeFileSync(filepath, buffer);

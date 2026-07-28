@@ -262,14 +262,17 @@ export function getImageBudget(limit: number): {
  */
 export type ImageProviderName = string;
 
-/** Providers that consume the shared image daily budget. */
+/** Providers that consume the shared image daily budget.
+ * Active providers: nanobanana*, skywork*.
+ * Legacy entries (historical DB rows only — no new gen): horde, pollinations, cloudflare*.
+ */
 export function isImageGenerationProvider(provider: string): boolean {
   return (
-    provider === "horde" ||
-    provider === "pollinations" ||
+    provider === "horde" ||                  // legacy historical rows
+    provider === "pollinations" ||            // legacy historical rows
     provider === "skywork" ||
     provider.startsWith("skywork") ||
-    provider.startsWith("cloudflare") ||
+    provider.startsWith("cloudflare") ||     // legacy historical rows
     provider.startsWith("nanobanana")
   );
 }

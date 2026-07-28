@@ -1,26 +1,12 @@
 /**
  * Image generation waterfall:
- *   1) Nano Banana (Gemini image — face ref supported)
+ *   1) Nano Banana (Gemini native image — face ref supported)
  *   2) Skywork Image API (face ref → edit API)
- *   3) Pollinations (face via image= URL when face.jpg present)
- *   4) Cloudflare multi-account free FLUX  ← NO face image
- *   5) AI Horde                            ← NO face image
  *
- * Identity (face.jpg): Nano Banana, Skywork, Pollinations (hosted face URL).
- * When REQUIRE_BRAND_FACE=true, CF/Horde are skipped (cannot receive face).
+ * Both providers support brand face identity (face.jpg multimodal / edit API).
+ * If both fail/exhausted → publish is skipped (no text-only fallback to protect identity).
  */
 import { env } from "../config/env.js";
-import {
-  cloudflareImage,
-  isCloudflareImageConfigured,
-  canGenerateImageToday,
-  logImageBudget,
-} from "./cloudflareImage.js";
-import {
-  hordeImage,
-  isHordeConfigured,
-  canUseHordeToday,
-} from "./hordeImage.js";
 import {
   nanoBananaImage,
   isNanoBananaConfigured,
@@ -28,33 +14,17 @@ import {
   logNanoBananaBudgets,
 } from "./nanoBananaImage.js";
 import {
-  pollinationsImage,
-  isPollinationsImageConfigured,
-  canUsePollinationsImageToday,
-  logPollinationsImageBudget,
-} from "./pollinations.js";
-import {
   skyworkImage,
   isSkyworkConfigured,
   canUseSkyworkToday,
   logSkyworkBudget,
 } from "./skyworkImage.js";
 import { loadBrandFace, logBrandFace } from "./brandFace.js";
-import { getProviderImageBudget } from "../db.js";
 
-export type ImageProviderUsed =
-  | "nanobanana"
-  | "skywork"
-  | "pollinations"
-  | "cloudflare"
-  | "horde";
+export type ImageProviderUsed = "nanobanana" | "skywork";
 
-/** Providers that can apply brand face (multimodal or image= ref). */
-const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>([
-  "nanobanana",
-  "skywork",
-  "pollinations",
-]);
+/** Providers that apply brand face (multimodal or image= ref). Both support identity. */
+const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>(["nanobanana", "skywork"]);
 
 export async function generateImageBuffer(
   prompt: string,
@@ -66,13 +36,8 @@ export async function generateImageBuffer(
   if (face) {
     console.log(
       `[imagePipeline] brand face ref: ${face.path} (${face.buffer.length} bytes` +
-        `${face.prepared ? ", prepared" : ""}) — identity: Nano/Skywork/Pollinations`,
+        `${face.prepared ? ", prepared" : ""}) — identity: Nano Banana + Skywork`,
     );
-    if (requireIdentity) {
-      console.log(
-        "[imagePipeline] REQUIRE_BRAND_FACE=true → skip CF/Horde (no face API)",
-      );
-    }
   } else {
     console.warn(
       "[imagePipeline] no brand face — text-only person (set data/brand/face.jpg)",
@@ -111,7 +76,7 @@ export async function generateImageBuffer(
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`skywork: ${msg}`);
       console.warn(
-        "[imagePipeline] Skywork failed → Pollinations:",
+        "[imagePipeline] Skywork failed — both providers exhausted:",
         msg.slice(0, 200),
       );
     }
@@ -119,101 +84,22 @@ export async function generateImageBuffer(
     const b = canUseSkyworkToday();
     errors.push(`skywork: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] Skywork daily budget ${b.used}/${b.limit} → Pollinations`,
+      `[imagePipeline] Skywork daily budget ${b.used}/${b.limit} — both providers exhausted`,
     );
   } else {
     console.warn(
-      "[imagePipeline] Skywork not configured (SKYWORK_API_KEY) → Pollinations",
+      "[imagePipeline] Skywork not configured (SKYWORK_API_KEY) — both providers unavailable",
     );
   }
 
-  // 3) Pollinations (face via public URL + image= when face.jpg present)
-  if (isPollinationsImageConfigured() && canUsePollinationsImageToday().ok) {
-    try {
-      if (face) {
-        console.log(
-          "[imagePipeline] Pollinations: faceRef attempt (image= URL / multipart)",
-        );
-      }
-      const buffer = await pollinationsImage(prompt, { face });
-      return { buffer, provider: "pollinations" };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`pollinations: ${msg}`);
-      console.warn(
-        "[imagePipeline] Pollinations failed → " +
-          (requireIdentity ? "stop (identity required)" : "Cloudflare:"),
-        msg.slice(0, 200),
-      );
-    }
-  } else if (isPollinationsImageConfigured()) {
-    const b = canUsePollinationsImageToday();
-    errors.push(`pollinations: budget ${b.used}/${b.limit}`);
-    console.warn(
-      `[imagePipeline] Pollinations image budget ${b.used}/${b.limit} → ` +
-        (requireIdentity ? "stop (identity required)" : "Cloudflare"),
-    );
-  }
-
-  // Identity-only mode: do not invent a stranger on text-only CF/Horde.
-  if (requireIdentity) {
-    const nb = isNanoBananaConfigured() ? canUseNanoBananaToday() : null;
-    const sw = isSkyworkConfigured() ? canUseSkyworkToday() : null;
-    throw new Error(
-      `Brand face identity required (face.jpg present, REQUIRE_BRAND_FACE=true) ` +
-        `but Nano Banana + Skywork + Pollinations failed/exhausted. ` +
-        `Cloudflare/Horde are text-only — they cannot match face.jpg, so they were skipped.\n` +
-        `Budgets: nanobanana=${nb ? `${nb.used}/${nb.limit} rem=${nb.remaining} keys=${nb.keys}` : "off"} ` +
-        `skywork=${sw ? `${sw.used}/${sw.limit} rem=${sw.remaining} keys=${sw.keys}` : "off"}\n` +
-        `Fix: wait for UTC day reset / top up Gemini·Skywork·Pollinations keys, or set REQUIRE_BRAND_FACE=false (random face).\n` +
-        `- ${errors.join("\n- ")}`,
-    );
-  }
-
-  // 4) Cloudflare (cf1 → cf2 → cf3)
-  if (isCloudflareImageConfigured() && canGenerateImageToday().ok) {
-    try {
-      console.warn(
-        "[imagePipeline] Cloudflare: text-only — cannot apply face.jpg identity",
-      );
-      const buffer = await cloudflareImage(prompt);
-      return { buffer, provider: "cloudflare" };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`cloudflare: ${msg}`);
-      console.warn(
-        "[imagePipeline] Cloudflare failed → Horde:",
-        msg.slice(0, 200),
-      );
-    }
-  } else if (isCloudflareImageConfigured()) {
-    const b = canGenerateImageToday();
-    errors.push(`cloudflare: budget ${b.used}/${b.limit}`);
-    console.warn(
-      `[imagePipeline] Cloudflare daily budget exhausted ${b.used}/${b.limit} → Horde`,
-    );
-  }
-
-  // 5) AI Horde
-  if (isHordeConfigured() && canUseHordeToday().ok) {
-    try {
-      console.warn(
-        "[imagePipeline] Horde: text-only — cannot apply face.jpg identity",
-      );
-      const buffer = await hordeImage(prompt);
-      return { buffer, provider: "horde" };
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`horde: ${msg}`);
-      console.warn("[imagePipeline] horde failed:", msg.slice(0, 200));
-    }
-  } else if (isHordeConfigured()) {
-    const b = canUseHordeToday();
-    errors.push(`horde: budget ${b.used}/${b.limit}`);
-  }
-
+  const nb = isNanoBananaConfigured() ? canUseNanoBananaToday() : null;
+  const sw = isSkyworkConfigured() ? canUseSkyworkToday() : null;
   throw new Error(
-    `All image providers failed/exhausted:\n- ${errors.join("\n- ")}`,
+    `Nano Banana + Skywork failed/exhausted${requireIdentity ? " (REQUIRE_BRAND_FACE=true)" : ""}.\n` +
+      `Budgets: nanobanana=${nb ? `${nb.used}/${nb.limit} rem=${nb.remaining} keys=${nb.keys}` : "off"} ` +
+      `skywork=${sw ? `${sw.used}/${sw.limit} rem=${sw.remaining} keys=${sw.keys}` : "off"}\n` +
+      `Fix: wait for UTC day reset / top up Gemini·Skywork keys.\n` +
+      `- ${errors.join("\n- ")}`,
   );
 }
 
@@ -221,24 +107,10 @@ export function logAllImageBudgets(): void {
   logBrandFace();
   console.log(
     `[AI] REQUIRE_BRAND_FACE: ${env.REQUIRE_BRAND_FACE} ` +
-      `(identity: Nano Banana + Skywork + Pollinations; skip CF/Horde when face present)`,
-  );
-  console.log(
-    `[AI] POLLINATIONS face model: ${env.POLLINATIONS_FACE_MODEL || "kontext"} ` +
-      `(text model: ${env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2"})`,
+      `(identity: Nano Banana + Skywork — both support face.jpg)`,
   );
   logNanoBananaBudgets();
   logSkyworkBudget();
-  logPollinationsImageBudget();
-  logImageBudget();
-  if (isHordeConfigured()) {
-    const b = getProviderImageBudget("horde", env.DAILY_HORDE_LIMIT);
-    console.log(
-      `[AI] HORDE budget today (UTC): ${b.used}/${b.limit} remaining=${b.remaining}`,
-    );
-  } else {
-    console.log("[AI] HORDE: not configured");
-  }
 }
 
 /** Exposed for tests / docs. */

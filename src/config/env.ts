@@ -10,12 +10,15 @@ function normalizeImageTempHours(hours: number): 1 | 12 | 24 | 72 {
 /**
  * AI split (project policy):
  * - TEXT  → Gemini Free (primary) → Pollinations fallback
- * - IMAGE → Nano Banana → Skywork → Pollinations gpt-image-2 → Cloudflare FLUX → AI Horde
+ * - IMAGE → Nano Banana (primary, free Gemini keys) → Skywork (fallback, credits)
+ *
+ * Both image providers support brand face identity (face.jpg).
+ * Pollinations image, Cloudflare Workers AI, and AI Horde have been removed from
+ * the image waterfall. Pollinations TEXT API is still active.
  *
  * Gemini: https://aistudio.google.com → API key
  * Skywork: https://skywork.ai → API key (image credits)
- * Pollinations: https://enter.pollinations.ai
- * Cloudflare: Workers AI REST
+ * Pollinations: https://enter.pollinations.ai (text only)
  */
 export const env = {
   /**
@@ -88,9 +91,8 @@ export const env = {
   SKYWORK_SOURCE_PLATFORM: process.env.SKYWORK_SOURCE_PLATFORM || "",
   /**
    * When brand face.jpg is present, only use identity-capable image providers
-   * (Nano Banana, Skywork, Pollinations with image= URL). Cloudflare/Horde
-   * are text-only and invent a random person — skipped when true.
-   * Default true. Set REQUIRE_BRAND_FACE=false to allow CF/Horde fallbacks.
+   * (Nano Banana, Skywork). Both providers in the waterfall support face identity.
+   * Default true. Set REQUIRE_BRAND_FACE=false to allow text-only person fallback.
    */
   REQUIRE_BRAND_FACE: !["0", "false", "no", "off"].includes(
     (process.env.REQUIRE_BRAND_FACE || "true").toLowerCase().trim(),
@@ -134,9 +136,11 @@ export const env = {
     0,
     parseInt(process.env.DAILY_POLLINATIONS_IMAGE_LIMIT || "8", 10) || 8,
   ),
-  /** Image waterfall: nanobanana → skywork → pollinations → cloudflare → horde. */
+  /** Image waterfall: nanobanana → skywork. */
   IMAGE_PROVIDER: (process.env.IMAGE_PROVIDER || "waterfall") as string,
-  /** Cloudflare Account ID #1 (Workers AI REST). */
+  // ── Cloudflare Workers AI image — DEPRECATED: removed from image pipeline ──
+  // These vars are retained for backwards compatibility but are no longer used.
+  /** @deprecated Cloudflare image removed from pipeline (2024). */
   CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID || "",
   /** Cloudflare API Token #1 with Workers AI permissions. */
   CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN || "",
@@ -195,8 +199,9 @@ export const env = {
     0,
     parseInt(process.env.DAILY_IMAGE_TOTAL || "6", 10) || 6,
   ),
-  /** AI Horde (stablehorde) — free community GPU queue */
+  /** @deprecated Removed from image pipeline. AI Horde was waterfall provider #5. */
   AIHORDE_API_KEY: process.env.AIHORDE_API_KEY || "",
+  /** @deprecated Removed from image pipeline. */
   DAILY_HORDE_LIMIT: Math.max(
     0,
     parseInt(process.env.DAILY_HORDE_LIMIT || "4", 10) || 4,

@@ -168,106 +168,92 @@ export async function publishManualPost(
   }
 
   const platforms = enabledPlatforms();
-  const results: ManualPlatformResult[] = [];
   const sourceUrl = `manual://${input.source || "telegram-bot"}/${createHash("sha256")
     .update(text + (mediaPath || ""))
     .digest("hex")
     .slice(0, 16)}`;
 
-  for (const platform of platforms) {
-    const formatted = formatManualText(text, platform);
-    if (!formatted) {
-      results.push({
-        platform,
-        status: "skipped",
-        error: "Empty text after format",
-      });
-      continue;
-    }
+  // Publish to all platforms in PARALLEL — one fail does not stop others.
+  const settled = await Promise.allSettled(
+    platforms.map(async (platform): Promise<ManualPlatformResult> => {
+      const formatted = formatManualText(text, platform);
+      if (!formatted) {
+        return { platform, status: "skipped", error: "Empty text after format" };
+      }
 
-    const creds = missingCredentials(platform);
-    if (creds) {
-      results.push({ platform, status: "skipped", error: creds });
-      continue;
-    }
+      const creds = missingCredentials(platform);
+      if (creds) {
+        return { platform, status: "skipped", error: creds };
+      }
 
-    if (platform === "instagram" && !mediaPath) {
-      results.push({
-        platform,
-        status: "skipped",
-        error: "Instagram requires image or video",
-      });
-      continue;
-    }
+      if (platform === "instagram" && !mediaPath) {
+        return {
+          platform,
+          status: "skipped",
+          error: "Instagram requires image or video",
+        };
+      }
 
-    // Video: LinkedIn has no video API wired — skip, publish elsewhere only
-    if (platform === "linkedin" && mediaKind === "video") {
-      results.push({
-        platform,
-        status: "skipped",
-        error: "Video LinkedIn da qo‘llab-quvvatlanmaydi — skip",
-      });
-      console.log("[manualPublish] ⏭ linkedin skipped (video)");
-      continue;
-    }
+      // Video: LinkedIn has no video API wired — skip
+      if (platform === "linkedin" && mediaKind === "video") {
+        console.log("[manualPublish] ⏭ linkedin skipped (video)");
+        return {
+          platform,
+          status: "skipped",
+          error: "Video LinkedIn da qo'llab-quvvatlanmaydi — skip",
+        };
+      }
 
-    const count = getDailyCount(platform);
-    const limit = getDailyLimit(platform);
-    if (limit > 0 && count >= limit) {
-      results.push({
-        platform,
-        status: "skipped",
-        error: `Daily limit reached (${count}/${limit})`,
-      });
-      continue;
-    }
+      const count = getDailyCount(platform);
+      const limit = getDailyLimit(platform);
+      if (limit > 0 && count >= limit) {
+        return {
+          platform,
+          status: "skipped",
+          error: `Daily limit reached (${count}/${limit})`,
+        };
+      }
 
-    if (env.DRY_RUN) {
-      console.log(
-        `[manualPublish] DRY_RUN ✓ ${platform} len=${formatted.length} media=${mediaKind}`,
-      );
-      results.push({ platform, status: "success" });
-      continue;
-    }
+      if (env.DRY_RUN) {
+        console.log(
+          `[manualPublish] DRY_RUN ✓ ${platform} len=${formatted.length} media=${mediaKind}`,
+        );
+        return { platform, status: "success" };
+      }
 
-    let postId = 0;
-    try {
-      postId = insertPost(
-        sourceUrl,
-        platform,
-        formatted,
-        mediaPath,
-        "pending",
-      );
-    } catch {
-      results.push({ platform, status: "failed", error: "DB insert failed" });
-      continue;
-    }
+      let postId = 0;
+      try {
+        postId = insertPost(sourceUrl, platform, formatted, mediaPath, "pending");
+      } catch {
+        return { platform, status: "failed", error: "DB insert failed" };
+      }
 
-    console.log(`[manualPublish] → ${platform} (${mediaKind})...`);
-    const pub = await publishToPlatform(
-      platform,
-      formatted,
-      mediaPath,
-      mediaKind,
-    );
+      console.log(`[manualPublish] → ${platform} (${mediaKind})...`);
+      const pub = await publishToPlatform(platform, formatted, mediaPath, mediaKind);
 
-    if (pub.success) {
-      updatePostStatus(postId, "published");
-      incrementDailyCount(platform);
-      insertAnalytics(postId, platform);
-      results.push({ platform, status: "success" });
-      console.log(`[manualPublish] ✓ ${platform}`);
-    } else {
-      updatePostStatus(postId, "failed", pub.error);
-      results.push({
-        platform,
-        status: "failed",
-        error: pub.error,
-      });
-      console.warn(`[manualPublish] ✗ ${platform}: ${pub.error}`);
-    }
-  }
+      if (pub.success) {
+        updatePostStatus(postId, "published");
+        incrementDailyCount(platform);
+        insertAnalytics(postId, platform);
+        console.log(`[manualPublish] ✓ ${platform}`);
+        return { platform, status: "success" };
+      } else {
+        updatePostStatus(postId, "failed", pub.error);
+        console.warn(`[manualPublish] ✗ ${platform}: ${pub.error}`);
+        return { platform, status: "failed", error: pub.error };
+      }
+    }),
+  );
+
+  const results: ManualPlatformResult[] = settled.map((s) =>
+    s.status === "fulfilled"
+      ? s.value
+      : {
+          platform: "telegram" as const,
+          status: "failed" as const,
+          error: s.reason instanceof Error ? s.reason.message : String(s.reason),
+        },
+  );
 
   // Free local media after all platforms done
   if (mediaPath) {

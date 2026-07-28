@@ -1,6 +1,10 @@
 /**
- * Test Cloudflare + AI Horde and save samples.
+ * Smoke test: Nano Banana + Skywork image pipeline.
  *   node scripts/smoke-all-image-providers.mjs
+ *
+ * NOTE: Cloudflare Workers AI and AI Horde have been removed from the image
+ * waterfall. This script now tests only the active providers: Nano Banana and Skywork.
+ * For full waterfall smoke, use smoke-skywork-image.mjs or smoke-image-waterfall.mjs.
  */
 import "dotenv/config";
 import fs from "fs";
@@ -11,14 +15,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const dist = (rel) => pathToFileURL(path.join(root, rel)).href;
 
-const { env } = await import(dist("dist/config/env.js"));
-const {
-  cloudflareImage,
-  logImageBudget,
-  getCloudflareAccounts,
-} = await import(dist("dist/lib/cloudflareImage.js"));
-const { hordeImage, canUseHordeToday } = await import(
-  dist("dist/lib/hordeImage.js")
+const { generateImageBuffer, logAllImageBudgets } = await import(
+  dist("dist/lib/imagePipeline.js")
+);
+const { isNanoBananaConfigured, canUseNanoBananaToday } = await import(
+  dist("dist/lib/nanoBananaImage.js")
+);
+const { isSkyworkConfigured, canUseSkyworkToday } = await import(
+  dist("dist/lib/skyworkImage.js")
 );
 
 const prompt =
@@ -30,7 +34,7 @@ const prompt =
 const outDir = path.join(root, "data/images/provider-test");
 fs.mkdirSync(outDir, { recursive: true });
 
-function save(name, buffer, ext = "jpg") {
+function save(name, buffer, ext = "png") {
   const file = path.join(outDir, `${name}-${Date.now()}.${ext}`);
   fs.writeFileSync(file, buffer);
   console.log(`  saved ${file} (${buffer.length} bytes)`);
@@ -55,28 +59,17 @@ async function run(name, fn) {
   }
 }
 
-console.log("=== IMAGE PROVIDERS SMOKE (CF + Horde) ===");
+console.log("=== IMAGE PROVIDERS SMOKE (Nano Banana + Skywork) ===");
 console.log("prompt:", prompt);
-console.log(
-  "CF accounts:",
-  getCloudflareAccounts()
-    .map((a) => a.label)
-    .join(", ") || "(none)",
-);
-logImageBudget();
-console.log("horde budget:", canUseHordeToday());
-console.log("AIHORDE key set?", Boolean(env.AIHORDE_API_KEY));
+console.log("nano configured:", isNanoBananaConfigured(), canUseNanoBananaToday());
+console.log("skywork configured:", isSkyworkConfigured(), canUseSkyworkToday());
+logAllImageBudgets();
 
-await run("1_cloudflare", async () => {
-  const buf = await cloudflareImage(prompt);
-  const file = save("cloudflare", buf, "jpg");
-  return { file, bytes: buf.length };
-});
-
-await run("2_horde", async () => {
-  const buf = await hordeImage(prompt);
-  const file = save("horde", buf, "webp");
-  return { file, bytes: buf.length };
+await run("1_pipeline_waterfall", async () => {
+  const { buffer, provider } = await generateImageBuffer(prompt);
+  const file = save(provider, buffer, "png");
+  console.log(`  provider used: ${provider}`);
+  return { file, bytes: buffer.length };
 });
 
 console.log("\n========== SUMMARY ==========");

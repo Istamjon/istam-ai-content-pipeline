@@ -93,7 +93,7 @@ async function sendPhoto(
 
   const form = new FormData();
   form.append("chat_id", chatId);
-  form.append("photo", new Blob([buffer], { type: mime }), filename);
+  form.append("photo", new File([buffer], filename, { type: mime }));
   // Always attach caption so image + text stay one Telegram post
   const cap = (caption || "").trim() || " ";
   form.append("caption", cap.slice(0, 1024));
@@ -133,7 +133,7 @@ async function sendVideo(
 
   const form = new FormData();
   form.append("chat_id", chatId);
-  form.append("video", new Blob([buffer], { type: mime }), filename);
+  form.append("video", new File([buffer], filename, { type: mime }));
   const cap = (caption || "").trim() || " ";
   form.append("caption", cap.slice(0, 1024));
   form.append("parse_mode", "HTML");

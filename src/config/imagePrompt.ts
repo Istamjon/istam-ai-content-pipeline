@@ -1,14 +1,14 @@
 /**
- * Premium social-cover image prompts (Nano Banana / Skywork / CF FLUX / Horde).
+ * Premium social-cover image prompts (Nano Banana / Skywork).
  *
  * Goal: scroll-stopping LinkedIn/Telegram covers with:
  *  1) PEOPLE — professional human figure (attention + trust)
  *  2) HEADING — readable on-image title text
- *  3) LOGO — brand monogram / wordmark
- *  + topic-true tech visual (diagram / system metaphor)
+ *  3) topic-true tech visual (diagram / system metaphor)
  *
  * Brand colors: #036158 teal + #5EEAD4 cyan.
- * Length targets: Horde ~1000 (lead first), CF/Skywork/Nano ~2200–3000.
+ * Length target: ≤ 2800 chars (Nano Banana truncates ~2500; identity must survive lead).
+ * Provider pipeline: Nano Banana (primary) → Skywork (fallback).
  */
 
 export const brandImageColors = {
@@ -110,67 +110,67 @@ type HookSpec = {
 const HOOKS: Record<ImageCompositionHook, HookSpec> = {
   scale_drama: {
     id: "scale_drama",
-    label: "scale drama",
+    label: "epic scale drama",
     layout:
-      "SCALE DRAMA: large professional person on the right third (waist-up), oversized glowing tech diagram on the left/center behind them; big hierarchy — person + one giant system node dominate the frame",
+      "SCALE DRAMA: large professional person on the right third (waist-up), oversized glowing 3D holographic tech diagram on the left/center behind them; massive size contrast — person + one colossal, monumental system node dominate the frame with cyberpunk neon lighting",
     eyeCatch:
-      "human face/pose + giant glowing system = instant thumb-stop in social feeds",
+      "human face + giant luminous system = breathtaking cinematic thumb-stop",
   },
   diagonal_energy: {
     id: "diagonal_energy",
     label: "diagonal energy",
     layout:
-      "DIAGONAL FLOW: person lower-left looking toward upper-right; luminous teal data path streaks diagonally past them into a tech diagram; heading sits top band along the diagonal energy",
+      "DIAGONAL FLOW: person lower-left looking toward upper-right; blindingly bright teal data streams slash diagonally past them into an intricate tech diagram; heading sits along the top edge of the energy blast",
     eyeCatch:
-      "eye travels person → light path → heading — dynamic cover, not static poster",
+      "intense kinetic energy — eye travels person → light beam → heading",
   },
   radial_burst: {
     id: "radial_burst",
     label: "radial burst",
     layout:
-      "RADIAL BURST: person slightly off-center with cyan signal rays bursting from a device/hologram near their hands toward a constellation of system nodes; logo top-left safe zone",
+      "RADIAL BURST: person slightly off-center with a shockwave of cyan signal rays bursting outward from a glowing core near their hands; dynamic, explosive energy filling the dark space",
     eyeCatch:
-      "human + energy burst = high contrast feed interrupt",
+      "high-contrast explosive tech burst + human anchor = intense curiosity",
   },
   depth_tunnel: {
     id: "depth_tunnel",
     label: "depth tunnel",
     layout:
-      "DEPTH TUNNEL: person in foreground sharp, AI pipeline tunnel receding behind them; heading large in upper third; logo bottom-left or top-left",
+      "DEPTH TUNNEL: person in hyper-sharp foreground, infinite AI pipeline tunnel glowing and receding into the absolute black background; immense sense of scale and depth",
     eyeCatch:
-      "depth pulls viewer in — person anchors trust, tunnel sells the tech story",
+      "infinite optical depth pulls viewer directly into the tech story",
   },
   asymmetric_thirds: {
     id: "asymmetric_thirds",
     label: "rule of thirds",
     layout:
-      "RULE OF THIRDS: person on left power point, tech diagram on right third, large dark negative space between; heading top spanning; logo corner mark",
+      "RULE OF THIRDS: person on left power point bathed in dramatic rim light, complex holographic diagram on right third, vast dark negative space between them for extreme tension; huge typography",
     eyeCatch:
-      "editorial magazine layout — professional, premium, not centered stock",
+      "ultra-premium editorial magazine layout — moody, minimalist, expensive",
   },
   critical_path_glow: {
     id: "critical_path_glow",
     label: "critical path",
     layout:
-      "CRITICAL PATH: person points or gazes toward a glowing cyan pathway through a dim system map; only one chain of edges blazes; heading top; amber pulse optional on bottleneck",
+      "CRITICAL PATH: person gazes intensely at a single blazing cyan pathway carving through a dark, shadowy system metropolis; the glowing path illuminates their face",
     eyeCatch:
-      "storytelling cover — viewer follows the glowing path the expert is highlighting",
+      "masterful storytelling — viewer's eye is forced to follow the blazing light",
   },
   bridge_gap: {
     id: "bridge_gap",
     label: "bridge gap",
     layout:
-      "BRIDGE: person stands as the bridge between two tech clusters (e.g. data vs agents); luminous connection passes near them; heading above; logo corner",
+      "BRIDGE: person stands as a towering bridge between two massive floating tech clusters; a high-voltage luminous arc connects the two sides passing behind the person",
     eyeCatch:
-      "human as the connector metaphor — curiosity + clarity",
+      "heroic scale — human as the ultimate architect of complex systems",
   },
   orbital_constellation: {
     id: "orbital_constellation",
     label: "orbital constellation",
     layout:
-      "ORBITAL: person centered-lower with elegant agent/module orbits around upper half; monogram logo top-left; bold heading top or mid-upper band",
+      "ORBITAL: person centered-lower with elegant, glowing agent/module orbits rotating around the upper half in a beautiful celestial tech constellation; deep space black background",
     eyeCatch:
-      "premium sci-fi personal brand cover — ordered complexity + human face",
+      "gorgeous sci-fi aesthetics mixed with a sharp professional portrait",
   },
 };
 
@@ -178,9 +178,9 @@ const PRESETS: Record<ImageVisualPreset, PresetSpec> = {
   workflow: {
     id: "workflow",
     centerIdea:
-      "a cinematic multi-agent workflow hologram: decision hubs, glowing handoff arcs, orchestrator block as the system brain",
+      "a cinematic multi-agent workflow hologram: immense floating decision hubs, glowing high-voltage handoff arcs, an orchestrator block pulsing like a system brain in deep cyber space",
     coverFraming:
-      "LinkedIn/Telegram square cover with person + heading + logo safe margins (~8%)",
+      "epic LinkedIn/Telegram square cover with person + massive typography",
     preferredHooks: [
       "critical_path_glow",
       "asymmetric_thirds",
@@ -191,9 +191,9 @@ const PRESETS: Record<ImageVisualPreset, PresetSpec> = {
   infrastructure: {
     id: "infrastructure",
     centerIdea:
-      "monumental layered infrastructure hologram: gateway, cache, model-serving lattice, storage bedrock as architectural slabs of light",
+      "monumental layered infrastructure hologram: monolithic gateways, caches, and model-serving lattices rendered as colossal architectural slabs of light",
     coverFraming:
-      "tech-magazine cover — person foreground, stack behind, bold heading",
+      "high-end tech-magazine cover — person in sharp foreground, monolithic stack behind, gigantic bold heading",
     preferredHooks: [
       "depth_tunnel",
       "scale_drama",
@@ -204,9 +204,9 @@ const PRESETS: Record<ImageVisualPreset, PresetSpec> = {
   engineering: {
     id: "engineering",
     centerIdea:
-      "precision engineering cycle hologram: build → evaluate → deploy as interlocking arcs, one stage super-bright as the active phase",
+      "precision engineering cycle hologram: colossal interlocking neon arcs of build → evaluate → deploy, with one stage blazing super-bright as the active phase",
     coverFraming:
-      "research × product launch cover — person + ring diagram + title",
+      "dramatic product launch cover — person + epic ring diagram + title",
     preferredHooks: [
       "radial_burst",
       "orbital_constellation",
@@ -217,22 +217,22 @@ const PRESETS: Record<ImageVisualPreset, PresetSpec> = {
   agents: {
     id: "agents",
     centerIdea:
-      "living agent-swarm hologram: geometric agent badges around an orchestrator core with teal signal beams mid-handoff",
+      "ONE professional person (the brand expert, face visible, waist-up) gesturing toward a living, breathing agent-swarm hologram — maximum 5 distinct geometric floating agent cores around an orchestrator brain with thick teal energy beams. Person is the visual anchor bathed in dramatic light.",
     coverFraming:
-      "product-launch personal brand cover — face + swarm + headline",
+      "premium personal brand cover — cinematic person + swarm hologram + ultra-massive headline",
     preferredHooks: [
       "orbital_constellation",
-      "radial_burst",
       "scale_drama",
       "diagonal_energy",
+      "critical_path_glow",
     ],
   },
   dataflow: {
     id: "dataflow",
     centerIdea:
-      "high-speed data pipeline hologram: ingest → transform → retrieve → generate → guardrail stages with luminous packet trails",
+      "ONE professional person (brand expert, face visible, waist-up) riding the epic narrative spine of a high-speed data pipeline hologram — massive data streams blasting through ingest → transform → retrieve stages with blinding packet trails.",
     coverFraming:
-      "storyboard cover — person rides the narrative spine of the pipeline with big title",
+      "cyberpunk storyboard cover — person + huge blazing data pipeline + gigantic title",
     preferredHooks: [
       "diagonal_energy",
       "critical_path_glow",
@@ -660,8 +660,8 @@ export function topicToCoverNarrative(
     ? `Pose recipe (${POSES[pose].label}): ${POSES[pose].body}.`
     : "";
   const personLine = faceRef
-    ? `Person MUST match reference image face.jpg (ORIGINAL FACE REFERENCE): same face, age, skin, hair — NEW pose/angle only; never clone face.jpg stance/background.`
-    : `Include one professional person as attention anchor with a varied editorial pose.`;
+    ? `MANDATORY: ONE professional person (face from face.jpg reference — same likeness, NEW pose) MUST be prominently visible in the cover.`
+    : `MANDATORY: ONE professional adult person MUST be prominently visible in the cover — face sharp, waist-up, editorial.`;
   return (
     `Premium personal-brand social cover for AI Engineering. ` +
     `On-image power title MUST match exactly these words in quotes (nothing else): "${heading}". ` +
@@ -709,15 +709,15 @@ function buildMustHaveBlocks(
 ): string[] {
   const poseSpec = POSES[pose];
   const personBlock = faceRef
-    ? `MUST HAVE #1 — PERSON (IDENTITY + NEW POSE): Use reference image face.jpg as the ORIGINAL FACE REFERENCE (face identity only: structure, age, skin, hair, likeness). Do NOT copy face.jpg pose, hands, crop, clothes, or background. NEW POSE — ${poseSpec.label}: ${poseSpec.body}. Full-bleed editorial with tech hologram; outfit may change (dark smart-casual + teal). Cinematic light. No different face; no frame; no flat cutout of face.jpg.`
-    : `MUST HAVE #1 — PERSON + POSE: one professional adult (AI engineer look) integrated INTO the scene with the tech hologram — full-bleed editorial, NOT a cutout on a poster. Pose — ${poseSpec.label}: ${poseSpec.body}. Sharp face, modern smart-casual with teal accent, cinematic lighting, waist-up.`;
+    ? `[MANDATORY PERSON — IDENTITY + NEW POSE]: MUST appear — one professional man, face prominently visible (minimum 25% of canvas area), waist-up. Use face.jpg as the ORIGINAL FACE REFERENCE (face identity only: structure, age, skin, hair, likeness). Do NOT copy face.jpg pose, hands, crop, clothes, or background. NEW POSE — ${poseSpec.label}: ${poseSpec.body}. Outfit: dark smart-casual with teal accent. Dramatic cinematic key light illuminating the face. Sharp, highly detailed editorial portrait.`
+    : `[MANDATORY PERSON + POSE]: MUST appear — one professional adult (AI engineer vibe, sharp face, modern attire), prominently visible waist-up (minimum 25% of canvas). Integrated INTO the scene with the tech hologram — full-bleed editorial, NOT a flat cutout. Pose — ${poseSpec.label}: ${poseSpec.body}. Teal accent outfit, extreme dramatic cinematic lighting making the face pop against the dark background.`;
 
   return [
-    `MUST HAVE #0 — FULL-BLEED CANVAS (critical): The final image IS the social cover — edge-to-edge 1:1. NOT a photo of a poster. NOT artwork inside a wooden/gold/metal picture frame. NOT floating framed art on a wall. NOT phone/laptop/browser mockup. NOT double borders, matte, polaroid, drop-shadow card. Scene fills the square directly.`,
+    `[FULL-BLEED CANVAS] The final image IS the social cover — edge-to-edge 1:1. NOT a photo of a poster. NOT artwork inside a wooden/gold/metal picture frame. NOT floating framed art on a wall. NOT phone/laptop/browser mockup. NOT double borders, matte, polaroid, drop-shadow card. Scene fills the square directly.`,
     personBlock,
     // Do NOT put language names as visual title hints — models paint them as literal cover text.
-    `MUST HAVE #2 — POWER TITLE (short & bold): ONE line only. Exact words in quotes: "${heading}". Huge premium sans-serif (editorial keynote), high contrast white or white-to-cyan on dark, tight tracking, perfect kerning. Title is short on purpose — fill width with SCALE not with more words. Latin letters only. No subtitle, no second line, no extra words, no paraphrase, no gibberish.`,
-    `MUST NOT — LOGO / META TEXT: no IO/IstamAI monogram, badge, watermark, or logo. Never paint language/meta labels as text (forbidden words on image: Uzbek, Oʻzbek, Latin, English, Cyrillic).`,
+    `[TITLE TEXT] ONE line only. Spell exactly, character by character: "${heading}". Ultra-massive premium sans-serif (editorial keynote style), extreme high contrast glowing white or cyan on pitch black background, tight tracking, perfect kerning. Short on purpose — fill width with EPIC SCALE not more words. Latin letters only. No paraphrase, no subtitle, no second line, no extra words, no gibberish.`,
+    `[NO LOGO] No IO/IstamAI monogram, badge, watermark, or logo. Never paint language/meta labels as text (forbidden words on image: Uzbek, Oʻzbek, Latin, English, Cyrillic).`,
   ];
 }
 
@@ -780,26 +780,24 @@ export function buildPremiumImagePrompt(
   );
   const must = buildMustHaveBlocks(heading, faceRef, pose);
 
-  // ── Lead (Horde-safe head; strongest requirements first) ───────────────
-  // Lead with face.jpg first (Nano Banana truncates ~2500; identity must survive).
+  // ── Lead (strongest requirements first; IDENTITY must be in first ~300 chars for Nano truncation safety) ──
+  // faceRef block first so Nano Banana (Gemini) preserves identity even at short context limits.
   const faceLead = faceRef
-    ? `REFERENCE IMAGE: face.jpg — ORIGINAL FACE REFERENCE. Preserve exact facial identity from face.jpg only. New pose/scene — never clone face.jpg body pose or background.`
+    ? `[IDENTITY] REFERENCE IMAGE: face.jpg = ORIGINAL FACE REFERENCE. Preserve exact facial identity (face only). New pose/scene — never clone face.jpg body pose or background.`
     : "";
   const lead = [
     faceLead,
     `Scroll-stopping ultra-premium FULL-BLEED social media cover, square 1:1, LinkedIn/Telegram ready — the canvas itself is the cover, not a framed photo.`,
-    `Dark premium tech environment: deep indigo-black (#0A0A0C), subtle teal glow, faint micro-grid — immersive to the edges, no outer border.`,
-    must[0],
-    must[1],
-    must[2],
-    must[3],
-    `POSE LOCK (${poseSpec.label}): ${poseSpec.body}. Different from any previous post and from the face.jpg reference pose.`,
-    `TECH VISUAL (same 3D space as person, holographic layers): ${p.centerIdea}. Topic DNA: ${concepts}.`,
-    `COMPOSITION (${hook.label}): ${hook.layout}.`,
-    `Eye-catch: ${hook.eyeCatch}.`,
+    must[0], // [FULL-BLEED CANVAS]
+    must[1], // [IDENTITY + NEW POSE] or [PERSON + POSE]
+    must[2], // [TITLE TEXT] exact heading
+    must[3], // [NO LOGO]
+    `[POSE LOCK (${poseSpec.label})]: ${poseSpec.body}. Different from any previous post and from the face.jpg reference pose.`,
+    `[TECH VISUAL] (same 3D space as person, holographic layers): ${p.centerIdea}. Topic DNA: ${concepts}.`,
+    `[COMPOSITION (${hook.label})]: ${hook.layout}.`,
+    `[EYE-CATCH]: ${hook.eyeCatch}.`,
     `${p.coverFraming}.`,
-    `Colors: brand teal #036158, cyan #5EEAD4, white title text, deep black field.`,
-    `Style: Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
+    `[STYLE/COLORS]: brand teal #036158, cyan #5EEAD4, white title text, deep black field. Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
   ]
     .filter(Boolean)
     .join(" ");
@@ -825,16 +823,16 @@ export function buildPremiumImagePrompt(
     `Text rule: the ONLY readable words on the image are exactly: "${heading}". Short = beautiful. No subtitle, no other labels, no language names, no logo text, no gibberish.`,
     ``,
     faceRef
-      ? `Identity vs pose: reference image face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE). High likeness from face.jpg. New pose (${poseSpec.label}); no cloning face.jpg stance/hands/crop/background.`
+      ? `[IDENTITY vs POSE] Reference image face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE). High likeness from face.jpg. New pose (${poseSpec.label}); no cloning face.jpg stance/hands/crop/background. Nano Banana and Skywork both receive this reference.`
       : `Person: photoreal professional AI creator vibe. ONE person only. Pose: ${poseSpec.label}.`,
     ``,
-    `Hard avoid: same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, painting the words Uzbek/Oʻzbek/Latin/English/Cyrillic, misspelled/gibberish text, any title not equal to the quoted heading.`,
+    `Hard avoid: same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, painting the words Uzbek/Oʻzbek/Latin/English/Cyrillic, misspelled/gibberish text, any title not equal to the quoted heading, more than 5 agent nodes, duplicate node labels, missing person.`,
   ].join("\n");
 
   let full = (lead + "\n" + extended).trim();
   // Prefer keeping lead (identity + colors + pose) intact when trimming.
-  // 3200: leave room for longer MUST blocks without cutting brand teal / title rules.
-  const maxLen = 3200;
+  // 2800: Nano Banana truncates ~2500 chars; keep identity block safe within lead.
+  const maxLen = 2800;
   if (full.length > maxLen) {
     const leadLen = lead.length;
     if (leadLen >= maxLen - 40) {

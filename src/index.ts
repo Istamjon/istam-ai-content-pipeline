@@ -7,11 +7,6 @@ import { env } from "./config/env.js";
 import { createEmptyState } from "./agent/state.js";
 import { getPollinationsUsage } from "./lib/pollinations.js";
 import { logAllImageBudgets } from "./lib/imagePipeline.js";
-import {
-  initCloudflareAccounts,
-  isCloudflareImageConfigured,
-  getCloudflareAccounts,
-} from "./lib/cloudflareImage.js";
 import { releaseTransientFetchSkips } from "./db.js";
 
 // Many VDS hosts have broken/partial IPv6 — Node would otherwise prefer AAAA and
@@ -35,7 +30,6 @@ try {
 }
 
 async function logAiConfig(): Promise<void> {
-  await initCloudflareAccounts();
   // One-shot: re-open articles burned by old fetch-error permanent skip
   try {
     const n = releaseTransientFetchSkips();
@@ -49,8 +43,6 @@ async function logAiConfig(): Promise<void> {
   }
   const usage = getPollinationsUsage();
   const textKeyOk = Boolean(env.POLLINATIONS_API_KEY);
-  const cfSlots = getCloudflareAccounts();
-  const cfOk = isCloudflareImageConfigured() && cfSlots.length > 0;
   const geminiOk = Boolean(env.GEMINI_API_KEY);
   console.log(
     `[AI] TEXT=${usage.textProvider} model=${usage.textModel} ` +
@@ -58,7 +50,7 @@ async function logAiConfig(): Promise<void> {
       `poll_daily=${usage.used}/${usage.limit}`,
   );
   console.log(
-    `[AI] IMAGE waterfall: Nano Banana → Skywork → Pollinations ${env.POLLINATIONS_IMAGE_MODEL || "gpt-image-2"} → Cloudflare (${cfSlots.length} acct) → AI Horde` +
+    `[AI] IMAGE waterfall: Nano Banana → Skywork` +
       ` | skywork=${
         [
           env.SKYWORK_API_KEY,
@@ -68,11 +60,6 @@ async function logAiConfig(): Promise<void> {
           env.SKYWORK_API_KEY_5,
         ].filter((k) => k?.trim()).length || "off"
       } key(s)`,
-  );
-  console.log(
-    `[AI] CF model=${env.CLOUDFLARE_IMAGE_MODEL} quality=${env.IMAGE_QUALITY} ` +
-      `${env.IMAGE_WIDTH}x${env.IMAGE_HEIGHT} steps=${env.CLOUDFLARE_IMAGE_STEPS} ` +
-      `accounts=${cfSlots.map((s) => s.label).join(",") || "none"} creds=${cfOk ? "set" : "MISSING"}`,
   );
   logAllImageBudgets();
   if (env.CRON_RANDOM) {

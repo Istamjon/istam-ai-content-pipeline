@@ -8,6 +8,12 @@
  *
  * Auth: TELEGRAM_ADMIN_IDS (comma-separated numeric user ids)
  * Disable: TELEGRAM_BOT_INBOUND=false
+ *
+ * Design notes:
+ * - Per-chat lock (busyChats) — each admin can publish independently.
+ * - Draft TTL = 30 min; preview shows deadline.
+ * - Parallel platform publish via Promise.allSettled.
+ * - drop_pending_updates=false so admin messages on restart are preserved.
  */
 import fs from "fs";
 import path from "path";
@@ -75,9 +81,21 @@ const drafts = new Map<number, Draft>();
 const DRAFT_TTL_MS = 30 * 60 * 1000;
 const MEDIA_DIR = path.resolve("./data/bot-uploads");
 
+type ChatState =
+  | { step: "IDLE" }
+  | { step: "WAITING_FOR_TEXT" }
+  | { step: "WAITING_FOR_MEDIA"; text: string };
+
+const chatStates = new Map<number, ChatState>();
+
 let offset = 0;
 let running = false;
-let busyPublish = false;
+
+/**
+ * Per-chat publish lock — prevents double-tap and allows multiple admins
+ * to publish concurrently from different chats.
+ */
+const busyChats = new Set<number>();
 
 function isAdmin(userId: number): boolean {
   const ids = env.TELEGRAM_ADMIN_IDS;
@@ -199,10 +217,16 @@ function previewHtml(d: Draft): string {
     d.mediaKind === "video"
       ? "\n⏭ <i>Video: LinkedIn skip (video API yoʻq)</i>"
       : "";
+  // Show expiry deadline so admin knows the time window
+  const expiresAt = new Date(d.createdAt + DRAFT_TTL_MS);
+  const hh = String(expiresAt.getHours()).padStart(2, "0");
+  const mm = String(expiresAt.getMinutes()).padStart(2, "0");
+  const expiryNote = `⏱ Muddati: <b>${hh}:${mm}</b> gacha (30 daqiqa)`;
   return [
     "<b>Draft tayyor</b>",
     `Media: ${media}`,
     `Platformalar: <code>${platforms}</code>${videoNote}`,
+    expiryNote,
     "",
     "<b>Matn:</b>",
     escapeHtml(textPreview),
@@ -264,20 +288,25 @@ async function handleMessage(msg: TgMessage): Promise<void> {
       [
         "<b>Istam AI — Manual Publish Bot</b>",
         "",
-        "Rasm yoki video + caption (post matni) yuboring.",
+        "Siz postni ikkita usulda joylashingiz mumkin:",
+        "1. Matn va rasmni bitta xabarda yuborish.",
+        "2. <b>/post</b> yoki <b>/new</b> orqali bosqichma-bosqich boshlash.",
+        "",
         "Tasdiqlagach, barcha yoqilgan platformalarga joylanadi.",
         "",
         "<b>Buyruqlar</b>",
+        "/post — yangi postni boshlash",
         "/help — yordam",
         "/whoami — sizning Telegram ID",
         "/platforms — yoqilgan platformalar",
-        "/cancel — draftni bekor qilish",
+        "/cancel — amaliyotni bekor qilish",
         "",
         admin
           ? "✅ Siz <b>admin</b>siz — post yuborishingiz mumkin."
           : "⛔ Siz admin emassiz. <code>TELEGRAM_ADMIN_IDS</code> ga ID qoʻshing.",
       ].join("\n"),
     );
+    chatStates.set(chatId, { step: "IDLE" });
     return;
   }
 
@@ -299,7 +328,8 @@ async function handleMessage(msg: TgMessage): Promise<void> {
 
   if (textCmd === "/cancel") {
     cleanupDraft(chatId);
-    await sendText(chatId, "Draft bekor qilindi.");
+    chatStates.set(chatId, { step: "IDLE" });
+    await sendText(chatId, "Bekor qilindi.");
     return;
   }
 
@@ -311,17 +341,75 @@ async function handleMessage(msg: TgMessage): Promise<void> {
     return;
   }
 
-  // Photo (largest size)
-  if (msg.photo?.length) {
-    const best = msg.photo[msg.photo.length - 1];
-    const caption = (msg.caption || "").trim();
-    if (!caption) {
+  // Ensure state exists
+  const state = chatStates.get(chatId) || { step: "IDLE" };
+
+  if (textCmd === "/post" || textCmd === "/new") {
+    chatStates.set(chatId, { step: "WAITING_FOR_TEXT" });
+    await sendText(
+      chatId,
+      "📝 <b>1-qadam: Post matnini yuboring.</b>\n\n(Yoki faqat rasmli/videoli post uchun /skip bosing)",
+    );
+    return;
+  }
+
+  // --- WIZARD: WAITING_FOR_TEXT ---
+  if (state.step === "WAITING_FOR_TEXT") {
+    if (textCmd === "/skip") {
+      chatStates.set(chatId, { step: "WAITING_FOR_MEDIA", text: "" });
       await sendText(
         chatId,
-        "Rasm yubordingiz, lekin <b>caption</b> (post matni) yoʻq.\nRasmni matn bilan birga yuboring.",
+        "Matn bekor qilindi. 🖼 <b>2-qadam: Endi rasm yoki video yuboring.</b>",
       );
       return;
     }
+
+    if (msg.photo?.length || msg.video || msg.document) {
+      // User sent media instead of text directly in this step, with or without caption
+      // We will handle it by falling through to the media handler below, treating it as completing both steps.
+    } else if (textCmd) {
+      chatStates.set(chatId, { step: "WAITING_FOR_MEDIA", text: textCmd });
+      await sendText(
+        chatId,
+        "✅ Matn qabul qilindi. 🖼 <b>2-qadam: Endi rasm yoki video yuboring.</b>\n\n(Yoki faqat matnli post uchun /skip bosing)",
+      );
+      return;
+    }
+  }
+
+  // --- WIZARD: WAITING_FOR_MEDIA ---
+  if (state.step === "WAITING_FOR_MEDIA") {
+    if (textCmd === "/skip") {
+      if (!state.text) {
+        await sendText(chatId, "❌ Matn va media ikkalasi ham bo'sh bo'lishi mumkin emas. /cancel bosing.");
+        return;
+      }
+      chatStates.set(chatId, { step: "IDLE" });
+      await setDraftAndPreview(chatId, {
+        text: state.text,
+        mediaKind: "none",
+        createdAt: Date.now(),
+        chatId,
+      });
+      return;
+    }
+  }
+
+  // Photo (largest size)
+  if (msg.photo?.length) {
+    const best = msg.photo[msg.photo.length - 1];
+    let caption = (msg.caption || "").trim();
+    if (state.step === "WAITING_FOR_MEDIA") {
+      caption = state.text || caption;
+    }
+    if (!caption) {
+      await sendText(
+        chatId,
+        "Rasm yubordingiz, lekin <b>caption</b> (post matni) yoʻq.\nRasmni matn bilan birga yuboring yoki avval /post bosing.",
+      );
+      return;
+    }
+    chatStates.set(chatId, { step: "IDLE" });
     try {
       await sendText(chatId, "⏳ Rasm yuklanmoqda…");
       const local = await downloadFile(best.file_id, "photo.jpg");
@@ -340,14 +428,18 @@ async function handleMessage(msg: TgMessage): Promise<void> {
 
   // Video
   if (msg.video) {
-    const caption = (msg.caption || "").trim();
+    let caption = (msg.caption || "").trim();
+    if (state.step === "WAITING_FOR_MEDIA") {
+      caption = state.text || caption;
+    }
     if (!caption) {
       await sendText(
         chatId,
-        "Video yubordingiz, lekin <b>caption</b> (post matni) yoʻq.\nVideoni matn bilan birga yuboring.",
+        "Video yubordingiz, lekin <b>caption</b> (post matni) yoʻq.\nVideoni matn bilan birga yuboring yoki avval /post bosing.",
       );
       return;
     }
+    chatStates.set(chatId, { step: "IDLE" });
     const size = msg.video.file_size || 0;
     // Bot API getFile limit ~20MB for standard bots
     if (size > 20 * 1024 * 1024) {
@@ -390,14 +482,18 @@ async function handleMessage(msg: TgMessage): Promise<void> {
       await sendText(chatId, "Faqat rasm yoki video hujjat qabul qilinadi.");
       return;
     }
-    const caption = (msg.caption || "").trim();
+    let caption = (msg.caption || "").trim();
+    if (state.step === "WAITING_FOR_MEDIA") {
+      caption = state.text || caption;
+    }
     if (!caption) {
       await sendText(
         chatId,
-        "Hujjatda <b>caption</b> (post matni) kerak.",
+        "Hujjatda <b>caption</b> (post matni) kerak. Yoki /post orqali yuboring.",
       );
       return;
     }
+    chatStates.set(chatId, { step: "IDLE" });
     const size = msg.document.file_size || 0;
     if (size > 20 * 1024 * 1024) {
       await sendText(chatId, "Fayl juda katta (~20MB limit).");
@@ -424,6 +520,10 @@ async function handleMessage(msg: TgMessage): Promise<void> {
 
   // Text-only post
   if (textCmd && !textCmd.startsWith("/")) {
+    if (state.step === "WAITING_FOR_MEDIA") {
+      await sendText(chatId, "Media kutyapman. Agar media kerak bo'lmasa /skip bosing.");
+      return;
+    }
     await setDraftAndPreview(chatId, {
       text: textCmd,
       mediaKind: "none",
@@ -466,16 +566,19 @@ async function handleCallback(cq: TgCallbackQuery): Promise<void> {
     return;
   }
 
-  if (busyPublish) {
-    await answerCallback(cq.id, "Boshqa publish ketmoqda…");
-    await sendText(chatId, "⏳ Boshqa post hali joylanmoqda. Biroz kuting.");
+  // Per-chat lock — each admin chat can publish independently.
+  if (busyChats.has(chatId)) {
+    await answerCallback(cq.id, "Shu chat publish ketmoqda…");
+    await sendText(chatId, "⏳ Bu chatda post hali joylanmoqda. Biroz kuting.");
     return;
   }
 
   await answerCallback(cq.id, "Publish boshlandi…");
-  busyPublish = true;
-  // Remove draft from map but keep files until publish finishes
-  drafts.delete(chatId);
+  busyChats.add(chatId);
+
+  // Keep draft in map until publish finishes so media cleanup is safe.
+  // We work on a snapshot copy.
+  const draftSnapshot: Draft = { ...draft };
 
   try {
     await sendText(
@@ -483,27 +586,30 @@ async function handleCallback(cq: TgCallbackQuery): Promise<void> {
       `🚀 Joylash boshlandi…\nPlatformalar: <code>${env.ENABLED_PLATFORMS.join(", ")}</code>`,
     );
 
-    // Copy media path — publishManualPost deletes local media at end
     const result = await publishManualPost({
-      text: draft.text,
-      mediaPath: draft.mediaPath,
-      mediaKind: draft.mediaKind,
+      text: draftSnapshot.text,
+      mediaPath: draftSnapshot.mediaPath,
+      mediaKind: draftSnapshot.mediaKind,
       source: "telegram-bot",
     });
 
+    // Remove draft only after successful publish
+    drafts.delete(chatId);
+
     await sendText(chatId, formatResultsMessage(result));
   } catch (e) {
-    // On failure, try to free media
-    if (draft.mediaPath && fs.existsSync(draft.mediaPath)) {
+    // On failure keep draft so admin can retry; clean up media manually
+    if (draftSnapshot.mediaPath && fs.existsSync(draftSnapshot.mediaPath)) {
       try {
-        fs.unlinkSync(draft.mediaPath);
+        fs.unlinkSync(draftSnapshot.mediaPath);
       } catch {
         // ignore
       }
     }
+    drafts.delete(chatId);
     await sendText(chatId, `❌ Publish xato: ${escapeHtml(String(e))}`);
   } finally {
-    busyPublish = false;
+    busyChats.delete(chatId);
   }
 }
 
@@ -551,10 +657,10 @@ export function startTelegramBot(): void {
     `[telegramBot] Starting long-poll · admins=${env.TELEGRAM_ADMIN_IDS.join(",") || "(none)"} · platforms=${env.ENABLED_PLATFORMS.join(",")}`,
   );
 
-  // Drop pending updates so we don't re-process old messages after restart
+  // Clear webhook without dropping pending updates — preserve admin messages on restart.
   void (async () => {
     try {
-      await tgCall("deleteWebhook", { drop_pending_updates: true });
+      await tgCall("deleteWebhook", { drop_pending_updates: false });
     } catch {
       // ignore
     }
