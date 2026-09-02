@@ -121,12 +121,6 @@ async function pollinationsOnly(
 ): Promise<string> {
   assertWithinDailyLimit();
 
-  if (!env.POLLINATIONS_API_KEY) {
-    throw new Error(
-      "POLLINATIONS_API_KEY is required for text fallback. Create a key at https://enter.pollinations.ai",
-    );
-  }
-
   const messages: Array<{ role: string; content: string }> = [];
   if (systemPrompt) {
     messages.push({ role: "system", content: systemPrompt });
@@ -135,18 +129,64 @@ async function pollinationsOnly(
 
   const model = resolveTextModel();
   const url = `${baseUrl()}/v1/chat/completions`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: false,
-    }),
-    signal: AbortSignal.timeout(90_000),
+  const payload = JSON.stringify({
+    model,
+    messages,
+    stream: false,
   });
 
+  // Try with API key first (if available)
+  let response: Response;
+  if (env.POLLINATIONS_API_KEY) {
+    response = await fetch(url, {
+      method: "POST",
+      headers: authHeaders({ "Content-Type": "application/json" }),
+      body: payload,
+      signal: AbortSignal.timeout(90_000),
+    });
+
+    // A paid key with zero balance (402 PAYMENT_REQUIRED) must not kill the run:
+    // retry anonymous — the free tier serves free models without a key.
+    if (response.status === 402) {
+      console.warn(
+        "[pollinations] 402 Payment Required (key balance exhausted) — retrying anonymous free tier",
+      );
+      response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payload,
+        signal: AbortSignal.timeout(90_000),
+      });
+    }
+  } else {
+    // No key — use anonymous free tier directly
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      signal: AbortSignal.timeout(90_000),
+    });
+  }
+
   trackRequest();
+
+  // If still 402, try alternate free models (no key)
+  if (response.status === 402) {
+    console.warn(
+      "[pollinations] 402 on anonymous — trying alternate free model",
+    );
+    const altPayload = JSON.stringify({
+      model: "openai",
+      messages,
+      stream: false,
+    });
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: altPayload,
+      signal: AbortSignal.timeout(90_000),
+    });
+  }
 
   if (!response.ok) {
     const errBody = await response.text().catch(() => "");

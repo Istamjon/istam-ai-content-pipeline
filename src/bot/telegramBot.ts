@@ -103,22 +103,52 @@ function isAdmin(userId: number): boolean {
   return ids.includes(String(userId));
 }
 
-async function tgCall<T = unknown>(
+async function tgCallOnce<T = unknown>(
   method: string,
   body?: Record<string, unknown>,
 ): Promise<T> {
   const token = env.TELEGRAM_BOT_TOKEN;
-  const res = await fetch(`${API(token)}/${method}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(method === "getUpdates" ? 60_000 : 30_000),
-  });
-  const data = (await res.json()) as { ok: boolean; result?: T; description?: string };
-  if (!data.ok) {
-    throw new Error(data.description || `Telegram ${method} failed`);
+  const url = `${API(token)}/${method}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), method === "getUpdates" ? 60_000 : 30_000);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+    const data = (await res.json()) as { ok: boolean; result?: T; description?: string };
+    if (!data.ok) {
+      throw new Error(data.description || `Telegram ${method} failed`);
+    }
+    return data.result as T;
+  } finally {
+    clearTimeout(timeout);
   }
-  return data.result as T;
+}
+
+/**
+ * Telegram API call with one network-level retry.
+ * The global undici Agent reaps keep-alive sockets at 10s while Telegram
+ * long-polls run 25s, so a reused-closed socket can surface as a single
+ * "fetch failed" that succeeds on immediate retry.
+ */
+async function tgCall<T = unknown>(
+  method: string,
+  body?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await tgCallOnce<T>(method, body);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/fetch failed|ECONNRESET|EPIPE|socket hang up|EAI_AGAIN/i.test(msg)) {
+      await sleep(1_000);
+      return tgCallOnce<T>(method, body);
+    }
+    throw e;
+  }
 }
 
 async function sendText(
@@ -165,21 +195,27 @@ async function downloadFile(
     throw new Error("getFile: no file_path");
   }
   const url = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(300_000) });
-  if (!res.ok) {
-    throw new Error(`Download failed HTTP ${res.status}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 300_000);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`Download failed HTTP ${res.status}`);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    const ext =
+      path.extname(file.file_path) ||
+      path.extname(preferredName) ||
+      ".bin";
+    const local = path.join(
+      MEDIA_DIR,
+      `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`,
+    );
+    fs.writeFileSync(local, buf);
+    return local;
+  } finally {
+    clearTimeout(timeout);
   }
-  const buf = Buffer.from(await res.arrayBuffer());
-  const ext =
-    path.extname(file.file_path) ||
-    path.extname(preferredName) ||
-    ".bin";
-  const local = path.join(
-    MEDIA_DIR,
-    `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`,
-  );
-  fs.writeFileSync(local, buf);
-  return local;
 }
 
 function cleanupDraft(chatId: number): void {
