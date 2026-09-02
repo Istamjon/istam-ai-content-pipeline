@@ -5,7 +5,7 @@ import { startScheduler } from "./scheduler.js";
 import { startTelegramBot } from "./bot/telegramBot.js";
 import { env } from "./config/env.js";
 import { createEmptyState } from "./agent/state.js";
-import { getPollinationsUsage } from "./lib/pollinations.js";
+import { getGeminiTextUsage, logGeminiTextBudget } from "./lib/geminiText.js";
 import { logAllImageBudgets } from "./lib/imagePipeline.js";
 import { releaseTransientFetchSkips } from "./db.js";
 
@@ -41,13 +41,10 @@ async function logAiConfig(): Promise<void> {
   } catch (e) {
     console.warn("[db] releaseTransientFetchSkips failed:", e);
   }
-  const usage = getPollinationsUsage();
-  const textKeyOk = Boolean(env.POLLINATIONS_API_KEY);
-  const geminiOk = Boolean(env.GEMINI_API_KEY);
+  const usage = getGeminiTextUsage();
   console.log(
-    `[AI] TEXT=${usage.textProvider} model=${usage.textModel} ` +
-      `gemini=${geminiOk ? "set" : "off"} pollinations=${textKeyOk ? "set" : "MISSING"} ` +
-      `poll_daily=${usage.used}/${usage.limit}`,
+    `[AI] TEXT=Gemini model=${usage.model} keys=${usage.keys} ` +
+      `daily=${usage.used}/${usage.limit || "∞"} remaining=${usage.remaining}`,
   );
   console.log(
     `[AI] IMAGE waterfall: Nano Banana → Skywork` +
@@ -82,11 +79,7 @@ async function logAiConfig(): Promise<void> {
       `tg_bot=${env.TELEGRAM_BOT_INBOUND ? "on" : "off"} ` +
       `tg_admins=${env.TELEGRAM_ADMIN_IDS.length}`,
   );
-  if (!textKeyOk) {
-    console.warn(
-      "[AI] Set POLLINATIONS_API_KEY (text only) — https://enter.pollinations.ai",
-    );
-  }
+  logGeminiTextBudget();
 }
 
 void logAiConfig();
@@ -132,7 +125,7 @@ if (env.DRY_RUN) {
         }
       }
 
-      console.log("\n[AI] Usage after run:", getPollinationsUsage());
+      console.log("\n[AI] Usage after run:", getGeminiTextUsage());
     } catch (error) {
       console.error("Pipeline failed:", error);
       process.exit(1);

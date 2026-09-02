@@ -1,5 +1,5 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
-import { pollinationsText } from "../../lib/pollinations.js";
+import { generateText } from "../../lib/geminiText.js";
 import { roles, buildTranslateUserPrompt } from "../prompts.js";
 
 export async function translate(
@@ -11,7 +11,7 @@ export async function translate(
       return { errors: ["translate: no current article"] };
     }
 
-    const result = await pollinationsText(
+    const result = await generateText(
       buildTranslateUserPrompt(current.rawText),
       roles.translator,
     );

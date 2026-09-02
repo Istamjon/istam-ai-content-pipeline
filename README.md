@@ -7,8 +7,8 @@ The pipeline discovers AI/engineering articles, rewrites them in professional **
 | Layer | Stack |
 |--------|--------|
 | Orchestration | [LangGraph.js](https://github.com/langchain-ai/langgraphjs) |
-| Text | **Google Gemini Free** → Pollinations fallback |
-| Images | **Nano Banana** → **Skywork** → **Pollinations** → **Cloudflare Workers AI** → **AI Horde** |
+| Text | **Google Gemini Free** (multi-key rotation) |
+| Images | **Nano Banana** → **Skywork** |
 | Storage | SQLite (`better-sqlite3`), canonical JSON, local tokens |
 | Runtime | Node.js (ESM), TypeScript |
 
@@ -134,18 +134,13 @@ ENABLED_PLATFORMS=telegram,linkedin,facebook,instagram,threads
 ## Image waterfall
 
 ```
-Nano Banana (Gemini) → Skywork Image API → Pollinations gpt-image-2 → Cloudflare FLUX.2 → AI Horde
+Nano Banana (Gemini) → Skywork Image API
 ```
 
 | Provider | Role | `face.jpg` identity |
 |----------|------|---------------------|
 | **Nano Banana** | Primary Gemini image when Free/Paid quota allows | Yes (image+text) |
 | **Skywork** | Account credits / daily benefit after Nano fails | Yes (edit + `source_images`) |
-| **Pollinations** | After Skywork fails; face via hosted URL + `image=` | Yes (`kontext` / `gptimage` / `nanobanana`) |
-| **Cloudflare** | Free neurons ~10k/day **per account** (multi-account rotation) | No (text only) |
-| **AI Horde** | Community free GPU fallback (queue/slow) | No (text only) |
-
-Pollinations face path: upload `face.jpg` to Catbox/Litterbox → `GET /image/{prompt}?model=kontext&image={publicUrl}`. Env: `POLLINATIONS_FACE_MODEL` (default `kontext`).
 
 ### Brand face (`data/brand/face.jpg`)
 
@@ -155,7 +150,7 @@ Identity-preserving covers need the real photo bytes on a multimodal provider.
 |-----------|--------|
 | File missing / wrong path / `BRAND_FACE_IMAGE` | Prompt has generic person, no likeness |
 | Nano Banana + Skywork both fail/exhausted | With default `REQUIRE_BRAND_FACE=true` → **no image** (does not invent a random face) |
-| `REQUIRE_BRAND_FACE=false` | Falls through to Pollinations/CF/Horde — person will **not** match `face.jpg` |
+| `REQUIRE_BRAND_FACE=false` | No identity-capable provider fallback exists — still no image |
 | File very large (e.g. >400KB / multi-MB) | Prefer ~512–1024px JPEG; optional `sharp` auto-downscales for APIs |
 
 Soft caps (env):
@@ -163,10 +158,6 @@ Soft caps (env):
 - `DAILY_NANOBANANA_LIMIT` (default 3 **per key**; multi-key rotation)
 - `SKYWORK_API_KEY` / `_2`…`_5` (or `SKYWORK_API_KEYS`) + `DAILY_SKYWORK_LIMIT` **per key** (default 4; credit fail → next key)
 - Daily loop: soft budgets reset each **UTC day**; key order = day-offset round-robin + highest remaining first (not always key #1)
-- `DAILY_POLLINATIONS_IMAGE_LIMIT`
-- `DAILY_IMAGE_TOTAL` (all CF accounts combined)
-- `DAILY_IMAGE_LIMIT` (per CF account)
-- `DAILY_HORDE_LIMIT`
 - `REQUIRE_BRAND_FACE` (default `true` when you want identity-only)
 
 **Policy:** no image → **do not publish**.
@@ -176,16 +167,15 @@ Soft caps (env):
 ## Text waterfall
 
 ```
-Gemini Free (gemini-flash-lite-latest)  →  Pollinations (openai-fast)
+Gemini Free (gemini-flash-lite-latest) — multi-key rotation, per-key daily budget
 ```
 
 | Env | Purpose |
 |-----|---------|
 | `GEMINI_API_KEY` | Google AI Studio key (text + image nb1) |
-| `GEMINI_API_KEY_2` / `_3` | Extra keys — Nano Banana image rotation on 429 |
+| `GEMINI_API_KEY_2` / `_3` | Extra keys — Nano Banana image rotation + Gemini text rotation on quota/429 |
 | `GEMINI_MODEL` | Text model (default `gemini-flash-lite-latest`) |
-| `TEXT_PROVIDER` | `auto` \| `gemini` \| `pollinations` |
-| `POLLINATIONS_API_KEY` | Fallback text |
+| `DAILY_GEMINI_LIMIT` | Soft cap **per key** (UTC); total ≈ limit × keys |
 
 Quality rules (high level):
 
@@ -300,14 +290,11 @@ See [`.env.example`](./.env.example) for a fuller list.
 ### Text
 
 ```env
-TEXT_PROVIDER=auto
 GEMINI_API_KEY=
 GEMINI_API_KEY_2=
 GEMINI_API_KEY_3=
 GEMINI_MODEL=gemini-flash-lite-latest
 DAILY_GEMINI_LIMIT=80
-POLLINATIONS_API_KEY=
-POLLINATIONS_TEXT_MODEL=openai-fast
 ```
 
 ### Images

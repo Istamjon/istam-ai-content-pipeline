@@ -1,5 +1,5 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
-import { pollinationsText } from "../../lib/pollinations.js";
+import { generateText } from "../../lib/geminiText.js";
 import { markArticleSeen } from "../../db.js";
 import { brand } from "../../config/brand.js";
 import { roles, buildQualityUserPrompt } from "../prompts.js";
@@ -125,7 +125,7 @@ export async function qualityCheck(
           current.rawText ||
           ""
         ).slice(0, 5000);
-        const llmResult = await pollinationsText(
+        const llmResult = await generateText(
           buildQualityUserPrompt(text, current.url, sourceExcerpt),
           roles.qualityController,
         );

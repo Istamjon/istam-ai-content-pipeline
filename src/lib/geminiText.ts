@@ -1,6 +1,13 @@
 /**
- * Google Gemini API — Free Tier text generation
+ * Google Gemini API — Free Tier text generation (sole text provider).
  * @see https://ai.google.dev/gemini-api/docs
+ *
+ * Multi-key rotation (GEMINI_API_KEY, _2, _3):
+ * - Each key gets its own soft daily budget (DAILY_GEMINI_LIMIT per key, UTC)
+ * - Daily start offset so key #1 is not always first after midnight reset
+ * - Per-key quota/HTTP failure → next key, then hard error
+ *
+ * Pollinations was removed from the project (2026-09): text is Gemini-only.
  */
 import { env } from "../config/env.js";
 import {
@@ -8,30 +15,84 @@ import {
   incrementProviderImageUsage,
   type ImageProviderName,
 } from "../db.js";
+import {
+  orderSlotsForDailyRotation,
+  formatRotationOrder,
+  type RotatableSlot,
+} from "./keyRotation.js";
 
-/** Reuse provider usage table with a dedicated name (text, not image). */
-const GEMINI_USAGE_KEY = "gemini" as ImageProviderName;
+type GeminiSlot = RotatableSlot;
 
-export function isGeminiConfigured(): boolean {
-  return Boolean(env.GEMINI_API_KEY?.trim());
+/** Per-key soft usage slots in the shared provider usage table. */
+const SLOT_PROVIDER_KEYS: ImageProviderName[] = [
+  "gemini",
+  "gemini2",
+  "gemini3",
+];
+
+/** Configured Gemini keys in priority order (deduped, trimmed). */
+function geminiSlots(): GeminiSlot[] {
+  const keys = [
+    env.GEMINI_API_KEY,
+    env.GEMINI_API_KEY_2,
+    env.GEMINI_API_KEY_3,
+  ]
+    .map((k) => (k || "").trim())
+    .filter(Boolean);
+  return keys.map((apiKey, i) => ({
+    label: `gemini#${i + 1}`,
+    providerKey:
+      SLOT_PROVIDER_KEYS[i] ?? (`gemini${i + 1}` as ImageProviderName),
+    apiKey,
+  }));
 }
 
-export function canUseGeminiToday(): {
+export function isGeminiConfigured(): boolean {
+  return geminiSlots().length > 0;
+}
+
+function slotBudget(slot: GeminiSlot): {
   ok: boolean;
   used: number;
   limit: number;
   remaining: number;
 } {
-  if (!isGeminiConfigured()) {
-    return { ok: false, used: 0, limit: 0, remaining: 0 };
-  }
   const limit = env.DAILY_GEMINI_LIMIT;
   if (limit <= 0) {
     return { ok: true, used: 0, limit: 0, remaining: 999 };
   }
-  // Borrow image_provider_usage for soft daily count (date+provider)
-  const b = getProviderImageBudget(GEMINI_USAGE_KEY, limit);
+  // Borrow provider usage table for a soft daily count (date+provider).
+  const b = getProviderImageBudget(slot.providerKey, limit);
   return { ok: b.remaining > 0, ...b };
+}
+
+/**
+ * Aggregated budget across all configured keys.
+ * ok = at least one key still has soft budget remaining.
+ */
+export function canUseGeminiToday(): {
+  ok: boolean;
+  used: number;
+  limit: number;
+  remaining: number;
+  slots: number;
+} {
+  const slots = geminiSlots();
+  if (!slots.length) {
+    return { ok: false, used: 0, limit: 0, remaining: 0, slots: 0 };
+  }
+  const budgets = slots.map(slotBudget);
+  const used = budgets.reduce((s, b) => s + b.used, 0);
+  const remaining = budgets.reduce((s, b) => s + Math.max(0, b.remaining), 0);
+  const limit =
+    env.DAILY_GEMINI_LIMIT > 0 ? env.DAILY_GEMINI_LIMIT * slots.length : 0;
+  return {
+    ok: limit === 0 || remaining > 0,
+    used,
+    limit,
+    remaining,
+    slots: slots.length,
+  };
 }
 
 function extractText(json: unknown): string {
@@ -62,22 +123,80 @@ function extractText(json: unknown): string {
 }
 
 /**
- * generateContent with optional system instruction.
+ * Text generation: user prompt + optional system role.
+ * Tries configured Gemini keys in daily-rotated order until one succeeds.
  */
-export async function geminiText(
+export async function generateText(
   prompt: string,
   systemPrompt?: string,
 ): Promise<string> {
-  if (!isGeminiConfigured()) {
+  const slots = geminiSlots();
+  if (!slots.length) {
     throw new Error("GEMINI_API_KEY missing");
   }
-  const budget = canUseGeminiToday();
-  if (!budget.ok) {
-    throw new Error(
-      `Gemini soft daily limit ${budget.used}/${budget.limit} (UTC)`,
-    );
+
+  const ordered = orderSlotsForDailyRotation(
+    slots,
+    (s) => slotBudget(s).remaining,
+    "text",
+  );
+  console.log(
+    `[text] keys=${slots.length} order=${formatRotationOrder(ordered, (label) => {
+      const slot = ordered.find((s) => s.label === label);
+      return slot ? slotBudget(slot).remaining : 0;
+    })}`,
+  );
+
+  let lastErr: unknown;
+  let tried = 0;
+  for (const slot of ordered) {
+    const budget = slotBudget(slot);
+    if (!budget.ok) {
+      console.warn(
+        `[text] ${slot.label} soft daily limit ${budget.used}/${budget.limit} (UTC) — next key`,
+      );
+      continue;
+    }
+    tried += 1;
+    try {
+      const text = await geminiGenerate(slot.apiKey, prompt, systemPrompt);
+      if (env.DAILY_GEMINI_LIMIT > 0) {
+        const used = incrementProviderImageUsage(slot.providerKey, 1);
+        if (used % 10 === 0 || used === 1) {
+          console.log(
+            `[gemini] ${slot.label} soft daily usage ${used}/${env.DAILY_GEMINI_LIMIT} (UTC)`,
+          );
+        }
+      }
+      return text;
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      console.warn(
+        `[text] ${slot.label} failed → next key: ${msg.slice(0, 180)}`,
+      );
+    }
   }
 
+  if (tried === 0) {
+    throw new Error(
+      `Gemini soft daily limit exhausted on all ${slots.length} key(s) ` +
+        `(${env.DAILY_GEMINI_LIMIT}/key UTC) — resets at 00:00 UTC`,
+    );
+  }
+  throw lastErr instanceof Error
+    ? lastErr
+    : new Error(String(lastErr || "Gemini text generation failed"));
+}
+
+/**
+ * generateContent with optional system instruction (single key).
+ */
+async function geminiGenerate(
+  apiKey: string,
+  prompt: string,
+  systemPrompt?: string,
+): Promise<string> {
   const model = (env.GEMINI_MODEL || "gemini-flash-lite-latest").replace(
     /^models\//,
     "",
@@ -110,7 +229,7 @@ export async function geminiText(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-goog-api-key": env.GEMINI_API_KEY,
+      "x-goog-api-key": apiKey,
     },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(120_000),
@@ -131,14 +250,38 @@ export async function geminiText(
     throw new Error(`Gemini HTTP ${res.status}: ${msg}`);
   }
 
-  const text = extractText(json);
-  if (env.DAILY_GEMINI_LIMIT > 0) {
-    const used = incrementProviderImageUsage(GEMINI_USAGE_KEY, 1);
-    if (used % 10 === 0 || used === 1) {
-      console.log(
-        `[gemini] soft daily usage ${used}/${env.DAILY_GEMINI_LIMIT} (UTC)`,
-      );
-    }
+  return extractText(json);
+}
+
+/** Startup/dry-run budget report (mirrors image provider budget logs). */
+export function logGeminiTextBudget(): void {
+  const slots = geminiSlots();
+  if (!slots.length) {
+    console.log("[AI] Gemini text: not configured (set GEMINI_API_KEY)");
+    return;
   }
-  return text;
+  for (const slot of slots) {
+    const b = slotBudget(slot);
+    console.log(
+      `[AI] Gemini text ${slot.label}: ${b.used}/${b.limit || "∞"} remaining=${b.remaining}`,
+    );
+  }
+}
+
+/** Usage snapshot for the DRY_RUN pipeline result dump. */
+export function getGeminiTextUsage(): {
+  keys: number;
+  used: number;
+  limit: number;
+  remaining: number;
+  model: string;
+} {
+  const agg = canUseGeminiToday();
+  return {
+    keys: agg.slots,
+    used: agg.used,
+    limit: agg.limit,
+    remaining: agg.remaining,
+    model: env.GEMINI_MODEL || "gemini-flash-lite-latest",
+  };
 }

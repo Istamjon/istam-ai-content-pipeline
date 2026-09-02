@@ -4,7 +4,6 @@
  * Override: BRAND_FACE_IMAGE=/absolute/or/relative/path.jpg
  *
  * Multimodal identity works only with Nano Banana + Skywork (image+text).
- * Pollinations / Cloudflare / Horde receive text only — they cannot "see" face.jpg.
  */
 import fs from "fs";
 import path from "path";

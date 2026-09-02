@@ -1,5 +1,5 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
-import { pollinationsText } from "../../lib/pollinations.js";
+import { generateText } from "../../lib/geminiText.js";
 import { roles, buildRewriteUserPrompt } from "../prompts.js";
 import { cleanPostBody } from "../../lib/contentClean.js";
 import { ensureFactsSection } from "../../lib/factsFromBrief.js";
@@ -23,7 +23,7 @@ export async function rewrite(
     console.log(
       `[rewrite] attempt ${state.retryCount + 1} — ${current.title.slice(0, 50)}...`,
     );
-    const result = await pollinationsText(
+    const result = await generateText(
       buildRewriteUserPrompt({
         title: current.title,
         sourceUrl: current.url,

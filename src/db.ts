@@ -61,7 +61,7 @@ db.exec(`
   )
 `);
 
-/** Daily Pollinations TEXT AI request counter (images use Cloudflare, not counted here). */
+/** Daily AI request counter (generic; retained for historical rows). */
 db.exec(`
   CREATE TABLE IF NOT EXISTS ai_daily_usage (
     date TEXT PRIMARY KEY,

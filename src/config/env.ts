@@ -9,21 +9,19 @@ function normalizeImageTempHours(hours: number): 1 | 12 | 24 | 72 {
 
 /**
  * AI split (project policy):
- * - TEXT  → Gemini Free (primary) → Pollinations fallback
+ * - TEXT  → Gemini Free (multi-key rotation)
  * - IMAGE → Nano Banana (primary, free Gemini keys) → Skywork (fallback, credits)
  *
  * Both image providers support brand face identity (face.jpg).
- * Pollinations image, Cloudflare Workers AI, and AI Horde have been removed from
- * the image waterfall. Pollinations TEXT API is still active.
+ * Pollinations, Cloudflare Workers AI, and AI Horde have been removed from
+ * the project entirely.
  *
  * Gemini: https://aistudio.google.com → API key
  * Skywork: https://skywork.ai → API key (image credits)
- * Pollinations: https://enter.pollinations.ai (text only)
  */
 export const env = {
   /**
-   * Text provider: "gemini" | "pollinations" | "auto"
-   * auto = Gemini if key set, else Pollinations; on Gemini fail → Pollinations.
+   * @deprecated Pollinations removed (2026-09). Text is always Gemini (multi-key rotation).
    */
   TEXT_PROVIDER: (process.env.TEXT_PROVIDER || "auto").toLowerCase(),
   /** Google AI Studio / Gemini API key (Free Tier) — text + image key #1. */
@@ -97,47 +95,8 @@ export const env = {
   REQUIRE_BRAND_FACE: !["0", "false", "no", "off"].includes(
     (process.env.REQUIRE_BRAND_FACE || "true").toLowerCase().trim(),
   ),
-  /** Secret key sk_… from enter.pollinations.ai (text + image). */
-  POLLINATIONS_API_KEY: process.env.POLLINATIONS_API_KEY || "",
-  /**
-   * API host (text chat + /image/{prompt}).
-   */
-  POLLINATIONS_BASE_URL: (
-    process.env.POLLINATIONS_BASE_URL || "https://gen.pollinations.ai"
-  ).replace(/\/$/, ""),
-  /** Free text model (fallback). */
-  POLLINATIONS_TEXT_MODEL: process.env.POLLINATIONS_TEXT_MODEL || "openai-fast",
-  /**
-   * Pollinations image model after Nano Banana fails.
-   * Official name: gpt-image-2 (also: gptimage, flux, … see /image/models).
-   */
-  POLLINATIONS_IMAGE_MODEL: (() => {
-    const raw = (
-      process.env.POLLINATIONS_IMAGE_MODEL ||
-      process.env.IMAGE_MODEL ||
-      "gpt-image-2"
-    ).trim();
-    // Legacy value when Pollinations images were turned off
-    if (!raw || raw === "disabled") return "gpt-image-2";
-    return raw;
-  })(),
-  /**
-   * Pollinations model when face.jpg is available (image-to-image / identity).
-   * Models that accept `image=` ref: kontext, gptimage, nanobanana, seedream5, …
-   * Default: kontext (documented img2img). Override if your key tier differs.
-   */
-  POLLINATIONS_FACE_MODEL: (
-    process.env.POLLINATIONS_FACE_MODEL || "kontext"
-  ).trim(),
-  /**
-   * Soft daily Pollinations image gens (UTC). 0 = unlimited soft cap.
-   */
-  DAILY_POLLINATIONS_IMAGE_LIMIT: Math.max(
-    0,
-    parseInt(process.env.DAILY_POLLINATIONS_IMAGE_LIMIT || "8", 10) || 8,
-  ),
-  /** Image waterfall: nanobanana → skywork. */
-  IMAGE_PROVIDER: (process.env.IMAGE_PROVIDER || "waterfall") as string,
+  // Pollinations entries removed (2026-09): text=Gemini (multi-key),
+  // image=Nano Banana → Skywork. See src/lib/geminiText.ts + imagePipeline.ts.
   // ── Cloudflare Workers AI image — DEPRECATED: removed from image pipeline ──
   // These vars are retained for backwards compatibility but are no longer used.
   /** @deprecated Cloudflare image removed from pipeline (2024). */
@@ -156,11 +115,6 @@ export const env = {
   CLOUDFLARE_IMAGE_MODEL:
     process.env.CLOUDFLARE_IMAGE_MODEL ||
     "@cf/black-forest-labs/flux-2-dev",
-  /** Alias for POLLINATIONS_IMAGE_MODEL (legacy env name). */
-  IMAGE_MODEL:
-    process.env.IMAGE_MODEL ||
-    process.env.POLLINATIONS_IMAGE_MODEL ||
-    "gpt-image-2",
   /**
    * Image quality profile:
    * - balanced (default): 1024×1024, steps 15 → ~2–3 free images/day per account
@@ -206,11 +160,6 @@ export const env = {
     0,
     parseInt(process.env.DAILY_HORDE_LIMIT || "4", 10) || 4,
   ),
-  /** Soft daily cap for free Pollinations AI app tier (~1.5M req/day). */
-  POLLINATIONS_DAILY_REQUEST_LIMIT: parseInt(
-    process.env.POLLINATIONS_DAILY_REQUEST_LIMIT || "1500000",
-    10,
-  ) || 1_500_000,
   /**
    * Temporary public image lifetime on Litterbox (hours): 1 | 12 | 24 | 72.
    * Remote file auto-deletes after this window. Local file is deleted after publish.

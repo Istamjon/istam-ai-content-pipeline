@@ -1,5 +1,5 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
-import { pollinationsText } from "../../lib/pollinations.js";
+import { generateText } from "../../lib/geminiText.js";
 import { roles, buildAnalyzeUserPrompt } from "../prompts.js";
 import { markArticleSeen } from "../../db.js";
 import {
@@ -43,7 +43,7 @@ export async function analyze(
     }
 
     console.log(`[analyze] ${current.title.slice(0, 60)}... (local score=${local.score})`);
-    const result = await pollinationsText(
+    const result = await generateText(
       buildAnalyzeUserPrompt({
         title: current.title,
         rawText: current.rawText,
