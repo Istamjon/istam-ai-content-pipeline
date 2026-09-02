@@ -60,10 +60,57 @@ jobs:
             fi
             echo "=== Deploy dir: $APP_DIR ==="
             cd "$APP_DIR"
-            git fetch origin main
+
+            # GitHub HTTPS from some VDS ranges is intermittently broken
+            # ("could not read Username" + "expected flush after ref listing").
+            # Prefer the SSH deploy key when available; always retry, never prompt.
+            REPO_SSH="git@github.com:Istamjon/istam-ai-content-pipeline.git"
+            REPO_HTTPS="https://github.com/Istamjon/istam-ai-content-pipeline.git"
+
+            fetch_retry() {
+              for i in 1 2 3; do
+                if GIT_TERMINAL_PROMPT=0 git fetch "$1" main; then return 0; fi
+                echo "WARN: git fetch attempt $i failed ($1)"
+                sleep 8
+              done
+              return 1
+            }
+
+            ssh_auth_ok() {
+              out=$(ssh -o BatchMode=yes -o ConnectTimeout=10 \
+                     -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1 || true)
+              echo "$out" | grep -q "successfully authenticated"
+            }
+
+            CUR=$(git remote get-url origin)
+            echo "origin=$CUR"
+            fetch_ok=0
+            if ssh_auth_ok; then
+              case "$CUR" in
+                git@github.com:*|ssh://git@github.com/*) URL="$CUR" ;;
+                *) URL="$REPO_SSH" ;;
+              esac
+              if fetch_retry "$URL"; then
+                [ "$URL" = "$CUR" ] || git remote set-url origin "$URL"
+                fetch_ok=1
+              else
+                echo "WARN: SSH deploy-key fetch failed — falling back to HTTPS"
+              fi
+            fi
+            if [ "$fetch_ok" != "1" ]; then
+              if fetch_retry "$REPO_HTTPS"; then
+                [ "$CUR" = "$REPO_HTTPS" ] || git remote set-url origin "$REPO_HTTPS"
+                fetch_ok=1
+              fi
+            fi
+            if [ "$fetch_ok" != "1" ]; then
+              echo "::error::git fetch failed via SSH and HTTPS — aborting deploy"
+              exit 1
+            fi
+
             git checkout main
             git reset --hard origin/main
             echo "HEAD=$(git rev-parse --short HEAD)"
             chmod +x scripts/vds-deploy.sh
-            # Already at origin/main; script re-fetches for safety
+            # Already at origin/main; script re-fetches best-effort for safety
             bash scripts/vds-deploy.sh

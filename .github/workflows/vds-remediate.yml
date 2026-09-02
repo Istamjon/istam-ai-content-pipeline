@@ -47,7 +47,11 @@ jobs:
             echo "APP_DIR=$APP_DIR"
             test -n "$APP_DIR" && test -d "$APP_DIR"
             cd "$APP_DIR"
-            git fetch origin main
+            for i in 1 2 3; do
+              if GIT_TERMINAL_PROMPT=0 git fetch origin main; then break; fi
+              echo "WARN: git fetch attempt $i failed"
+              sleep 8
+            done
             git checkout main
             git reset --hard origin/main
             echo "HEAD=$(git rev-parse --short HEAD)"

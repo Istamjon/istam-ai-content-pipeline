@@ -5,7 +5,14 @@ set -euo pipefail
 echo "=== Deploy dir: $(pwd) ==="
 echo "=== git ==="
 git remote -v || true
-git fetch origin main
+# deploy.yml already reset the tree to origin/main; re-fetch is best-effort.
+# Unauthenticated GitHub HTTPS from some VDS ranges is flaky — retry but
+# never hard-fail here (an older checkout still builds a working image).
+for i in 1 2 3; do
+  if GIT_TERMINAL_PROMPT=0 git fetch origin main; then break; fi
+  echo "WARN: re-fetch attempt $i failed"
+  sleep 8
+done
 git checkout main
 git reset --hard origin/main
 echo "HEAD=$(git rev-parse --short HEAD)"
