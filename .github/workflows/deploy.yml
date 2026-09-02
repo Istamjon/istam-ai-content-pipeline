@@ -51,7 +51,10 @@ jobs:
           key: ${{ secrets.VDS_SSH_KEY }}
           port: ${{ secrets.VDS_PORT || 22 }}
           command_timeout: 30m
-          script_stop: true
+          # false: drone-ssh would otherwise inject an exit-code check line
+          # between EVERY script line, which breaks multi-line case blocks.
+          # The script already does `set -euo pipefail` for stop-on-error.
+          script_stop: false
           script: |
             set -euo pipefail
             APP_DIR="${{ secrets.VDS_PATH }}"
