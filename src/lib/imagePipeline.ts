@@ -98,9 +98,14 @@ export async function generateImageBuffer(
     console.warn("[imagePipeline] Skywork not configured → xKiro");
   }
 
-  // 3) xKiro (free SenseNova — text-only, no face ref)
-  if (!requireIdentity && isXkiroConfigured() && canUseXkiroToday().ok) {
+  // 3) xKiro (free SenseNova — fallback if identity providers fail or not required)
+  if (isXkiroConfigured() && canUseXkiroToday().ok) {
     try {
+      if (requireIdentity) {
+        console.warn(
+          "[imagePipeline] Identity providers (Nano Banana & Skywork) failed → falling back to xKiro (text-only)",
+        );
+      }
       const buffer = await xkiroImage(prompt);
       return { buffer, provider: "xkiro" };
     } catch (e) {
@@ -111,11 +116,6 @@ export async function generateImageBuffer(
         msg.slice(0, 200),
       );
     }
-  } else if (isXkiroConfigured() && requireIdentity) {
-    errors.push("xkiro: skipped (REQUIRE_BRAND_FACE — no face support)");
-    console.warn(
-      "[imagePipeline] xKiro skipped (REQUIRE_BRAND_FACE=true, xKiro has no face identity)",
-    );
   } else if (isXkiroConfigured()) {
     const b = canUseXkiroToday();
     errors.push(`xkiro: budget ${b.used}/${b.limit}`);
