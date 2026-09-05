@@ -2,9 +2,11 @@
  * Image generation waterfall:
  *   1) Nano Banana (Gemini native image — face ref supported)
  *   2) Skywork Image API (face ref → edit API)
+ *   3) xKiro Image API (free SenseNova model — no face support)
  *
- * Both providers support brand face identity (face.jpg multimodal / edit API).
- * If both fail/exhausted → publish is skipped (no text-only fallback to protect identity).
+ * Providers 1 & 2 support brand face identity.
+ * Provider 3 (xKiro) is text-only (no face ref) — used as last resort.
+ * If all fail/exhausted → publish is skipped.
  */
 import { env } from "../config/env.js";
 import {
@@ -19,11 +21,17 @@ import {
   canUseSkyworkToday,
   logSkyworkBudget,
 } from "./skyworkImage.js";
+import {
+  xkiroImage,
+  isXkiroConfigured,
+  canUseXkiroToday,
+  logXkiroBudget,
+} from "./xkiroImage.js";
 import { loadBrandFace, logBrandFace } from "./brandFace.js";
 
-export type ImageProviderUsed = "nanobanana" | "skywork";
+export type ImageProviderUsed = "nanobanana" | "skywork" | "xkiro";
 
-/** Providers that apply brand face (multimodal or image= ref). Both support identity. */
+/** Providers that apply brand face (multimodal or image= ref). */
 const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>(["nanobanana", "skywork"]);
 
 export async function generateImageBuffer(
@@ -76,7 +84,7 @@ export async function generateImageBuffer(
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`skywork: ${msg}`);
       console.warn(
-        "[imagePipeline] Skywork failed — both providers exhausted:",
+        "[imagePipeline] Skywork failed → xKiro:",
         msg.slice(0, 200),
       );
     }
@@ -84,21 +92,49 @@ export async function generateImageBuffer(
     const b = canUseSkyworkToday();
     errors.push(`skywork: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] Skywork daily budget ${b.used}/${b.limit} — both providers exhausted`,
+      `[imagePipeline] Skywork daily budget ${b.used}/${b.limit} → xKiro`,
     );
   } else {
+    console.warn("[imagePipeline] Skywork not configured → xKiro");
+  }
+
+  // 3) xKiro (free SenseNova — text-only, no face ref)
+  if (!requireIdentity && isXkiroConfigured() && canUseXkiroToday().ok) {
+    try {
+      const buffer = await xkiroImage(prompt);
+      return { buffer, provider: "xkiro" };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`xkiro: ${msg}`);
+      console.warn(
+        "[imagePipeline] xKiro failed — all providers exhausted:",
+        msg.slice(0, 200),
+      );
+    }
+  } else if (isXkiroConfigured() && requireIdentity) {
+    errors.push("xkiro: skipped (REQUIRE_BRAND_FACE — no face support)");
     console.warn(
-      "[imagePipeline] Skywork not configured (SKYWORK_API_KEY) — both providers unavailable",
+      "[imagePipeline] xKiro skipped (REQUIRE_BRAND_FACE=true, xKiro has no face identity)",
     );
+  } else if (isXkiroConfigured()) {
+    const b = canUseXkiroToday();
+    errors.push(`xkiro: budget ${b.used}/${b.limit}`);
+    console.warn(
+      `[imagePipeline] xKiro daily budget ${b.used}/${b.limit} — all providers exhausted`,
+    );
+  } else {
+    console.warn("[imagePipeline] xKiro not configured (XKIRO_API_KEY)");
   }
 
   const nb = isNanoBananaConfigured() ? canUseNanoBananaToday() : null;
   const sw = isSkyworkConfigured() ? canUseSkyworkToday() : null;
+  const xk = isXkiroConfigured() ? canUseXkiroToday() : null;
   throw new Error(
-    `Nano Banana + Skywork failed/exhausted${requireIdentity ? " (REQUIRE_BRAND_FACE=true)" : ""}.\n` +
-      `Budgets: nanobanana=${nb ? `${nb.used}/${nb.limit} rem=${nb.remaining} keys=${nb.keys}` : "off"} ` +
-      `skywork=${sw ? `${sw.used}/${sw.limit} rem=${sw.remaining} keys=${sw.keys}` : "off"}\n` +
-      `Fix: wait for UTC day reset / top up Gemini·Skywork keys.\n` +
+    `All image providers failed/exhausted${requireIdentity ? " (REQUIRE_BRAND_FACE=true)" : ""}.\n` +
+      `Budgets: nanobanana=${nb ? `${nb.used}/${nb.limit} rem=${nb.remaining}` : "off"} ` +
+      `skywork=${sw ? `${sw.used}/${sw.limit} rem=${sw.remaining}` : "off"} ` +
+      `xkiro=${xk ? `${xk.used}/${xk.limit} rem=${xk.remaining}` : "off"}\n` +
+      `Fix: wait for UTC day reset / top up keys.\n` +
       `- ${errors.join("\n- ")}`,
   );
 }
@@ -111,6 +147,7 @@ export function logAllImageBudgets(): void {
   );
   logNanoBananaBudgets();
   logSkyworkBudget();
+  logXkiroBudget();
 }
 
 /** Exposed for tests / docs. */
@@ -119,3 +156,5 @@ export function providerSupportsFaceIdentity(
 ): boolean {
   return IDENTITY_PROVIDERS.has(provider);
 }
+
+

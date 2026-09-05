@@ -88,6 +88,34 @@ export const env = {
   /** Optional source_platform field for Skywork gateway */
   SKYWORK_SOURCE_PLATFORM: process.env.SKYWORK_SOURCE_PLATFORM || "",
   /**
+   * xKiro Image API (waterfall #3 after Skywork).
+   * Free model: sensenova/sensenova-u1.5-lite (no wallet needed).
+   * Paid model: gpt-image (requires deposited balance).
+   * Async job API: POST /v1/images/generations → GET /v1/images/generations/{id}
+   * Keys: https://xkiro.com/dashboard/api/keys
+   * @see https://docs.xkiro.com/api/images/
+   */
+  XKIRO_API_KEY: process.env.XKIRO_API_KEY || "",
+  XKIRO_API_KEY_2: process.env.XKIRO_API_KEY_2 || "",
+  XKIRO_API_KEY_3: process.env.XKIRO_API_KEY_3 || "",
+  /**
+   * Image model to use. Default: sensenova/sensenova-u1.5-lite (free tier).
+   * Alternative: gpt-image (paid, requires wallet balance).
+   */
+  XKIRO_IMAGE_MODEL:
+    process.env.XKIRO_IMAGE_MODEL || "sensenova/sensenova-u1.5-lite",
+  /**
+   * Image size: 256x256 | 512x512 | 1024x1024 | 1024x1792 | 1792x1024
+   */
+  XKIRO_IMAGE_SIZE: process.env.XKIRO_IMAGE_SIZE || "1024x1024",
+  /**
+   * Soft daily xKiro images PER KEY (UTC). 0 = unlimited.
+   */
+  DAILY_XKIRO_LIMIT: Math.max(
+    0,
+    parseInt(process.env.DAILY_XKIRO_LIMIT || "10", 10) || 10,
+  ),
+  /**
    * When brand face.jpg is present, only use identity-capable image providers
    * (Nano Banana, Skywork). Both providers in the waterfall support face identity.
    * Default true. Set REQUIRE_BRAND_FACE=false to allow text-only person fallback.

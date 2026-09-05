@@ -315,9 +315,16 @@ function isRotatableFailure(msg: string): boolean {
 }
 
 function isTransientFailure(msg: string): boolean {
-  return /timeout|ECONNRESET|ENOTFOUND|fetch failed|HTTP 5\d\d|network|aborted|UND_ERR|empty body|no file_url/i.test(
-    msg,
-  );
+  // Network / server errors (no key pause):
+  if (/timeout|ECONNRESET|ENOTFOUND|fetch failed|HTTP 5\d\d|network|aborted|UND_ERR|empty body|no file_url/i.test(msg)) {
+    return true;
+  }
+  // Skywork backend model failures (Gemini/Seedream unavailable) — server-side, not our key's fault.
+  // SERVICE_ERROR means Skywork's own backend is down; key should not be paused.
+  if (/SERVICE_ERROR|Gemini API did not return an image|Seedream.*failed|Authorization validation failed|get host proxy config is null/i.test(msg)) {
+    return true;
+  }
+  return false;
 }
 
 function orderUsableSlots(slots: SkyworkKeySlot[]): SkyworkKeySlot[] {
