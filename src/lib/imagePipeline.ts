@@ -32,7 +32,7 @@ import { loadBrandFace, logBrandFace } from "./brandFace.js";
 export type ImageProviderUsed = "nanobanana" | "skywork" | "xkiro";
 
 /** Providers that apply brand face (multimodal or image= ref). */
-const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>(["nanobanana", "skywork"]);
+const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>(["nanobanana", "skywork", "xkiro"]);
 
 export async function generateImageBuffer(
   prompt: string,
@@ -44,7 +44,7 @@ export async function generateImageBuffer(
   if (face) {
     console.log(
       `[imagePipeline] brand face ref: ${face.path} (${face.buffer.length} bytes` +
-        `${face.prepared ? ", prepared" : ""}) — identity: Nano Banana + Skywork`,
+        `${face.prepared ? ", prepared" : ""}) — identity: Nano Banana + Skywork + xKiro`,
     );
   } else {
     console.warn(
@@ -98,15 +98,10 @@ export async function generateImageBuffer(
     console.warn("[imagePipeline] Skywork not configured → xKiro");
   }
 
-  // 3) xKiro (free SenseNova — fallback if identity providers fail or not required)
+  // 3) xKiro (supports face via gpt-image edits, with text-to-image fallback)
   if (isXkiroConfigured() && canUseXkiroToday().ok) {
     try {
-      if (requireIdentity) {
-        console.warn(
-          "[imagePipeline] Identity providers (Nano Banana & Skywork) failed → falling back to xKiro (text-only)",
-        );
-      }
-      const buffer = await xkiroImage(prompt);
+      const buffer = await xkiroImage(prompt, { face });
       return { buffer, provider: "xkiro" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

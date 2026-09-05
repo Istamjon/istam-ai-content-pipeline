@@ -229,6 +229,45 @@ async function createJob(
   return job.id;
 }
 
+/** Create async image edit job (with reference image / brand face) → returns job ID. */
+async function createEditJob(
+  slot: XkiroKeySlot,
+  imageBuffer: Buffer,
+  prompt: string,
+  mimeType: string = "image/jpeg",
+  size: string = "1024x1024",
+): Promise<string> {
+  const form = new FormData();
+  form.append(
+    "image",
+    new Blob([new Uint8Array(imageBuffer)], { type: mimeType }),
+    "face.jpg",
+  );
+  form.append("prompt", prompt);
+  form.append("model", "gpt-image");
+  form.append("size", size);
+
+  const res = await fetch(`${XKIRO_BASE}/images/edits`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${slot.apiKey}`,
+    },
+    body: form,
+    signal: AbortSignal.timeout(45_000),
+  });
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}: ${t.slice(0, 400)}`);
+  }
+
+  const job = (await res.json()) as { id?: string };
+  if (!job.id) {
+    throw new Error(`No job ID: ${JSON.stringify(job).slice(0, 200)}`);
+  }
+  return job.id;
+}
+
 /** Poll GET /v1/images/generations/{id} until succeeded/failed. Max ~3 min. */
 async function pollJob(
   slot: XkiroKeySlot,
@@ -282,17 +321,19 @@ async function downloadBuffer(url: string): Promise<Buffer> {
   return Buffer.from(ab);
 }
 
+export type XkiroImageOptions = {
+  face?: { buffer: Buffer; mimeType?: string; path?: string } | null;
+};
+
 /**
  * Generate image with xKiro — multi-MODEL + multi-KEY waterfall.
- *
- * Outer loop: models (sensenova → sensenova-lite → minimax → qwen).
- * Inner loop: API keys.
- *
- * On key quota/auth error  → pause key, try next key (same model).
- * On model not-found/unsupported → pause model, break to next model.
- * On transient/unknown error → try next key, then next model.
+ * If face option provided: attempts gpt-image /images/edits first.
+ * Then falls back to text-to-image models (sensenova → minimax → qwen).
  */
-export async function xkiroImage(prompt: string): Promise<Buffer> {
+export async function xkiroImage(
+  prompt: string,
+  options?: XkiroImageOptions,
+): Promise<Buffer> {
   const allSlots = getXkiroKeySlots();
   if (allSlots.length === 0) throw new Error("No xKiro keys (set XKIRO_API_KEY)");
 
@@ -318,12 +359,49 @@ export async function xkiroImage(prompt: string): Promise<Buffer> {
 
   console.log(
     `[xkiro] day=${utcToday()} models=[${usableModels.map((m) => m.split("/").pop()).join("→")}] ` +
-      `keys=${usableSlots.length}/${allSlots.length} budget=${budget.used}/${budget.limit || "∞"}`,
+      `keys=${usableSlots.length}/${allSlots.length} budget=${budget.used}/${budget.limit || "∞"}` +
+      (options?.face?.buffer ? " (with face ref)" : ""),
   );
 
   if (usableSlots.length === 0) {
     throw new Error(`xKiro: all keys exhausted (${budget.used}/${budget.limit || "∞"})`);
   }
+
+  // 1) If face reference provided, attempt image edit with gpt-image
+  if (options?.face?.buffer) {
+    console.log(`[xkiro] attempting brand face image edit (model=gpt-image)...`);
+    for (const slot of usableSlots) {
+      if (isKeyExhausted(slot.apiKey)) continue;
+      console.log(`[xkiro] → edit model=gpt-image key=${slot.label}`);
+      try {
+        const jobId = await createEditJob(
+          slot,
+          options.face.buffer,
+          safePrompt,
+          options.face.mimeType || "image/jpeg",
+          size,
+        );
+        console.log(`[xkiro] edit job=${jobId}`);
+        const imageUrl = await pollJob(slot, jobId, "gpt-image");
+        const buffer = await downloadBuffer(imageUrl);
+        const used = incrementProviderImageUsage(slot.providerKey, 1);
+        console.log(
+          `[xkiro] ✅ edit model=gpt-image key=${slot.label} bytes=${buffer.length} daily=${used}/${perKey || "∞"}`,
+        );
+        return buffer;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.warn(`[xkiro] ✗ edit ${slot.label}/gpt-image: ${msg.slice(0, 180)}`);
+        if (isRotatableKeyFailure(msg)) {
+          markKeyExhausted(slot, msg);
+        }
+      }
+    }
+    console.warn(
+      `[xkiro] brand face edit failed across keys → falling back to text-to-image models`,
+    );
+  }
+
   if (usableModels.length === 0) {
     throw new Error("xKiro: all models temporarily paused");
   }
