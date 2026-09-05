@@ -11,7 +11,12 @@ const r = db
   .prepare(
     `DELETE FROM image_provider_usage
      WHERE date = ?
-       AND provider IN ('nanobanana','nanobanana2','nanobanana3','skywork','skywork2','skywork3','skywork4','skywork5')`,
+       AND provider IN (
+         'nanobanana','nanobanana2','nanobanana3',
+         'skywork','skywork2','skywork3','skywork4','skywork5',
+         'xkiro','xkiro2','xkiro3','xkiro4',
+         'gemini','gemini2','gemini3'
+       )`,
   )
   .run(today);
 const r2 = db.prepare("DELETE FROM image_daily_usage WHERE date = ?").run(today);
