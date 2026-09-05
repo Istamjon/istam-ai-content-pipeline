@@ -34,12 +34,18 @@ export type ImageProviderUsed = "nanobanana" | "skywork" | "xkiro";
 /** Providers that apply brand face (multimodal or image= ref). */
 const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>(["nanobanana", "skywork", "xkiro"]);
 
+export type GenerateImageBufferOptions = {
+  schematicPrompt?: string;
+};
+
 export async function generateImageBuffer(
   prompt: string,
+  options?: GenerateImageBufferOptions,
 ): Promise<{ buffer: Buffer; provider: ImageProviderUsed }> {
   const errors: string[] = [];
   const face = await loadBrandFace();
   const requireIdentity = Boolean(face) && env.REQUIRE_BRAND_FACE;
+  const schematicPrompt = options?.schematicPrompt;
 
   if (face) {
     console.log(
@@ -48,14 +54,17 @@ export async function generateImageBuffer(
     );
   } else {
     console.warn(
-      "[imagePipeline] no brand face — text-only person (set data/brand/face.jpg)",
+      "[imagePipeline] no brand face configured — falling back to humanless schematic diagrams (odamsiz sxemalar)",
     );
   }
+
+  // When no face is available, strictly use the humanless schematic prompt
+  const effectivePrompt = face ? prompt : (schematicPrompt || prompt);
 
   // 1) Nano Banana (Gemini native image + optional face)
   if (isNanoBananaConfigured() && canUseNanoBananaToday().ok) {
     try {
-      const buffer = await nanoBananaImage(prompt, { face });
+      const buffer = await nanoBananaImage(effectivePrompt, { face });
       return { buffer, provider: "nanobanana" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -78,7 +87,7 @@ export async function generateImageBuffer(
   // 2) Skywork
   if (isSkyworkConfigured() && canUseSkyworkToday().ok) {
     try {
-      const buffer = await skyworkImage(prompt, { face });
+      const buffer = await skyworkImage(effectivePrompt, { face });
       return { buffer, provider: "skywork" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -98,10 +107,10 @@ export async function generateImageBuffer(
     console.warn("[imagePipeline] Skywork not configured → xKiro");
   }
 
-  // 3) xKiro (supports face via gpt-image edits, with text-to-image fallback)
+  // 3) xKiro (supports face via gpt-image edits; falls back to schematic diagrams if face fails)
   if (isXkiroConfigured() && canUseXkiroToday().ok) {
     try {
-      const buffer = await xkiroImage(prompt, { face });
+      const buffer = await xkiroImage(prompt, { face, schematicPrompt });
       return { buffer, provider: "xkiro" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

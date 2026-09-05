@@ -18,6 +18,7 @@ export interface Article {
   translated?: string;
   rewritten?: string;
   imagePrompt?: string;
+  schematicPrompt?: string;
   imagePath?: string;
 }
 

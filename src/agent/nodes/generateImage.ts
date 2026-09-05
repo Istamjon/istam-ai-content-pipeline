@@ -43,7 +43,9 @@ export async function generateImage(
     }
     logAllImageBudgets();
 
-    const { buffer, provider } = await generateImageBuffer(current.imagePrompt);
+    const { buffer, provider } = await generateImageBuffer(current.imagePrompt, {
+      schematicPrompt: current.schematicPrompt,
+    });
     // Both Nano Banana and Skywork return PNG buffers.
     const ext = "png";
     const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;

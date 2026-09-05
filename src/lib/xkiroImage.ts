@@ -323,12 +323,31 @@ async function downloadBuffer(url: string): Promise<Buffer> {
 
 export type XkiroImageOptions = {
   face?: { buffer: Buffer; mimeType?: string; path?: string } | null;
+  schematicPrompt?: string;
 };
 
 /**
+ * Concise, high-impact edit prompt specifically designed for gpt-image edits.
+ * Directs the model to preserve exact facial identity and facial structure from face.jpg.
+ */
+function buildFaceEditPrompt(prompt: string): string {
+  const match = prompt.match(/"([^"]+)"/);
+  const heading = match ? match[1] : "AI Engineering";
+  return (
+    `Preserve the exact facial features, facial structure, skin tone, hair, and likeness of the person in this photo. ` +
+    `Create a stunning, photorealistic executive portrait of this exact person (waist-up) in a high-tech modern AI laboratory and engineering office. ` +
+    `The person is wearing sharp dark professional clothing with subtle teal (#036158) accents. ` +
+    `Beside them, radiant holographic architecture diagrams and glowing cyan network pipelines float in the 3D space. ` +
+    `On-image title: "${heading}". ` +
+    `Cinematic volumetric lighting, 8k resolution, photorealistic, ultra-sharp detail, high-end editorial keynote quality.`
+  );
+}
+
+/**
  * Generate image with xKiro — multi-MODEL + multi-KEY waterfall.
- * If face option provided: attempts gpt-image /images/edits first.
- * Then falls back to text-to-image models (sensenova → minimax → qwen).
+ * If face option provided: attempts gpt-image /images/edits first with face.jpg.
+ * If face is absent or face edit fails: falls back to text-to-image with
+ * SCHEMATIC PROMPT (strictly no humans / pure tech architecture diagrams).
  */
 export async function xkiroImage(
   prompt: string,
@@ -360,7 +379,7 @@ export async function xkiroImage(
   console.log(
     `[xkiro] day=${utcToday()} models=[${usableModels.map((m) => m.split("/").pop()).join("→")}] ` +
       `keys=${usableSlots.length}/${allSlots.length} budget=${budget.used}/${budget.limit || "∞"}` +
-      (options?.face?.buffer ? " (with face ref)" : ""),
+      (options?.face?.buffer ? " (with face ref)" : " (schematic mode)"),
   );
 
   if (usableSlots.length === 0) {
@@ -370,6 +389,7 @@ export async function xkiroImage(
   // 1) If face reference provided, attempt image edit with gpt-image
   if (options?.face?.buffer) {
     console.log(`[xkiro] attempting brand face image edit (model=gpt-image)...`);
+    const editPrompt = buildFaceEditPrompt(safePrompt);
     for (const slot of usableSlots) {
       if (isKeyExhausted(slot.apiKey)) continue;
       console.log(`[xkiro] → edit model=gpt-image key=${slot.label}`);
@@ -377,7 +397,7 @@ export async function xkiroImage(
         const jobId = await createEditJob(
           slot,
           options.face.buffer,
-          safePrompt,
+          editPrompt,
           options.face.mimeType || "image/jpeg",
           size,
         );
@@ -398,13 +418,20 @@ export async function xkiroImage(
       }
     }
     console.warn(
-      `[xkiro] brand face edit failed across keys → falling back to text-to-image models`,
+      `[xkiro] brand face edit failed across keys → falling back to humanless schematic diagram`,
     );
   }
 
   if (usableModels.length === 0) {
     throw new Error("xKiro: all models temporarily paused");
   }
+
+  // 2) Fallback to text-to-image models (sensenova, minimax, qwen)
+  // When face cannot be identified or used: strictly generate human-less schematics/diagrams
+  const fallbackPrompt = (options?.schematicPrompt || safePrompt).trim().slice(0, 4000);
+  console.log(
+    `[xkiro] text-to-image prompt mode: ${options?.schematicPrompt ? "odamsiz sxema (no humans)" : "default"}`,
+  );
 
   let lastErr: unknown;
 
@@ -417,7 +444,7 @@ export async function xkiroImage(
 
       console.log(`[xkiro] → model=${modelShort} key=${slot.label}`);
       try {
-        const jobId = await createJob(slot, model, safePrompt, size);
+        const jobId = await createJob(slot, model, fallbackPrompt, size);
         console.log(`[xkiro] job=${jobId}`);
 
         const imageUrl = await pollJob(slot, jobId, modelShort);

@@ -848,3 +848,63 @@ export function buildPremiumImagePrompt(
   }
   return { prompt: full, preset, composition, pose, heading };
 }
+
+/**
+ * Build human-less technical schematic / diagram cover prompt.
+ * Used when face identity is unavailable or when face cannot be identified.
+ * STRICTLY NO PEOPLE / NO FACES — pure architecture flowchart, cybernetic schematics,
+ * system node graph, holographic data pipeline.
+ */
+export function buildSchematicImagePrompt(
+  topicTitle: string,
+  topicHint?: string,
+  options?: {
+    preset?: ImageVisualPreset | string;
+    composition?: ImageCompositionHook | string;
+    heading?: string;
+    rewritten?: string;
+  },
+): {
+  prompt: string;
+  preset: ImageVisualPreset;
+  composition: ImageCompositionHook;
+  heading: string;
+} {
+  const concepts = topicToVisualConcepts(topicTitle, topicHint);
+  const heading = pickCoverHeading({
+    title: topicTitle,
+    rewritten: options?.rewritten,
+    heading: options?.heading,
+    maxLen: COVER_HEADING_MAX_LEN,
+  });
+  const seed = topicTitle + "|schematic|" + concepts;
+  const preset = pickImagePreset(seed, options?.preset);
+  const composition = pickCompositionHook(seed, preset, options?.composition);
+  const p = PRESETS[preset];
+
+  const lead = [
+    `[STRICTLY NO HUMANS / NO FACES / NO PEOPLE / NO BODIES / NO CHARACTERS / NO AVATARS].`,
+    `Pure technical architecture blueprint and system schematic diagram.`,
+    `Scroll-stopping ultra-premium FULL-BLEED 1:1 social media cover for AI Engineering. The canvas itself is the cover.`,
+    `[FULL-BLEED CANVAS] Edge-to-edge 1:1 square scene directly on dark canvas. NOT a photo of a poster. NOT a framed photo. NOT a mockup.`,
+    `[TITLE TEXT] ONE line only. Spell exactly: "${heading}". Ultra-massive glowing cyan/white tech font, high contrast against pitch black.`,
+    `[NO LOGO] No IO/IstamAI monogram, badge, watermark, or logo.`,
+    `[SCHEMATIC SYSTEM DESIGN]: High-tech futuristic engineering flowchart, intricate node-graph network topology, glowing data-bus pipelines, cybernetic architecture blueprint. ${p.centerIdea}. Topic DNA: ${concepts}.`,
+    `[COMPOSITION]: Centered holographic diagram structure, glowing isometric layers, radiant neon circuit connections, fiber-optic light pulses.`,
+    `[STYLE/COLORS]: Deep pitch-black background #0A0A0A, brand teal #036158 and bright electric cyan #5EEAD4 glowing vectors, subtle amber #F59E0B status nodes. Ultra-clean vector precision, crisp 8k technical diagram.`,
+  ].join(" ");
+
+  const extended = [
+    ``,
+    `Technical diagram details:`,
+    `- Centerpiece: Colossal, highly detailed cybernetic architecture diagram representing ${concepts}.`,
+    `- Flow: Visual logic showing inputs, transforms, AI agent orchestrators, and output streams with luminous directional arrows and data packets.`,
+    `- Zero human figures, zero human silhouettes, zero human faces or hands anywhere in the scene.`,
+    `- Single on-image power title: "${heading}".`,
+    `- Hard avoid: humans, faces, characters, avatars, blur, framing cards, device mockups, messy text.`,
+  ].join("\n");
+
+  const prompt = (lead + "\n" + extended).trim().slice(0, 2500);
+  return { prompt, preset, composition, heading };
+}
+

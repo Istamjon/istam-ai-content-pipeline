@@ -1,6 +1,7 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
 import {
   buildPremiumImagePrompt,
+  buildSchematicImagePrompt,
   type ImageVisualPreset,
   type ImageCompositionHook,
 } from "../../config/imagePrompt.js";
@@ -9,8 +10,8 @@ import { isBrandFaceConfigured } from "../../lib/brandFace.js";
 /**
  * Builds premium scroll-stopping social-cover image prompt.
  * Person (face identity + rotated pose) + Uzbek HEADING + topic tech visual.
- * No IO logo. Heading prefers rewritten Uzbek hook, not English RSS title.
- * Env: IMAGE_PRESET=…  IMAGE_COMPOSITION=…  IMAGE_POSE=…
+ * Also builds a schematicPrompt (strictly no humans / pure tech architecture)
+ * for fallback when face identity is unavailable or cannot be identified.
  */
 export async function generateImagePrompt(
   state: typeof StateAnnotation.State,
@@ -54,12 +55,23 @@ export async function generateImagePrompt(
       faceRef,
     });
 
+    const { prompt: schematicPrompt } = buildSchematicImagePrompt(
+      current.title,
+      topicHint,
+      {
+        preset: forcePreset,
+        composition: forceComposition,
+        heading,
+        rewritten: current.rewritten,
+      },
+    );
+
     console.log(
       `[generateImagePrompt] preset=${preset} composition=${composition} pose=${pose} faceRef=${faceRef} heading="${heading.slice(0, 48)}" len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
     );
 
     return {
-      current: { ...current, imagePrompt },
+      current: { ...current, imagePrompt, schematicPrompt },
     };
   } catch (error) {
     return {
