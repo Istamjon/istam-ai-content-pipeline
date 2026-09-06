@@ -47,7 +47,7 @@ async function logAiConfig(): Promise<void> {
       `daily=${usage.used}/${usage.limit || "∞"} remaining=${usage.remaining}`,
   );
   console.log(
-    `[AI] IMAGE waterfall: Nano Banana → Skywork` +
+    `[AI] IMAGE waterfall: UnoRouter (${env.UNOROUTER_IMAGE_MODEL}) → Nano Banana → Skywork → xKiro` +
       ` | skywork=${
         [
           env.SKYWORK_API_KEY,
