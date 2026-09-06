@@ -7,10 +7,11 @@ import {
   type ImageCompositionHook,
 } from "../../config/imagePrompt.js";
 import { isBrandFaceConfigured } from "../../lib/brandFace.js";
+import { generateCatchyCoverHeading } from "../../lib/coverHeading.js";
 
 /**
  * Builds premium scroll-stopping social-cover image prompt.
- * Person (face identity + rotated pose) + Uzbek HEADING + topic tech visual.
+ * Person (face identity + rotated pose) + Catchy Uzbek HEADING + topic tech visual.
  * Also builds a schematicPrompt and dedicated workflowPrompt (strictly no humans /
  * pure tech architecture workflow diagrams) for xKiro and humanless fallbacks.
  */
@@ -42,6 +43,13 @@ export async function generateImagePrompt(
     const forcePose = process.env.IMAGE_POSE;
     const faceRef = isBrandFaceConfigured();
 
+    // AI-generated catchy cover heading ("cover darajasida")
+    const catchyHeading = await generateCatchyCoverHeading({
+      title: current.title,
+      summary: topicHint,
+      rewritten: current.rewritten,
+    });
+
     const {
       prompt: imagePrompt,
       preset,
@@ -52,6 +60,7 @@ export async function generateImagePrompt(
       preset: forcePreset,
       composition: forceComposition,
       pose: forcePose,
+      heading: catchyHeading,
       rewritten: current.rewritten,
       faceRef,
     });

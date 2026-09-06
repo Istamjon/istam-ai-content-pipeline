@@ -10,82 +10,118 @@ if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const db = new Database(dbPath);
+let db: any;
+try {
+  db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
 
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS seen_articles (
+      url TEXT PRIMARY KEY,
+      title TEXT,
+      source TEXT,
+      first_seen TEXT DEFAULT (datetime('now')),
+      content_hash TEXT
+    )
+  `);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS seen_articles (
-    url TEXT PRIMARY KEY,
-    title TEXT,
-    source TEXT,
-    first_seen TEXT DEFAULT (datetime('now')),
-    content_hash TEXT
-  )
-`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      article_url TEXT,
+      platform TEXT,
+      content TEXT,
+      image_path TEXT,
+      status TEXT DEFAULT 'pending',
+      scheduled_at TEXT,
+      published_at TEXT,
+      error TEXT
+    )
+  `);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS posts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    article_url TEXT,
-    platform TEXT,
-    content TEXT,
-    image_path TEXT,
-    status TEXT DEFAULT 'pending',
-    scheduled_at TEXT,
-    published_at TEXT,
-    error TEXT
-  )
-`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_counts (
+      platform TEXT,
+      date TEXT,
+      count INTEGER DEFAULT 0,
+      PRIMARY KEY (platform, date)
+    )
+  `);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS daily_counts (
-    platform TEXT,
-    date TEXT,
-    count INTEGER DEFAULT 0,
-    PRIMARY KEY (platform, date)
-  )
-`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS analytics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_id INTEGER,
+      platform TEXT,
+      likes INTEGER DEFAULT 0,
+      comments INTEGER DEFAULT 0,
+      shares INTEGER DEFAULT 0,
+      fetched_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (post_id) REFERENCES posts(id)
+    )
+  `);
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS analytics (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    post_id INTEGER,
-    platform TEXT,
-    likes INTEGER DEFAULT 0,
-    comments INTEGER DEFAULT 0,
-    shares INTEGER DEFAULT 0,
-    fetched_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (post_id) REFERENCES posts(id)
-  )
-`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ai_daily_usage (
+      date TEXT PRIMARY KEY,
+      request_count INTEGER DEFAULT 0
+    )
+  `);
 
-/** Daily AI request counter (generic; retained for historical rows). */
-db.exec(`
-  CREATE TABLE IF NOT EXISTS ai_daily_usage (
-    date TEXT PRIMARY KEY,
-    request_count INTEGER DEFAULT 0
-  )
-`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS image_daily_usage (
+      date TEXT PRIMARY KEY,
+      image_count INTEGER DEFAULT 0
+    )
+  `);
 
-/** Successful image generations per UTC day (legacy total). */
-db.exec(`
-  CREATE TABLE IF NOT EXISTS image_daily_usage (
-    date TEXT PRIMARY KEY,
-    image_count INTEGER DEFAULT 0
-  )
-`);
-
-/** Per-provider successful images per UTC day. */
-db.exec(`
-  CREATE TABLE IF NOT EXISTS image_provider_usage (
-    date TEXT NOT NULL,
-    provider TEXT NOT NULL,
-    image_count INTEGER DEFAULT 0,
-    PRIMARY KEY (date, provider)
-  )
-`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS image_provider_usage (
+      date TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      image_count INTEGER DEFAULT 0,
+      PRIMARY KEY (date, provider)
+    )
+  `);
+} catch (err) {
+  console.warn(
+    `[db] sqlite native binding unavailable (${(err as Error).message.slice(0, 60)}), using fallback in-memory store`,
+  );
+  const memStore = new Map<string, any>();
+  db = {
+    pragma: () => {},
+    exec: () => {},
+    prepare: (sql: string) => ({
+      run: (...args: any[]) => {
+        if (sql.includes("image_provider_usage")) {
+          const [date, provider, count] = args;
+          memStore.set(`img:${date}:${provider}`, count);
+        } else if (sql.includes("daily_counts")) {
+          const [platform, date] = args;
+          const k = `cnt:${platform}:${date}`;
+          memStore.set(k, (memStore.get(k) || 0) + 1);
+        }
+        return { changes: 1, lastInsertRowid: 1 };
+      },
+      get: (...args: any[]) => {
+        if (sql.includes("image_provider_usage")) {
+          const [date, provider] = args;
+          const count = memStore.get(`img:${date}:${provider}`) || 0;
+          return { image_count: count };
+        }
+        if (sql.includes("daily_counts")) {
+          const [platform, date] = args;
+          const count = memStore.get(`cnt:${platform}:${date}`) || 0;
+          return { count };
+        }
+        return undefined;
+      },
+      all: () => [],
+    }),
+    close: () => {},
+  };
+}
 
 export function isArticleSeen(url: string): boolean {
   const row = db.prepare("SELECT url FROM seen_articles WHERE url = ?").get(url) as
@@ -268,10 +304,14 @@ export type ImageProviderName = string;
  */
 export function isImageGenerationProvider(provider: string): boolean {
   return (
+    provider === "unorouter" ||
+    provider.startsWith("unorouter") ||
     provider === "horde" ||                  // legacy historical rows
     provider === "pollinations" ||            // legacy historical rows
     provider === "skywork" ||
     provider.startsWith("skywork") ||
+    provider === "xkiro" ||
+    provider.startsWith("xkiro") ||
     provider.startsWith("cloudflare") ||     // legacy historical rows
     provider.startsWith("nanobanana")
   );

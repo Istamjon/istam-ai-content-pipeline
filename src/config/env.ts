@@ -43,6 +43,25 @@ export const env = {
     parseInt(process.env.DAILY_GEMINI_LIMIT || "80", 10) || 80,
   ),
   /**
+   * UnoRouter Image API (waterfall #1 - primary image generator).
+   * Primary model: gpt-image-2:free
+   * Fallback models: gpt-image-2, glm-image-1:free, sensenova-6.8-flash-lite:free, cogview-4-250304:free
+   * Endpoint: https://api.unorouter.com/v1
+   */
+  UNOROUTER_API_KEY: process.env.UNOROUTER_API_KEY || "",
+  UNOROUTER_BASE_URL: (
+    process.env.UNOROUTER_BASE_URL || "https://api.unorouter.com/v1"
+  ).replace(/\/$/, ""),
+  UNOROUTER_IMAGE_MODEL:
+    process.env.UNOROUTER_IMAGE_MODEL || "gpt-image-2:free",
+  UNOROUTER_FALLBACK_MODELS:
+    process.env.UNOROUTER_FALLBACK_MODELS ||
+    "gpt-image-2,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free",
+  DAILY_UNOROUTER_LIMIT: Math.max(
+    0,
+    parseInt(process.env.DAILY_UNOROUTER_LIMIT || "15", 10) || 15,
+  ),
+  /**
    * Nano Banana = Gemini native image models (better on-image text).
    * Free tier quota is low/variable — multi-key rotation + CF/Horde fallback.
    * Models: gemini-2.5-flash-image | gemini-3.1-flash-image | gemini-3.1-flash-lite-image

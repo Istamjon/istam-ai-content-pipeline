@@ -63,6 +63,7 @@ Desktop.ini
 *.bak
 npm-debug.log*
 yarn-error.log*
+scratch/
 
 # Local OAuth TLS certs (never commit private keys)
 data/certs/
