@@ -709,7 +709,7 @@ function buildMustHaveBlocks(
 ): string[] {
   const poseSpec = POSES[pose];
   const personBlock = faceRef
-    ? `[MANDATORY PERSON — IDENTITY + NEW POSE]: MUST appear — one professional man, face prominently visible (minimum 25% of canvas area), waist-up. Use face.jpg as the ORIGINAL FACE REFERENCE (face identity only: structure, age, skin, hair, likeness). Do NOT copy face.jpg pose, hands, crop, clothes, or background. NEW POSE — ${poseSpec.label}: ${poseSpec.body}. Outfit: dark smart-casual with teal accent. Dramatic cinematic key light illuminating the face. Sharp, highly detailed editorial portrait.`
+    ? `[MANDATORY PERSON — IDENTITY + NEW POSE]: MUST appear — one professional Uzbek man in his mid-30s, face prominently visible (minimum 25% of canvas area), waist-up. EXACT LIKENESS TO face.jpg: completely clean-shaven face (strictly NO beard, NO goatee, NO mustache, smooth clean jawline and cheeks), short dark textured hair with neat faded sides, dark brown eyes. Do NOT copy face.jpg pose, hands, crop, clothes, or background. NEW POSE — ${poseSpec.label}: ${poseSpec.body}. Outfit: dark smart-casual with teal accent. Dramatic cinematic key light illuminating the face. Sharp, highly detailed editorial portrait.`
     : `[MANDATORY PERSON + POSE]: MUST appear — one professional adult (AI engineer vibe, sharp face, modern attire), prominently visible waist-up (minimum 25% of canvas). Integrated INTO the scene with the tech hologram — full-bleed editorial, NOT a flat cutout. Pose — ${poseSpec.label}: ${poseSpec.body}. Teal accent outfit, extreme dramatic cinematic lighting making the face pop against the dark background.`;
 
   return [
@@ -783,7 +783,7 @@ export function buildPremiumImagePrompt(
   // ── Lead (strongest requirements first; IDENTITY must be in first ~300 chars for Nano truncation safety) ──
   // faceRef block first so Nano Banana (Gemini) preserves identity even at short context limits.
   const faceLead = faceRef
-    ? `[IDENTITY] REFERENCE IMAGE: face.jpg = ORIGINAL FACE REFERENCE. Preserve exact facial identity (face only). New pose/scene — never clone face.jpg body pose or background.`
+    ? `[IDENTITY] REFERENCE IMAGE: face.jpg = ORIGINAL FACE REFERENCE. Preserve exact facial identity: clean-shaven Uzbek man in mid-30s, strictly NO BEARD, NO MUSTACHE, NO GOATEE, smooth chin and jawline, short dark faded hair. New pose/scene — never clone face.jpg body pose or background.`
     : "";
   const lead = [
     faceLead,
@@ -823,10 +823,10 @@ export function buildPremiumImagePrompt(
     `Text rule: the ONLY readable words on the image are exactly: "${heading}". Short = beautiful. No subtitle, no other labels, no language names, no logo text, no gibberish.`,
     ``,
     faceRef
-      ? `[IDENTITY vs POSE] Reference image face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE). High likeness from face.jpg. New pose (${poseSpec.label}); no cloning face.jpg stance/hands/crop/background. Nano Banana and Skywork both receive this reference.`
+      ? `[IDENTITY vs POSE] Reference image face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE). High likeness from face.jpg: clean-shaven, strictly NO facial hair, NO beard, NO goatee, NO mustache, smooth clean jawline. New pose (${poseSpec.label}); no cloning face.jpg stance/hands/crop/background. Nano Banana, Skywork, and UnoRouter receive this reference.`
       : `Person: photoreal professional AI creator vibe. ONE person only. Pose: ${poseSpec.label}.`,
     ``,
-    `Hard avoid: same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, painting the words Uzbek/Oʻzbek/Latin/English/Cyrillic, misspelled/gibberish text, any title not equal to the quoted heading, more than 5 agent nodes, duplicate node labels, missing person.`,
+    `Hard avoid: beard, facial hair, goatee, mustache, stubble beard, same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, painting the words Uzbek/Oʻzbek/Latin/English/Cyrillic, misspelled/gibberish text, any title not equal to the quoted heading, more than 5 agent nodes, duplicate node labels, missing person.`,
   ].join("\n");
 
   let full = (lead + "\n" + extended).trim();

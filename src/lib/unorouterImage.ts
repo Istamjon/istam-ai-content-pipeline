@@ -118,7 +118,8 @@ async function tryEditGeneration(
       new Blob([new Uint8Array(face.buffer)], { type: face.mimeType || "image/jpeg" }),
       "face.jpg",
     );
-    form.append("prompt", prompt);
+    const editPrompt = `Preserve exact face likeness from face.jpg: clean-shaven Uzbek man in his mid-30s, strictly NO beard, NO goatee, NO mustache, smooth clean cheeks and jawline, short dark faded hair. ${prompt}`;
+    form.append("prompt", editPrompt);
     form.append("model", model);
     form.append("size", "1024x1024");
 

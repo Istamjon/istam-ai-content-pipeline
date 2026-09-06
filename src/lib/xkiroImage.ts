@@ -336,6 +336,7 @@ function buildFaceEditPrompt(prompt: string): string {
   const heading = match ? match[1] : "AI Engineering";
   return (
     `Preserve the exact facial features, facial structure, skin tone, hair, and likeness of the person in this photo. ` +
+    `The person is an Uzbek male in his mid-30s, completely clean-shaven with strictly NO beard, NO mustache, NO goatee, and smooth clean jawline. ` +
     `Create a stunning, photorealistic executive portrait of this exact person (waist-up) in a high-tech modern AI laboratory and engineering office. ` +
     `The person is wearing sharp dark professional clothing with subtle teal (#036158) accents. ` +
     `Beside them, radiant holographic architecture diagrams and glowing cyan network pipelines float in the 3D space. ` +
