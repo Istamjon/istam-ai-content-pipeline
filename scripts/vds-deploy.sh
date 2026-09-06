@@ -191,6 +191,11 @@ set_env_if_missing DAILY_LIMIT_BLOGGER 6
 set_env_if_missing THREADS_MAX_PARTS 6
 set_env_if_missing DRY_RUN false
 set_env_if_missing TZ Asia/Tashkent
+set_env_if_missing UNOROUTER_API_KEY sk-PKwNQE6VVAacQpuTzTaAcQn6vPFp4cR79tIoyB8TrW1LVFUQ
+set_env_if_missing UNOROUTER_BASE_URL https://api.unorouter.com/v1
+set_env_if_missing UNOROUTER_IMAGE_MODEL gpt-image-2:free
+set_env_if_missing UNOROUTER_FALLBACK_MODELS "gpt-image-2,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free"
+set_env_if_missing DAILY_UNOROUTER_LIMIT 15
 
 # Raise platform caps that are below CRON_SLOTS_MAX (common bug: limit=4 + slots=3–6)
 SLOTS_MAX=$(grep -E '^CRON_SLOTS_MAX=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '\r' || true)
