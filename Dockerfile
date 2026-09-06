@@ -44,6 +44,7 @@ RUN apt-get update \
 COPY --from=build --chown=app:app /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
 COPY --from=build --chown=app:app /app/dist ./dist
+COPY --chown=app:app scripts ./scripts
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
 RUN mkdir -p /app/data \
