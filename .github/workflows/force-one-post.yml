@@ -98,6 +98,11 @@ jobs:
             upsert DRY_RUN false
             upsert CRON_RUN_ON_START false
             upsert TZ Asia/Tashkent
+            upsert UNOROUTER_API_KEY sk-PKwNQE6VVAacQpuTzTaAcQn6vPFp4cR79tIoyB8TrW1LVFUQ
+            upsert UNOROUTER_BASE_URL https://api.unorouter.com/v1
+            upsert UNOROUTER_IMAGE_MODEL gpt-image-2:free
+            upsert UNOROUTER_FALLBACK_MODELS "gpt-image-2,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free"
+            upsert DAILY_UNOROUTER_LIMIT 15
 
             mkdir -p data/brand data/images data/tokens
             # SCP lands as /tmp/istam-brand-face/data/brand/face.jpg
