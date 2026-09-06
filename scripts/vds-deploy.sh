@@ -27,6 +27,21 @@ if [ ! -f .env ]; then
   echo "WARN: .env missing — creating from .env.example (fill secrets later)"
   cp -n .env.example .env || cp .env.example .env
 fi
+set_env_if_missing() {
+  key="$1"; val="$2"
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    return 0
+  fi
+  printf '\n%s=%s\n' "$key" "$val" >> .env
+}
+
+# Ensure UnoRouter is provisioned before docker starts
+set_env_if_missing UNOROUTER_API_KEY sk-PKwNQE6VVAacQpuTzTaAcQn6vPFp4cR79tIoyB8TrW1LVFUQ
+set_env_if_missing UNOROUTER_BASE_URL https://api.unorouter.com/v1
+set_env_if_missing UNOROUTER_IMAGE_MODEL gpt-image-2:free
+set_env_if_missing UNOROUTER_FALLBACK_MODELS "gpt-image-2,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free"
+set_env_if_missing DAILY_UNOROUTER_LIMIT 15
+
 ls -la .env data 2>/dev/null || true
 mkdir -p data/tokens data/images data/brand
 # container runs as uid 10001

@@ -47,11 +47,14 @@ jobs:
             date
 
             echo "=== ENV (safe) ==="
-            grep -E '^(DRY_RUN|CRON_|ENABLED_PLATFORMS|DAILY_LIMIT_|THREADS_MAX|GOOGLE_CLIENT_ID|BLOGGER_|NANOBANANA|SKYWORK_API_KEY=)' .env 2>/dev/null \
+            grep -E '^(DRY_RUN|CRON_|ENABLED_PLATFORMS|DAILY_LIMIT_|THREADS_MAX|GOOGLE_CLIENT_ID|BLOGGER_|NANOBANANA|SKYWORK_API_KEY=|UNOROUTER)' .env 2>/dev/null \
               | sed -E 's/(SECRET|TOKEN|KEY)=.*/\1=***/' || true
 
             echo "=== FACE ==="
             ls -la data/brand/face.jpg 2>/dev/null || echo "face.jpg missing"
+
+            echo "=== LIVE IMAGE PIPELINE PROBE ==="
+            docker compose exec -T pipeline node -r dotenv/config -e "import('./dist/lib/imagePipeline.js').then(m => m.logAllImageBudgets())" 2>&1 || true
 
             echo "=== SCHEDULE ==="
             cat data/daily-schedule.json 2>/dev/null || echo "no schedule yet"
