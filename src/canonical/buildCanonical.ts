@@ -20,7 +20,7 @@ function contentHash(body: string): string {
  */
 export function buildAndSaveCanonical(
   article: Article,
-  meta?: { contentType?: string; summary?: string },
+  meta?: { contentType?: string; summary?: string; bodyEn?: string },
 ): CanonicalContent {
   const raw = (
     article.rewritten ||
@@ -33,17 +33,21 @@ export function buildAndSaveCanonical(
     throw new Error("Cannot build canonical: empty body");
   }
 
+  const rawEn = (meta?.bodyEn || article.rewrittenEn || "").trim();
+  const bodyEn = rawEn ? cleanPostBody(rawEn) : undefined;
+
   const now = new Date().toISOString();
   const hash = contentHash(body);
   const existing = loadCanonicalByUrl(article.url);
 
   let doc: CanonicalContent;
   if (existing && existing.contentHash === hash) {
-    // Same facts — only refresh image / title if needed
+    // Same facts — only refresh image / title / english body if needed
     doc = {
       ...existing,
       title: article.title || existing.title,
       body: existing.body !== body ? body : existing.body,
+      bodyEn: bodyEn || existing.bodyEn,
       imagePath: article.imagePath || existing.imagePath,
       imagePrompt: article.imagePrompt || existing.imagePrompt,
       summary: meta?.summary || existing.summary,
@@ -55,6 +59,7 @@ export function buildAndSaveCanonical(
       ...existing,
       title: article.title || existing.title,
       body,
+      bodyEn: bodyEn || existing.bodyEn,
       summary: meta?.summary || existing.summary,
       contentType: meta?.contentType || existing.contentType,
       imagePath: article.imagePath || existing.imagePath,
@@ -71,6 +76,7 @@ export function buildAndSaveCanonical(
       sourceUrl: article.url,
       title: article.title || "Untitled",
       body,
+      bodyEn,
       summary: meta?.summary,
       contentType: meta?.contentType,
       language: brand.outputLanguage || "Uzbek (Latin)",

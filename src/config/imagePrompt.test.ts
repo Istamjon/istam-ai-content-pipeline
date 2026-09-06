@@ -1,5 +1,6 @@
 import {
   buildPremiumImagePrompt,
+  buildWorkflowImagePrompt,
   pickImagePreset,
   pickCompositionHook,
   pickImagePose,
@@ -143,5 +144,25 @@ describe("imagePrompt", () => {
     expect(prompt).not.toMatch(/Cloudflare|\bHorde\b|AI Horde|Pollinations image/i);
     // Person must NOT be blocked
     expect(prompt).not.toMatch(/HARD NO: people|HARD NO: faces|NO: people, faces/i);
+  });
+
+  it("buildWorkflowImagePrompt: strictly workflow style, no humans, pure multi-agent architecture", () => {
+    const { prompt, preset, heading } = buildWorkflowImagePrompt(
+      "StateGraph Orchestration for Multi-Agent Systems",
+      "cyclic workflow state transitions and decision routers",
+      {
+        heading: "Multi Agent Workflow",
+        rewritten: "Ishlab chiqarishda ko'p agentli ish oqimlari.",
+      },
+    );
+    expect(preset).toBe("workflow");
+    expect(heading).toBe("Multi Agent Workflow");
+    expect(prompt).toMatch(/\[STRICTLY NO HUMANS \/ ZERO PEOPLE \/ NO FACES/i);
+    expect(prompt).toMatch(/Pure AI Engineering multi-agent workflow architecture/i);
+    expect(prompt).toMatch(/\[WORKFLOW SYSTEM DESIGN\]/i);
+    expect(prompt).toMatch(/multi-agent workflow/i);
+    expect(prompt).toContain('"Multi Agent Workflow"');
+    expect(prompt).toMatch(/#036158/); // brand teal
+    expect(prompt).toMatch(/#5EEAD4/); // cyan
   });
 });

@@ -32,10 +32,11 @@ import { loadBrandFace, logBrandFace } from "./brandFace.js";
 export type ImageProviderUsed = "nanobanana" | "skywork" | "xkiro";
 
 /** Providers that apply brand face (multimodal or image= ref). */
-const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>(["nanobanana", "skywork", "xkiro"]);
+const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>(["nanobanana", "skywork"]);
 
 export type GenerateImageBufferOptions = {
   schematicPrompt?: string;
+  workflowPrompt?: string;
 };
 
 export async function generateImageBuffer(
@@ -46,11 +47,12 @@ export async function generateImageBuffer(
   const face = await loadBrandFace();
   const requireIdentity = Boolean(face) && env.REQUIRE_BRAND_FACE;
   const schematicPrompt = options?.schematicPrompt;
+  const workflowPrompt = options?.workflowPrompt;
 
   if (face) {
     console.log(
       `[imagePipeline] brand face ref: ${face.path} (${face.buffer.length} bytes` +
-        `${face.prepared ? ", prepared" : ""}) — identity: Nano Banana + Skywork + xKiro`,
+        `${face.prepared ? ", prepared" : ""}) — identity: Nano Banana + Skywork (xKiro is pure workflow, no humans)`,
     );
   } else {
     console.warn(
@@ -107,10 +109,14 @@ export async function generateImageBuffer(
     console.warn("[imagePipeline] Skywork not configured → xKiro");
   }
 
-  // 3) xKiro (supports face via gpt-image edits; falls back to schematic diagrams if face fails)
+  // 3) xKiro (strictly workflow style only — ZERO humans / ONLY workflow)
   if (isXkiroConfigured() && canUseXkiroToday().ok) {
     try {
-      const buffer = await xkiroImage(prompt, { face, schematicPrompt });
+      const targetWorkflowPrompt = workflowPrompt || schematicPrompt || prompt;
+      const buffer = await xkiroImage(targetWorkflowPrompt, {
+        face: null, // Strictly NO human face for xKiro: pure workflow diagrams only
+        workflowPrompt: targetWorkflowPrompt,
+      });
       return { buffer, provider: "xkiro" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

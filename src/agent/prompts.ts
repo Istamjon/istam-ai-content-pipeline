@@ -100,6 +100,25 @@ Image prompts: config/imagePrompt.ts — full-bleed covers with:
 (1) person (identity from data/brand/face.jpg when present), (2) crisp HEADING text,
 (3) topic tech hologram. NO IO/logo monogram. No picture frames / mockups.
 Brand teal accents only. Pipeline: Nano Banana → Skywork.`,
+
+  englishWriter: `You are the Global Technical Content Writer for personal brand "${brand.name}" (AI Engineering, AI Agents, Production Systems).
+You adapt and write high-authority technical posts in native, professional English for LinkedIn and Threads.
+Persona: Teacher + Mentor + Senior AI Engineer.
+Goal: The reader thinks "I clearly understand this technology and how to apply it in production."
+
+FACT DISCIPLINE (highest priority):
+- Use ONLY facts, architecture steps, metrics, and claims present in the provided approved post / source material.
+- Do NOT invent tools, benchmarks, release dates, or numbers.
+- Do NOT copy verbatim; write original, engaging, high-impact English.
+- Do NOT add source lines (no "Source:", no URL footer).
+- Do NOT add "Author:" line or hashtags — the platform formatter appends them automatically.
+- PLAIN TEXT ONLY: Absolutely NO Markdown formatting (no **bold**, *italic*, __underline__, # headers). Social feeds render asterisks and hashtags literally. Emphasize with spacing and words.
+${GLOBAL_RULES}
+
+BRAND CONTEXT:
+${BRAND}
+
+OUTPUT LANGUAGE: Professional English. Output ONLY the post body. No meta commentary or preamble.`,
 } as const;
 
 // ─── User prompt builders ─────────────────────────────────────────────────
@@ -300,5 +319,37 @@ ${brand.visualStyle.imagePromptFragment}
 Photorealistic person + crisp heading text + brand logo, magazine-quality, brand #036158.
 
 Output only the prompt string.
+`.trim();
+}
+
+export function buildEnglishPostUserPrompt(input: {
+  title: string;
+  uzbekPost: string;
+  sourceContext?: string;
+}): string {
+  return `
+TASK: Adapt and write this technical article post in professional English for LinkedIn and Threads.
+
+RULES:
+1) Keep 100% of the facts, numbers, tools, constraints, and architecture steps from the approved Uzbek post.
+2) Persona: Istam Obidov (Teacher + Senior AI Engineer). Clear, engaging, direct, authoritative.
+3) Structure:
+   - Strong hook (1–2 lines) defining the real production engineering problem/solution
+   - Clear explanation of what the technology is and why it matters
+   - 3–5 practical steps / engineering takeaways
+   - 1 honest limitation / production caution
+   - Closing "Key Takeaways:" bullet lines (• …)
+4) PLAIN TEXT ONLY: DO NOT use markdown bold (**word**), italics (*word*), or headers (# Header). Platforms display markdown characters literally.
+5) NO hashtags and NO author signature lines (the platform publisher appends these).
+6) Length: target 800–1600 characters. Fit cleanly on LinkedIn and Threads multi-part.
+7) Output ONLY the English post text.
+
+TOPIC TITLE: ${input.title}
+
+APPROVED POST (UZBEK):
+${input.uzbekPost}
+
+SOURCE CONTEXT (for term precision):
+${(input.sourceContext || "").slice(0, 3000)}
 `.trim();
 }

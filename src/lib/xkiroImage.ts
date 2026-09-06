@@ -324,6 +324,7 @@ async function downloadBuffer(url: string): Promise<Buffer> {
 export type XkiroImageOptions = {
   face?: { buffer: Buffer; mimeType?: string; path?: string } | null;
   schematicPrompt?: string;
+  workflowPrompt?: string;
 };
 
 /**
@@ -386,8 +387,8 @@ export async function xkiroImage(
     throw new Error(`xKiro: all keys exhausted (${budget.used}/${budget.limit || "∞"})`);
   }
 
-  // 1) If face reference provided, attempt image edit with gpt-image
-  if (options?.face?.buffer) {
+  // 1) If face reference provided and workflowPrompt is not specified, attempt image edit with gpt-image
+  if (options?.face?.buffer && !options?.workflowPrompt) {
     console.log(`[xkiro] attempting brand face image edit (model=gpt-image)...`);
     const editPrompt = buildFaceEditPrompt(safePrompt);
     for (const slot of usableSlots) {
@@ -418,7 +419,7 @@ export async function xkiroImage(
       }
     }
     console.warn(
-      `[xkiro] brand face edit failed across keys → falling back to humanless schematic diagram`,
+      `[xkiro] brand face edit failed across keys → falling back to pure humanless workflow diagram`,
     );
   }
 
@@ -426,11 +427,21 @@ export async function xkiroImage(
     throw new Error("xKiro: all models temporarily paused");
   }
 
-  // 2) Fallback to text-to-image models (sensenova, minimax, qwen)
-  // When face cannot be identified or used: strictly generate human-less schematics/diagrams
-  const fallbackPrompt = (options?.schematicPrompt || safePrompt).trim().slice(0, 4000);
+  // 2) Text-to-image models (sensenova, minimax, qwen)
+  // Strictly generate pure human-less workflow diagrams
+  const fallbackPrompt = (
+    options?.workflowPrompt ||
+    options?.schematicPrompt ||
+    safePrompt
+  ).trim().slice(0, 4000);
   console.log(
-    `[xkiro] text-to-image prompt mode: ${options?.schematicPrompt ? "odamsiz sxema (no humans)" : "default"}`,
+    `[xkiro] text-to-image prompt mode: ${
+      options?.workflowPrompt
+        ? "strictly workflow style (odamsiz sof workflow sxema)"
+        : options?.schematicPrompt
+          ? "odamsiz sxema (no humans)"
+          : "default"
+    }`,
   );
 
   let lastErr: unknown;

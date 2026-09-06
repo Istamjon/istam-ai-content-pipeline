@@ -2,6 +2,7 @@ import { StateAnnotation, GraphUpdate } from "../state.js";
 import {
   buildPremiumImagePrompt,
   buildSchematicImagePrompt,
+  buildWorkflowImagePrompt,
   type ImageVisualPreset,
   type ImageCompositionHook,
 } from "../../config/imagePrompt.js";
@@ -10,8 +11,8 @@ import { isBrandFaceConfigured } from "../../lib/brandFace.js";
 /**
  * Builds premium scroll-stopping social-cover image prompt.
  * Person (face identity + rotated pose) + Uzbek HEADING + topic tech visual.
- * Also builds a schematicPrompt (strictly no humans / pure tech architecture)
- * for fallback when face identity is unavailable or cannot be identified.
+ * Also builds a schematicPrompt and dedicated workflowPrompt (strictly no humans /
+ * pure tech architecture workflow diagrams) for xKiro and humanless fallbacks.
  */
 export async function generateImagePrompt(
   state: typeof StateAnnotation.State,
@@ -59,7 +60,17 @@ export async function generateImagePrompt(
       current.title,
       topicHint,
       {
-        preset: forcePreset,
+        preset: forcePreset || "workflow",
+        composition: forceComposition,
+        heading,
+        rewritten: current.rewritten,
+      },
+    );
+
+    const { prompt: workflowPrompt } = buildWorkflowImagePrompt(
+      current.title,
+      topicHint,
+      {
         composition: forceComposition,
         heading,
         rewritten: current.rewritten,
@@ -71,7 +82,7 @@ export async function generateImagePrompt(
     );
 
     return {
-      current: { ...current, imagePrompt, schematicPrompt },
+      current: { ...current, imagePrompt, schematicPrompt, workflowPrompt },
     };
   } catch (error) {
     return {

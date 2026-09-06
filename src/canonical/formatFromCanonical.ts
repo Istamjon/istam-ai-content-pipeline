@@ -67,7 +67,9 @@ function buildContentHashtags(body: string, platform: Platform, max: number): st
   for (const { re, tag } of topicTags) {
     if (re.test(lower) || re.test(body)) push(tag);
   }
-  if (picked.length < 4) push("#OzbekistonTech");
+  const isEnglish = platform === "linkedin" || platform === "threads";
+  if (!isEnglish && picked.length < 4) push("#OzbekistonTech");
+  if (isEnglish && picked.length < 4) push("#Tech");
   if (picked.length < 5) push("#ProductionAI");
 
   return picked.slice(0, max).join(" ");
@@ -331,7 +333,6 @@ export function formatAllFromCanonical(
 ): Record<Platform, FormattedPost | null> {
   const list = platforms ?? enabledPlatforms();
   const hasImage = Boolean(doc.imagePath);
-  const body = doc.body;
   const out = {
     telegram: null,
     linkedin: null,
@@ -347,7 +348,10 @@ export function formatAllFromCanonical(
       out[platform] = null;
       continue;
     }
-    out[platform] = formatOne(platform, body, hasImage);
+    // THREADS and LINKEDIN posts are in English; all others are in Uzbek
+    const isEnglishPlatform = platform === "linkedin" || platform === "threads";
+    const platformBody = isEnglishPlatform ? (doc.bodyEn || doc.body) : doc.body;
+    out[platform] = formatOne(platform, platformBody, hasImage);
   }
   return out;
 }

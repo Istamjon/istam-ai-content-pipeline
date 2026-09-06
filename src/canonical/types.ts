@@ -17,6 +17,11 @@ export interface CanonicalContent {
    * Facts and claims live only here — platform texts must not invent new facts.
    */
   body: string;
+  /**
+   * English body for global platforms (LinkedIn, Threads).
+   * Derived faithfully from the approved master body and source facts.
+   */
+  bodyEn?: string;
   /** Short analysis summary (optional context) */
   summary?: string;
   /** Content type from analyzer, e.g. tech_deep */

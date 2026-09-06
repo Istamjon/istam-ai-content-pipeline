@@ -17,8 +17,10 @@ export interface Article {
   summary?: string;
   translated?: string;
   rewritten?: string;
+  rewrittenEn?: string;
   imagePrompt?: string;
   schematicPrompt?: string;
+  workflowPrompt?: string;
   imagePath?: string;
 }
 

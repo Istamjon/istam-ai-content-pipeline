@@ -45,6 +45,7 @@ export async function generateImage(
 
     const { buffer, provider } = await generateImageBuffer(current.imagePrompt, {
       schematicPrompt: current.schematicPrompt,
+      workflowPrompt: current.workflowPrompt,
     });
     // Both Nano Banana and Skywork return PNG buffers.
     const ext = "png";

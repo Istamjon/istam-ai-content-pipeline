@@ -163,6 +163,15 @@ set_env_if_missing() {
   fi
   printf '\n%s=%s\n' "$key" "$val" >> .env
 }
+
+upsert_env() {
+  key="$1"; val="$2"
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${val}|" .env
+  else
+    printf '\n%s=%s\n' "$key" "$val" >> .env
+  fi
+}
 # Align slots (3–6) with per-platform caps (>= max slots so random plan is not wasted)
 set_env_if_missing CRON_RANDOM true
 set_env_if_missing CRON_SLOTS_MIN 3

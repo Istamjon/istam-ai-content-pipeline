@@ -76,4 +76,31 @@ describe("formatAllFromCanonical", () => {
       expect(p.length).toBeLessThanOrEqual(500);
     }
   });
+
+  it("formats LinkedIn and Threads from bodyEn while others use Uzbek body", () => {
+    const multiDoc: CanonicalContent = {
+      ...doc,
+      body: "O'zbekcha matn: sun'iy intellekt agentlari arxitekturasi va ish oqimlari.",
+      bodyEn: "English text: autonomous AI agent architectures and production workflows.",
+    };
+
+    const f = formatAllFromCanonical(multiDoc, [
+      "telegram",
+      "linkedin",
+      "threads",
+      "facebook",
+    ]);
+
+    // LinkedIn & Threads must be in English
+    expect(f.linkedin!.text).toContain("English text: autonomous AI agent architectures");
+    expect(f.linkedin!.text).not.toContain("O'zbekcha matn");
+    expect(f.threads!.text).toContain("English text: autonomous AI agent architectures");
+    expect(f.threads!.text).not.toContain("O'zbekcha matn");
+    expect(f.linkedin!.text).not.toContain("#OzbekistonTech");
+
+    // Telegram & Facebook must be in Uzbek
+    expect(f.facebook!.text).toContain("O'zbekcha matn");
+    expect(f.facebook!.text).not.toContain("English text");
+    expect(f.facebook!.text).toContain("#OzbekistonTech");
+  });
 });

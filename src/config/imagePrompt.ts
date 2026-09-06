@@ -878,7 +878,7 @@ export function buildSchematicImagePrompt(
     maxLen: COVER_HEADING_MAX_LEN,
   });
   const seed = topicTitle + "|schematic|" + concepts;
-  const preset = pickImagePreset(seed, options?.preset);
+  const preset = pickImagePreset(seed, options?.preset || "workflow");
   const composition = pickCompositionHook(seed, preset, options?.composition);
   const p = PRESETS[preset];
 
@@ -906,5 +906,62 @@ export function buildSchematicImagePrompt(
 
   const prompt = (lead + "\n" + extended).trim().slice(0, 2500);
   return { prompt, preset, composition, heading };
+}
+
+/**
+ * Build dedicated AI Workflow schematic cover prompt for xKiro.
+ * Strictly in "workflow" style: multi-agent graph orchestration, decision nodes,
+ * condition routers, state transitions, glowing data handoffs, execution traces.
+ * STRICTLY NO HUMANS / NO FACES — pure cybernetic workflow architecture.
+ */
+export function buildWorkflowImagePrompt(
+  topicTitle: string,
+  topicHint?: string,
+  options?: {
+    composition?: ImageCompositionHook | string;
+    heading?: string;
+    rewritten?: string;
+  },
+): {
+  prompt: string;
+  preset: "workflow";
+  composition: ImageCompositionHook;
+  heading: string;
+} {
+  const concepts = topicToVisualConcepts(topicTitle, topicHint);
+  const heading = pickCoverHeading({
+    title: topicTitle,
+    rewritten: options?.rewritten,
+    heading: options?.heading,
+    maxLen: COVER_HEADING_MAX_LEN,
+  });
+  const seed = topicTitle + "|workflow|" + concepts;
+  const composition = pickCompositionHook(seed, "workflow", options?.composition);
+  const p = PRESETS.workflow;
+
+  const lead = [
+    `[STRICTLY NO HUMANS / ZERO PEOPLE / NO FACES / NO MAN / NO WOMAN / NO BODIES / NO SILHOUETTES / NO CHARACTERS / NO AVATARS / NO HANDS].`,
+    `Pure AI Engineering multi-agent workflow architecture diagram, state graph flowchart, and system execution blueprint.`,
+    `Scroll-stopping ultra-premium FULL-BLEED 1:1 social media cover for AI Engineering workflows. The canvas itself is the cover.`,
+    `[FULL-BLEED CANVAS] Edge-to-edge 1:1 square scene directly on dark canvas. NOT a photo of a poster. NOT a framed photo. NOT a mockup.`,
+    `[TITLE TEXT] ONE line only. Spell exactly: "${heading}". Ultra-massive glowing cyan/white tech font, high contrast against pitch black.`,
+    `[NO LOGO] No IO/IstamAI monogram, badge, watermark, or logo.`,
+    `[WORKFLOW SYSTEM DESIGN]: ${p.centerIdea}. Sprawling multi-agent workflow graph: luminous state nodes, routed condition edges, decision gateways, orchestrator router hub, execution traces, high-voltage data handoff arcs. Topic DNA: ${concepts}.`,
+    `[COMPOSITION]: Centered holographic workflow diagram, glowing state graph layers, radiant neon circuit connections, directional flow arrows, fiber-optic data pulses.`,
+    `[STYLE/COLORS]: Deep pitch-black background #0A0A0A, brand teal #036158 and bright electric cyan #5EEAD4 glowing vectors, subtle amber #F59E0B status nodes. Ultra-clean vector precision, crisp 8k technical diagram.`,
+  ].join(" ");
+
+  const extended = [
+    ``,
+    `Technical workflow diagram details:`,
+    `- Centerpiece: Colossal, highly detailed cybernetic workflow orchestrator diagram showing multi-agent loops and state machine graphs for ${concepts}.`,
+    `- Flow: Step-by-step visual logic showing agent handoffs, tool executions, conditional router checkpoints, and output stream buffers with luminous directional neon arrows.`,
+    `- ABSOLUTELY ZERO human figures, zero human silhouettes, zero human faces, zero characters, zero avatars, zero bodies or hands anywhere in the scene. Only pure architecture flowchart.`,
+    `- Single on-image power title: "${heading}".`,
+    `- Hard avoid: human, person, man, woman, face, people, character, avatar, body, portrait, photo, blur, framing cards, device mockups, messy text.`,
+  ].join("\n");
+
+  const prompt = (lead + "\n" + extended).trim().slice(0, 2500);
+  return { prompt, preset: "workflow", composition, heading };
 }
 
