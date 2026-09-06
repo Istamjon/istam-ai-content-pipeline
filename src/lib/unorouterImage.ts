@@ -202,6 +202,50 @@ async function generateOnce(
   throw new Error(`No image data in response: ${raw.slice(0, 200)}`);
 }
 
+/**
+ * Attempt /v1/chat/completions fallback if model emits image URLs in chat response.
+ */
+async function tryChatGeneration(
+  model: string,
+  prompt: string,
+): Promise<Buffer | null> {
+  try {
+    const res = await fetch(`${env.UNOROUTER_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.UNOROUTER_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          {
+            role: "user",
+            content: `Generate an image: ${prompt.slice(0, 2000)}`,
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(90_000),
+    });
+
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const content = json.choices?.[0]?.message?.content || "";
+    const match =
+      content.match(/https?:\/\/[^\s\)\"\']+\.(?:png|jpg|jpeg|webp)/i) ||
+      content.match(/\!\[.*?\]\((https?:\/\/[^\)]+)\)/i);
+    const url = match ? match[1] || match[0] : null;
+    if (url) {
+      return await downloadImageBuffer(url);
+    }
+  } catch {
+    // Fail quietly
+  }
+  return null;
+}
+
 export type UnorouterImageOptions = {
   face?: BrandFaceRef | null;
   schematicPrompt?: string;
@@ -267,6 +311,16 @@ export async function unorouterImage(
       );
       return buf;
     } catch (e) {
+      // 3) Try chat/completions fallback if model returns image markdown/url
+      const chatBuf = await tryChatGeneration(model, prompt);
+      if (chatBuf) {
+        const used = incrementProviderImageUsage("unorouter", 1);
+        console.log(
+          `[unorouter] OK chat-endpoint model=${model} bytes=${chatBuf.length} daily=${used}/${budget.limit || "∞"}`,
+        );
+        return chatBuf;
+      }
+
       lastErr = e;
       const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[unorouter] model "${model}" failed: ${msg.slice(0, 200)}`);
