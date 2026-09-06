@@ -43,6 +43,7 @@ const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>([
   "unorouter",
   "nanobanana",
   "skywork",
+  "xkiro",
 ]);
 
 export type GenerateImageBufferOptions = {
@@ -63,7 +64,7 @@ export async function generateImageBuffer(
   if (face) {
     console.log(
       `[imagePipeline] brand face ref: ${face.path} (${face.buffer.length} bytes` +
-        `${face.prepared ? ", prepared" : ""}) — identity: UnoRouter + Nano Banana + Skywork`,
+        `${face.prepared ? ", prepared" : ""}) — identity: UnoRouter + Nano Banana + Skywork + xKiro`,
     );
   } else {
     console.warn(
@@ -147,13 +148,14 @@ export async function generateImageBuffer(
     console.warn("[imagePipeline] Skywork not configured → xKiro");
   }
 
-  // 4) xKiro (strictly workflow style only — ZERO humans / ONLY workflow)
+  // 4) xKiro (brand face edit via gpt-image + fallback to schematic workflow)
   if (isXkiroConfigured() && canUseXkiroToday().ok) {
     try {
-      const targetWorkflowPrompt = workflowPrompt || schematicPrompt || prompt;
-      const buffer = await xkiroImage(targetWorkflowPrompt, {
-        face: null, // Strictly NO human face for xKiro: pure workflow diagrams only
-        workflowPrompt: targetWorkflowPrompt,
+      const targetPrompt = face ? effectivePrompt : (workflowPrompt || schematicPrompt || prompt);
+      const buffer = await xkiroImage(targetPrompt, {
+        face: face ?? null,
+        schematicPrompt,
+        workflowPrompt: face ? undefined : (workflowPrompt || schematicPrompt),
       });
       return { buffer, provider: "xkiro" };
     } catch (e) {
@@ -193,7 +195,7 @@ export function logAllImageBudgets(): void {
   logBrandFace();
   console.log(
     `[AI] REQUIRE_BRAND_FACE: ${env.REQUIRE_BRAND_FACE} ` +
-      `(identity: UnoRouter + Nano Banana + Skywork — all support brand face)`,
+      `(identity: UnoRouter + Nano Banana + Skywork + xKiro — all support brand face)`,
   );
   logUnorouterBudget();
   logNanoBananaBudgets();

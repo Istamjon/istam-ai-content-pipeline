@@ -28,6 +28,6 @@ describe("unorouterImage", () => {
     expect(providerSupportsFaceIdentity("unorouter")).toBe(true);
     expect(providerSupportsFaceIdentity("nanobanana")).toBe(true);
     expect(providerSupportsFaceIdentity("skywork")).toBe(true);
-    expect(providerSupportsFaceIdentity("xkiro")).toBe(false);
+    expect(providerSupportsFaceIdentity("xkiro")).toBe(true);
   });
 });
