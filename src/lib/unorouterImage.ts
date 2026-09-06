@@ -59,7 +59,8 @@ function markModelExhausted(model: string, reason: string): void {
 }
 
 export function isUnorouterConfigured(): boolean {
-  return Boolean(env.UNOROUTER_API_KEY && env.UNOROUTER_API_KEY.trim());
+  const key = (process.env.UNOROUTER_API_KEY || env.UNOROUTER_API_KEY || "").trim();
+  return Boolean(key);
 }
 
 export function canUseUnorouterToday(): {
