@@ -23,6 +23,7 @@ import type { BrandFaceRef } from "./brandFace.js";
 
 const DEFAULT_MODELS = [
   "gpt-image-2:free",
+  "gpt-image:free",
   "gpt-image-2",
   "glm-image-1:free",
   "sensenova-6.8-flash-lite:free",
