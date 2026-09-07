@@ -343,14 +343,14 @@ export type SkyworkImageOptions = {
   face?: { mimeType: string; base64: string; path?: string } | null;
 };
 
-async function generateOnceWithKey(
+async function generateOnceWithKeyRaw(
   slot: SkyworkKeySlot,
   prompt: string,
   aspect: string | undefined,
-  resolution: "1K" | "2K" | "4K",
-  face?: { mimeType: string; base64: string } | null,
+  resolution: string,
+  face?: { mimeType?: string; base64: string } | null,
 ): Promise<Buffer> {
-  const base = gatewayBase();
+  const base = (process.env.SKYWORK_BASE_URL || DEFAULT_GATEWAY).replace(/\/+$/, "");
   let url: string;
   let body: Record<string, unknown>;
 
@@ -417,6 +417,33 @@ async function generateOnceWithKey(
   }
 
   return downloadToBuffer(fileUrl);
+}
+
+async function generateOnceWithKey(
+  slot: SkyworkKeySlot,
+  prompt: string,
+  aspect: string | undefined,
+  resolution: string,
+  face?: { mimeType?: string; base64: string } | null,
+): Promise<Buffer> {
+  if (face?.base64) {
+    try {
+      return await generateOnceWithKeyRaw(slot, prompt, aspect, resolution, face);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      // If edit API failed due to internal backend failure (Gemini/Seedream), retry with create API
+      if (/Image editing failed|Gemini failed|Seedream|model failed/i.test(msg)) {
+        console.warn(
+          `[skywork] ${slot.label} edit API backend failure → fallback to create API: ${msg.slice(0, 120)}`,
+        );
+        const identityPrompt =
+          `Professional clean-shaven Uzbek man, mid-30s, short dark hair, confident expression: ${prompt}`;
+        return await generateOnceWithKeyRaw(slot, identityPrompt, aspect, resolution, null);
+      }
+      throw e;
+    }
+  }
+  return generateOnceWithKeyRaw(slot, prompt, aspect, resolution, null);
 }
 
 /**

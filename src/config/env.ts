@@ -132,7 +132,7 @@ export const env = {
    */
   DAILY_XKIRO_LIMIT: Math.max(
     0,
-    parseInt(process.env.DAILY_XKIRO_LIMIT || "10", 10) || 10,
+    parseInt(process.env.DAILY_XKIRO_LIMIT || "25", 10) || 25,
   ),
   /**
    * When brand face.jpg is present, only use identity-capable image providers

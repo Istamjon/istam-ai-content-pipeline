@@ -23,22 +23,23 @@ import type { BrandFaceRef } from "./brandFace.js";
 
 const DEFAULT_MODELS = [
   "gpt-image-2:free",
-  "gpt-image:free",
   "glm-image-1:free",
-  "sensenova-6.8-flash-lite:free",
-  "cogview-4-250304:free",
-  "flux-2-dev:free",
+  "juggernaut-xl:free",
+  "albedobase-xl-sdxl:free",
+  "albedobase-xl-31:free",
+  "dreamshaper:free",
+  "absolutereality:free",
+  "icbinp-i-cant-believe-its-not-photography:free",
+  "deliberate:free",
 ] as const;
 
 /**
  * Models that support /images/edits endpoint (multipart face reference).
- * Edit API = best for brand face identity preservation.
+ * gpt-image-2:free has highest identity fidelity.
  */
 const EDIT_CAPABLE_MODELS = new Set([
   "gpt-image-2:free",
-  "gpt-image:free",
   "gpt-image-2",
-  "gpt-image",
 ]);
 
 /** Models temporarily paused after rate limit (429) or busy errors */
@@ -157,6 +158,11 @@ async function tryEditGeneration(
       console.warn(
         `[unorouter] edit API HTTP ${res.status} for model "${model}": ${errText.slice(0, 150)}`,
       );
+      if (res.status === 429 || /too many requests|rate_limit|per account/i.test(errText)) {
+        for (const m of DEFAULT_MODELS) {
+          markModelExhausted(m, "account 429 cooldown (60s)");
+        }
+      }
       return null;
     }
 
@@ -364,6 +370,14 @@ export async function unorouterImage(
       lastErr = e;
       const msg = e instanceof Error ? e.message : String(e);
       console.warn(`[unorouter] model "${model}" failed: ${msg.slice(0, 200)}`);
+
+      // Account-level rate limit (1 req/min per account) -> pause all models and fail fast
+      if (/per account|every 1 min per account/i.test(msg)) {
+        for (const m of allModels) {
+          markModelExhausted(m, msg);
+        }
+        throw new Error(`UnoRouter account rate limited (1 req/min cooldown): ${msg.slice(0, 150)}`);
+      }
 
       // Rate limit or busy -> pause this model for 60s and try next
       if (/429|rate limit|busy|retry in|too many requests|quota|insufficient/i.test(msg)) {
