@@ -146,7 +146,7 @@ describe("imagePrompt", () => {
     expect(prompt).not.toMatch(/HARD NO: people|HARD NO: faces|NO: people, faces/i);
   });
 
-  it("buildWorkflowImagePrompt: strictly workflow style, no humans, pure multi-agent architecture", () => {
+  it("buildWorkflowImagePrompt: no humans, topic-aware diagram, minimal glow", () => {
     const { prompt, preset, heading } = buildWorkflowImagePrompt(
       "StateGraph Orchestration for Multi-Agent Systems",
       "cyclic workflow state transitions and decision routers",
@@ -157,12 +157,23 @@ describe("imagePrompt", () => {
     );
     expect(preset).toBe("workflow");
     expect(heading).toBe("Multi Agent Workflow");
-    expect(prompt).toMatch(/\[STRICTLY NO HUMANS \/ ZERO PEOPLE \/ NO FACES/i);
-    expect(prompt).toMatch(/Pure AI Engineering multi-agent workflow architecture/i);
-    expect(prompt).toMatch(/\[WORKFLOW SYSTEM DESIGN\]/i);
-    expect(prompt).toMatch(/multi-agent workflow/i);
+    // No humans — any variant of the instruction
+    expect(prompt).toMatch(/NO HUMANS|NO PEOPLE|NO FACES|ZERO/i);
+    // Must contain WORKFLOW DIAGRAM section
+    expect(prompt).toMatch(/WORKFLOW DIAGRAM/i);
+    // Topic-mapped nodes must appear (multi-agent case)
+    expect(prompt).toMatch(/Orchestrator|orchestrat|multi.?agent/i);
+    // Must contain node sequence arrow notation
+    expect(prompt).toMatch(/\u2192/);
+    // Title exact match
     expect(prompt).toContain('"Multi Agent Workflow"');
-    expect(prompt).toMatch(/#036158/); // brand teal
-    expect(prompt).toMatch(/#5EEAD4/); // cyan
+    // Anti-glow rule explicitly stated
+    expect(prompt).toMatch(/NO excessive glow|NO neon bloom/i);
+    // Brand teal required
+    expect(prompt).toMatch(/#036158/);
+    // Dark background
+    expect(prompt).toMatch(/#0A0A0A/i);
+    // Length safe
+    expect(prompt.length).toBeLessThanOrEqual(2500);
   });
 });

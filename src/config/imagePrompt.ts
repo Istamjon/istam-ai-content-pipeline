@@ -851,9 +851,9 @@ export function buildPremiumImagePrompt(
 
 /**
  * Build human-less technical schematic / diagram cover prompt.
- * Used when face identity is unavailable or when face cannot be identified.
- * STRICTLY NO PEOPLE / NO FACES — pure architecture flowchart, cybernetic schematics,
- * system node graph, holographic data pipeline.
+ * Used when face identity is unavailable.
+ * STRICTLY NO PEOPLE / NO FACES — clean architecture diagram, system node graph,
+ * technical flowchart. Minimal glow. Precise and readable.
  */
 export function buildSchematicImagePrompt(
   topicTitle: string,
@@ -880,39 +880,52 @@ export function buildSchematicImagePrompt(
   const seed = topicTitle + "|schematic|" + concepts;
   const preset = pickImagePreset(seed, options?.preset || "workflow");
   const composition = pickCompositionHook(seed, preset, options?.composition);
-  const p = PRESETS[preset];
+
+  // Topic-specific diagram visual — mapped from concepts
+  const diagramType = concepts.match(/\b(RAG|retriev|vector|embed)/i)
+    ? "retrieval-augmented generation pipeline: query → embed → vector-search → context → LLM → answer"
+    : concepts.match(/\b(agent|orchestrat|swarm|multi|tool)/i)
+    ? "multi-agent system graph: supervisor node → specialist agents → tool calls → memory → output"
+    : concepts.match(/\b(LangGraph|workflow|state|graph|node)/i)
+    ? "LangGraph state machine: START → nodes → conditional edges → END, typed state transitions"
+    : concepts.match(/\b(infra|kubernetes|deploy|serving|latency|gateway)/i)
+    ? "infrastructure deployment diagram: load-balancer → model-server → cache → database → monitoring"
+    : concepts.match(/\b(eval|benchmark|test|monitor|cicd)/i)
+    ? "evaluation pipeline: input → model → judge → metrics → report → iterate"
+    : `system architecture diagram for: ${concepts.slice(0, 100)}`;
 
   const lead = [
-    `[STRICTLY NO HUMANS / NO FACES / NO PEOPLE / NO BODIES / NO CHARACTERS / NO AVATARS].`,
-    `Pure technical architecture blueprint and system schematic diagram.`,
-    `Scroll-stopping ultra-premium FULL-BLEED 1:1 social media cover for AI Engineering. The canvas itself is the cover.`,
-    `[FULL-BLEED CANVAS] Edge-to-edge 1:1 square scene directly on dark canvas. NOT a photo of a poster. NOT a framed photo. NOT a mockup.`,
-    `[TITLE TEXT] ONE line only. Spell exactly: "${heading}". Ultra-massive glowing cyan/white tech font, high contrast against pitch black.`,
-    `[NO LOGO] No IO/IstamAI monogram, badge, watermark, or logo.`,
-    `[SCHEMATIC SYSTEM DESIGN]: High-tech futuristic engineering flowchart, intricate node-graph network topology, glowing data-bus pipelines, cybernetic architecture blueprint. ${p.centerIdea}. Topic DNA: ${concepts}.`,
-    `[COMPOSITION]: Centered holographic diagram structure, glowing isometric layers, radiant neon circuit connections, fiber-optic light pulses.`,
-    `[STYLE/COLORS]: Deep pitch-black background #0A0A0A, brand teal #036158 and bright electric cyan #5EEAD4 glowing vectors, subtle amber #F59E0B status nodes. Ultra-clean vector precision, crisp 8k technical diagram.`,
+    `[NO HUMANS. NO FACES. NO PEOPLE. NO BODIES. NO CHARACTERS. NO AVATARS.]`,
+    `Clean technical architecture diagram — precise, readable, informative. NOT abstract art.`,
+    `Full-bleed 1:1 social media cover for AI Engineering. Canvas IS the cover, no frames, no mockups.`,
+    `[TITLE] Exact text, one line only: "${heading}". Large, bold, high-contrast white or teal on dark background.`,
+    `[NO LOGO] No IO/IstamAI monogram, badge, or watermark anywhere.`,
+    `[DIAGRAM SUBJECT] ${diagramType}. Topic context: ${concepts.slice(0, 120)}.`,
+    `[VISUAL STYLE] Clean flat or isometric diagram. Crisp labeled boxes/nodes with short text labels (1-3 words each). Clear directional arrows showing data flow. Minimal but purposeful color: teal #036158 for primary nodes, white labels, dark (#0A0A0A) background. Subtle depth only where it aids clarity — NO excessive neon glow, NO bloom effects, NO lens flare, NO particle storms, NO decorative swirls.`,
+    `[LAYOUT] Logical left-to-right or top-to-bottom flow that matches how the system actually works. Every node and arrow must have a clear purpose. Empty/decorative elements are forbidden.`,
   ].join(" ");
 
   const extended = [
     ``,
-    `Technical diagram details:`,
-    `- Centerpiece: Colossal, highly detailed cybernetic architecture diagram representing ${concepts}.`,
-    `- Flow: Visual logic showing inputs, transforms, AI agent orchestrators, and output streams with luminous directional arrows and data packets.`,
-    `- Zero human figures, zero human silhouettes, zero human faces or hands anywhere in the scene.`,
-    `- Single on-image power title: "${heading}".`,
-    `- Hard avoid: humans, faces, characters, avatars, blur, framing cards, device mockups, messy text.`,
+    `Diagram requirements:`,
+    `- Each node: short readable label (1-3 words), clear shape (rectangle, diamond, oval).`,
+    `- Arrows: labeled when needed (e.g. "API call", "embeddings", "state update").`,
+    `- Groups/zones: use faint borders to group related nodes (e.g. "Agent Layer", "Storage").`,
+    `- Title "${heading}" placed prominently at top, oversized, very readable.`,
+    `- Absolutely zero human figures, silhouettes, faces, hands, or characters anywhere.`,
+    `- Hard avoid: excessive glow, neon bloom, particle effects, decorative swirls, abstract shapes with no meaning, blurry elements, unreadable text.`,
   ].join("\n");
 
   const prompt = (lead + "\n" + extended).trim().slice(0, 2500);
   return { prompt, preset, composition, heading };
 }
 
+
 /**
  * Build dedicated AI Workflow schematic cover prompt for xKiro.
- * Strictly in "workflow" style: multi-agent graph orchestration, decision nodes,
- * condition routers, state transitions, glowing data handoffs, execution traces.
- * STRICTLY NO HUMANS / NO FACES — pure cybernetic workflow architecture.
+ * Topic-aware: extracts actual workflow structure from title/hint.
+ * Clean, precise, minimal glow — readable and informative.
+ * STRICTLY NO HUMANS / NO FACES — pure technical diagram.
  */
 export function buildWorkflowImagePrompt(
   topicTitle: string,
@@ -937,31 +950,79 @@ export function buildWorkflowImagePrompt(
   });
   const seed = topicTitle + "|workflow|" + concepts;
   const composition = pickCompositionHook(seed, "workflow", options?.composition);
-  const p = PRESETS.workflow;
+
+  // Derive specific workflow topology from topic content
+  const raw = `${topicTitle} ${topicHint || ""}`.toLowerCase();
+
+  const workflowSpec =
+    raw.match(/rag|retriev|vector|embed|knowledge/)
+      ? {
+          nodes: "Query → Embedder → VectorDB → Retriever → Context Merger → LLM → Answer",
+          detail: "Retrieval-augmented generation pipeline with vector similarity search",
+          zones: "Ingestion zone (top): Document → Chunker → Embedder → VectorDB; Query zone (bottom): User Query → Embed → Search → LLM",
+        }
+      : raw.match(/multi.?agent|swarm|crew|orchestrat/)
+      ? {
+          nodes: "User Request → Orchestrator → [Planner | Researcher | Executor | Reviewer] → Tool Calls → Memory → Final Response",
+          detail: "Multi-agent orchestration system with parallel specialist agents",
+          zones: "Supervisor layer (center): Orchestrator routing to agents; Worker layer (ring): specialized agents; Tool layer (outer): APIs, DB, search",
+        }
+      : raw.match(/langgraph|state.?graph|state.?machine|graph|node|edge/)
+      ? {
+          nodes: "START → [Input Validator → Agent Node → Tool Node] → Conditional Router → [Retry | Continue] → END",
+          detail: "LangGraph state machine with typed state, conditional edges, and retry loops",
+          zones: "State schema (top-left box); Main graph (center): nodes and directed edges; Checkpoint store (bottom-right)",
+        }
+      : raw.match(/mcp|model.?context|tool.?call|function.?call/)
+      ? {
+          nodes: "LLM → MCP Client → [Tool A | Tool B | Tool C] → Results → LLM Context",
+          detail: "Model Context Protocol: LLM-to-tools communication layer",
+          zones: "LLM box (left); MCP bridge (center); Tool servers (right): each with icon and label",
+        }
+      : raw.match(/eval|benchmark|test|monitor|judge/)
+      ? {
+          nodes: "Input Dataset → Model → Responses → LLM Judge → Metrics → Dashboard → Iterate",
+          detail: "LLM evaluation and continuous improvement pipeline",
+          zones: "Data prep (left); Inference (center); Evaluation (right): judge + metrics + report",
+        }
+      : raw.match(/deploy|infra|serving|latency|scale|k8s|kubernetes/)
+      ? {
+          nodes: "Client → API Gateway → Load Balancer → Model Server → Cache → Vector DB → Response",
+          detail: "Production AI infrastructure deployment topology",
+          zones: "Edge layer (top): gateway; Compute layer (middle): servers; Storage layer (bottom): cache + DB",
+        }
+      : {
+          nodes: `Input → Processing → AI Model → Output → Feedback Loop`,
+          detail: `AI system workflow for: ${concepts.slice(0, 80)}`,
+          zones: `Input zone (left) → Core processing (center) → Output zone (right)`,
+        };
 
   const lead = [
-    `[STRICTLY NO HUMANS / ZERO PEOPLE / NO FACES / NO MAN / NO WOMAN / NO BODIES / NO SILHOUETTES / NO CHARACTERS / NO AVATARS / NO HANDS].`,
-    `Pure AI Engineering multi-agent workflow architecture diagram, state graph flowchart, and system execution blueprint.`,
-    `Scroll-stopping ultra-premium FULL-BLEED 1:1 social media cover for AI Engineering workflows. The canvas itself is the cover.`,
-    `[FULL-BLEED CANVAS] Edge-to-edge 1:1 square scene directly on dark canvas. NOT a photo of a poster. NOT a framed photo. NOT a mockup.`,
-    `[TITLE TEXT] ONE line only. Spell exactly: "${heading}". Ultra-massive glowing cyan/white tech font, high contrast against pitch black.`,
-    `[NO LOGO] No IO/IstamAI monogram, badge, watermark, or logo.`,
-    `[WORKFLOW SYSTEM DESIGN]: ${p.centerIdea}. Sprawling multi-agent workflow graph: luminous state nodes, routed condition edges, decision gateways, orchestrator router hub, execution traces, high-voltage data handoff arcs. Topic DNA: ${concepts}.`,
-    `[COMPOSITION]: Centered holographic workflow diagram, glowing state graph layers, radiant neon circuit connections, directional flow arrows, fiber-optic data pulses.`,
-    `[STYLE/COLORS]: Deep pitch-black background #0A0A0A, brand teal #036158 and bright electric cyan #5EEAD4 glowing vectors, subtle amber #F59E0B status nodes. Ultra-clean vector precision, crisp 8k technical diagram.`,
+    `[NO HUMANS. NO FACES. NO PEOPLE. NO BODIES. NO CHARACTERS. NO AVATARS. ZERO.]`,
+    `Clean technical AI workflow diagram — precise, readable, educational. NOT abstract art. NOT random glowing shapes.`,
+    `Full-bleed 1:1 social media cover for AI Engineering. Canvas IS the cover, no frames, no mockups, no device bezels.`,
+    `[TITLE] Exact text, one line: "${heading}". Large, bold, white or teal, maximum contrast, top of image.`,
+    `[NO LOGO] No IO/IstamAI monogram, badge, or watermark.`,
+    `[WORKFLOW DIAGRAM] ${workflowSpec.detail}. Node sequence: ${workflowSpec.nodes}.`,
+    `[LAYOUT ZONES] ${workflowSpec.zones}.`,
+    `[STYLE] Flat or isometric technical diagram. Each node: rounded rectangle with clear 1-2 word label. Arrows: thin directional lines with labels. Colors: teal #036158 for main nodes, white text, amber #F59E0B for decision/gateway nodes, dark #0A0A0A background. Clean vector look. Subtle shadow only. NO excessive glow, NO neon bloom, NO particle effects, NO decorative swirls, NO lens flares.`,
   ].join(" ");
 
   const extended = [
     ``,
-    `Technical workflow diagram details:`,
-    `- Centerpiece: Colossal, highly detailed cybernetic workflow orchestrator diagram showing multi-agent loops and state machine graphs for ${concepts}.`,
-    `- Flow: Step-by-step visual logic showing agent handoffs, tool executions, conditional router checkpoints, and output stream buffers with luminous directional neon arrows.`,
-    `- ABSOLUTELY ZERO human figures, zero human silhouettes, zero human faces, zero characters, zero avatars, zero bodies or hands anywhere in the scene. Only pure architecture flowchart.`,
-    `- Single on-image power title: "${heading}".`,
-    `- Hard avoid: human, person, man, woman, face, people, character, avatar, body, portrait, photo, blur, framing cards, device mockups, messy text.`,
+    `Diagram requirements:`,
+    `- Render the actual node sequence: ${workflowSpec.nodes}`,
+    `- Each node clearly labeled (1-2 words max per node).`,
+    `- Arrows show data/control flow direction; label key transitions.`,
+    `- Group related nodes with faint border zones if needed.`,
+    `- Title "${heading}" dominant at the top, bold, easily readable at thumbnail size.`,
+    `- Every element serves the diagram — no decorative-only shapes.`,
+    `- Absolutely zero human figures, silhouettes, faces, hands, or characters.`,
+    `- Hard avoid: excessive neon glow, bloom effects, abstract swirls, unreadable micro-text, blurry backgrounds, random particle storms.`,
   ].join("\n");
 
   const prompt = (lead + "\n" + extended).trim().slice(0, 2500);
   return { prompt, preset: "workflow", composition, heading };
 }
+
 
