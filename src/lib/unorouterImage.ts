@@ -27,7 +27,19 @@ const DEFAULT_MODELS = [
   "glm-image-1:free",
   "sensenova-6.8-flash-lite:free",
   "cogview-4-250304:free",
+  "flux-2-dev:free",
 ] as const;
+
+/**
+ * Models that support /images/edits endpoint (multipart face reference).
+ * Edit API = best for brand face identity preservation.
+ */
+const EDIT_CAPABLE_MODELS = new Set([
+  "gpt-image-2:free",
+  "gpt-image:free",
+  "gpt-image-2",
+  "gpt-image",
+]);
 
 /** Models temporarily paused after rate limit (429) or busy errors */
 const exhaustedModels = new Map<string, number>();
@@ -107,6 +119,7 @@ async function downloadImageBuffer(url: string): Promise<Buffer> {
 
 /**
  * Attempt /v1/images/edits with brand face reference image (multipart).
+ * Works best with gpt-image-2:free — highest identity fidelity.
  */
 async function tryEditGeneration(
   model: string,
@@ -120,7 +133,12 @@ async function tryEditGeneration(
       new Blob([new Uint8Array(face.buffer)], { type: face.mimeType || "image/jpeg" }),
       "face.jpg",
     );
-    const editPrompt = `Preserve exact face likeness from face.jpg: clean-shaven Uzbek man in his mid-30s, strictly NO beard, NO goatee, NO mustache, smooth clean cheeks and jawline, short dark faded hair. ${prompt}`;
+    // Strong identity prompt — brand face must dominate composition
+    const editPrompt =
+      `IMPORTANT: The person in face.jpg is the MAIN SUBJECT. Preserve exact facial features: ` +
+      `clean-shaven Uzbek man, mid-30s, NO beard, NO mustache, NO goatee, ` +
+      `smooth jaw, short dark faded hair, confident expression. ` +
+      `Integrate naturally into scene: ${prompt}`;
     form.append("prompt", editPrompt);
     form.append("model", model);
     form.append("size", "1024x1024");
@@ -131,10 +149,16 @@ async function tryEditGeneration(
         Authorization: `Bearer ${env.UNOROUTER_API_KEY}`,
       },
       body: form,
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(90_000),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.warn(
+        `[unorouter] edit API HTTP ${res.status} for model "${model}": ${errText.slice(0, 150)}`,
+      );
+      return null;
+    }
 
     const data = (await res.json()) as {
       data?: Array<{ url?: string; b64_json?: string }>;
@@ -142,13 +166,19 @@ async function tryEditGeneration(
 
     const item = data.data?.[0];
     if (item?.b64_json) {
+      console.log(`[unorouter] edit OK model=${model} (brand face b64)`);
       return Buffer.from(item.b64_json, "base64");
     }
     if (item?.url) {
+      console.log(`[unorouter] edit OK model=${model} (brand face url)`);
       return await downloadImageBuffer(item.url);
     }
-  } catch {
-    // Fail quietly and fall back to standard text-to-image
+  } catch (e) {
+    console.warn(
+      `[unorouter] edit API exception model="${model}": ${
+        e instanceof Error ? e.message.slice(0, 120) : String(e)
+      }`,
+    );
   }
   return null;
 }
@@ -293,8 +323,14 @@ export async function unorouterImage(
   for (const model of usableModels) {
     console.log(`[unorouter] trying model "${model}"...`);
 
-    // 1) If brand face reference is provided, try edit mode first
-    if (options?.face?.buffer && (model.includes("gpt-image") || model.includes("edit"))) {
+    // 1) If brand face reference is provided, try edit mode first (best identity fidelity)
+    const modelBase = model.replace(/:free$/, "");
+    const supportsEdit =
+      EDIT_CAPABLE_MODELS.has(model) ||
+      EDIT_CAPABLE_MODELS.has(modelBase) ||
+      model.includes("edit");
+
+    if (options?.face?.buffer && supportsEdit) {
       const editBuf = await tryEditGeneration(model, prompt, options.face);
       if (editBuf) {
         const used = incrementProviderImageUsage("unorouter", 1);
@@ -303,6 +339,7 @@ export async function unorouterImage(
         );
         return editBuf;
       }
+      console.log(`[unorouter] edit failed for "${model}" → falling back to generations API`);
     }
 
     // 2) Standard generations mode
