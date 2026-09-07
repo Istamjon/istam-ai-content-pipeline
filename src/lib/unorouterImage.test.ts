@@ -1,4 +1,8 @@
-import { isUnorouterConfigured, canUseUnorouterToday } from "./unorouterImage.js";
+import {
+  isUnorouterConfigured,
+  canUseUnorouterToday,
+  resolveModelList,
+} from "./unorouterImage.js";
 import { providerSupportsFaceIdentity } from "./imagePipeline.js";
 
 describe("unorouterImage", () => {
@@ -29,5 +33,14 @@ describe("unorouterImage", () => {
     expect(providerSupportsFaceIdentity("nanobanana")).toBe(true);
     expect(providerSupportsFaceIdentity("skywork")).toBe(true);
     expect(providerSupportsFaceIdentity("xkiro")).toBe(false);
+  });
+
+  it("resolveModelList strictly only returns free models (:free)", () => {
+    const models = resolveModelList();
+    expect(models.length).toBeGreaterThan(0);
+    for (const m of models) {
+      expect(m).toContain(":free");
+    }
+    expect(models).not.toContain("gpt-image-2");
   });
 });

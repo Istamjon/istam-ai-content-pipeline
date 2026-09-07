@@ -24,7 +24,6 @@ import type { BrandFaceRef } from "./brandFace.js";
 const DEFAULT_MODELS = [
   "gpt-image-2:free",
   "gpt-image:free",
-  "gpt-image-2",
   "glm-image-1:free",
   "sensenova-6.8-flash-lite:free",
   "cogview-4-250304:free",
@@ -81,7 +80,7 @@ export function canUseUnorouterToday(): {
   return { ok: b.remaining > 0, used: b.used, limit: b.limit, remaining: b.remaining };
 }
 
-function resolveModelList(): string[] {
+export function resolveModelList(): string[] {
   const custom = (env.UNOROUTER_FALLBACK_MODELS || "")
     .split(/[,\n;]+/)
     .map((s) => s.trim())
@@ -89,7 +88,9 @@ function resolveModelList(): string[] {
 
   const primary = (env.UNOROUTER_IMAGE_MODEL || DEFAULT_MODELS[0]).trim();
   const set = new Set<string>([primary, ...custom, ...DEFAULT_MODELS]);
-  return Array.from(set);
+  // Strictly enforce only free models (:free)
+  const freeModels = Array.from(set).filter((m) => m.includes(":free"));
+  return freeModels.length > 0 ? freeModels : Array.from(set);
 }
 
 async function downloadImageBuffer(url: string): Promise<Buffer> {

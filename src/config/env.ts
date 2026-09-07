@@ -56,7 +56,7 @@ export const env = {
     process.env.UNOROUTER_IMAGE_MODEL || "gpt-image-2:free",
   UNOROUTER_FALLBACK_MODELS:
     process.env.UNOROUTER_FALLBACK_MODELS ||
-    "gpt-image-2,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free",
+    "gpt-image:free,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free",
   DAILY_UNOROUTER_LIMIT: Math.max(
     0,
     parseInt(process.env.DAILY_UNOROUTER_LIMIT || "15", 10) || 15,
