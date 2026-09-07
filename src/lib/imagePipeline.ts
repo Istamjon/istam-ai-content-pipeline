@@ -1,13 +1,41 @@
 /**
- * Image generation waterfall:
- *   1) UnoRouter (gpt-image-2:free primary + multi-model fallback — brand face supported)
- *   2) Nano Banana (Gemini native image — face ref supported)
- *   3) Skywork Image API (face ref → edit API)
- *   4) xKiro Image API (free SenseNova model — pure workflow diagrams)
+ * Image generation waterfall — brand face identity first, workflow fallback last.
  *
- * Providers 1, 2 & 3 support brand face identity.
- * Provider 4 (xKiro) is strictly workflow diagrams (no humans) — used as last resort.
- * If all fail/exhausted → publish is skipped.
+ * ════════════════════════════════════════════════════════════════════
+ *  PROVIDER CAPABILITIES (face.jpg bilan ishlash)
+ * ════════════════════════════════════════════════════════════════════
+ *
+ *  1) UnoRouter — gpt-image-2:free      ✅ FACE.JPG (/images/edits multipart)
+ *     • Edit API: face.jpg → multipart FormData → identity-preserving image
+ *     • Fallback within: /images/generations (prompt-guided, no image ref)
+ *     • Kamchilik: free tier = 1 req/min → model cooling 60s after 429
+ *     • Muammo: edit API ba'zan 400/422 qaytaradi (model versiyasiga bog'liq)
+ *
+ *  2) Nano Banana — Gemini image models  ✅ FACE.JPG (multimodal inlineData)
+ *     • face.jpg → base64 → inlineData part in generateContent
+ *     • Models: gemini-2.5-flash-image → gemini-3.1-flash-image → ...
+ *     • Kamchilik: Gemini free tier juda past image quota (≈4/key/kun)
+ *     • Muammo: 429 RESOURCE_EXHAUSTED tez yetadi; ba'zan model 404
+ *
+ *  3) Skywork — theme-gateway SSE       ✅ FACE.JPG (/api/sse/image/update)
+ *     • face.jpg → base64 → source_images → SSE streaming response
+ *     • Kamchilik: credit asosida (to'ldirish kerak), bepul emas
+ *     • Muammo: SSE ba'zan "no file_url" bilan tugaydi; SERVICE_ERROR mumkin
+ *
+ *  4) xKiro — sensenova-u1.5-lite       ❌ FACE.JPG YO'Q (workflow/sxema only)
+ *     • Faqat text-to-image: mavzuga mos workflow diagramlar, arxitektura sxemalar
+ *     • Face.jpg bilan HARAKAT QILINMAYDI — bu absolute last resort
+ *     • gpt-image edit API xKiro-da paid model talab qiladi → ishlatilmaydi
+ *     • workflowPrompt/schematicPrompt bilan chaqiriladi (topic-aware diagram)
+ *
+ * ════════════════════════════════════════════════════════════════════
+ *  FALLBACK CHAIN
+ * ════════════════════════════════════════════════════════════════════
+ *  face.jpg bor → UnoRouter(edit) → NanoBanana(multimodal) → Skywork(edit) → xKiro(workflow)
+ *  face.jpg yo'q → UnoRouter(prompt) → NanoBanana(prompt) → Skywork(prompt) → xKiro(workflow)
+ *
+ *  xKiro FAQAT 1-3 hammasi muvaffaqiyatsiz bo'lgandagina ishga tushadi.
+ *  xKiro workflow diagramida insonlar bo'lmaydi — faqat mavzuga mos sxema.
  */
 import { env } from "../config/env.js";
 import {
@@ -38,7 +66,10 @@ import { loadBrandFace, logBrandFace } from "./brandFace.js";
 
 export type ImageProviderUsed = "unorouter" | "nanobanana" | "skywork" | "xkiro";
 
-/** Providers that apply brand face (multimodal, edit API, or identity-guided prompt). */
+/**
+ * Providers that attempt brand face identity (edit API or multimodal inlineData).
+ * xKiro intentionally excluded — workflow diagrams only, never human faces.
+ */
 const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>([
   "unorouter",
   "nanobanana",
@@ -46,7 +77,9 @@ const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>([
 ]);
 
 export type GenerateImageBufferOptions = {
+  /** Humanless schematic prompt (used when face is missing for providers 1-3). */
   schematicPrompt?: string;
+  /** Strict workflow diagram prompt (used exclusively for xKiro last-resort). */
   workflowPrompt?: string;
 };
 
@@ -60,24 +93,34 @@ export async function generateImageBuffer(
   const schematicPrompt = options?.schematicPrompt;
   const workflowPrompt = options?.workflowPrompt;
 
+  // ── Brand face status log ──────────────────────────────────────────
   if (face) {
     console.log(
-      `[imagePipeline] brand face ref: ${face.path} (${face.buffer.length} bytes` +
-        `${face.prepared ? ", prepared" : ""}) — identity: UnoRouter + Nano Banana + Skywork`,
+      `[imagePipeline] brand face: ${face.path} (${face.buffer.length} bytes` +
+        `${face.prepared ? ", prepared/downscaled" : ""})` +
+        ` — chain: UnoRouter(edit) → NanoBanana(multimodal) → Skywork(edit) → xKiro(workflow-only)`,
     );
   } else {
     console.warn(
-      "[imagePipeline] no brand face configured — falling back to humanless schematic diagrams (odamsiz sxemalar)",
+      "[imagePipeline] brand face NOT found — providers use text-only prompt; xKiro will generate workflow diagram",
     );
   }
 
-  // When no face is available, strictly use the humanless schematic prompt
-  const effectivePrompt = face ? prompt : (schematicPrompt || prompt);
+  // When face is absent, use humanless schematic prompt for providers 1–3 as well
+  const identityPrompt = face ? prompt : (schematicPrompt || prompt);
 
-  // 1) UnoRouter (gpt-image-2:free primary + internal model fallbacks)
+  // ══════════════════════════════════════════════════════════════════
+  // 1) UnoRouter — gpt-image-2:free
+  //    ✅ face.jpg: /images/edits multipart FormData
+  //    Fallback within: /images/generations (prompt-only)
+  //    Kamchilik: 1 req/min free tier; edit API 400/422 ba'zan
+  // ══════════════════════════════════════════════════════════════════
   if (isUnorouterConfigured() && canUseUnorouterToday().ok) {
+    console.log(
+      `[imagePipeline] → 1) UnoRouter gpt-image-2:free${face ? " + edit API face.jpg" : ""}`,
+    );
     try {
-      const buffer = await unorouterImage(effectivePrompt, {
+      const buffer = await unorouterImage(identityPrompt, {
         face,
         schematicPrompt,
         workflowPrompt,
@@ -87,91 +130,112 @@ export async function generateImageBuffer(
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`unorouter: ${msg}`);
       console.warn(
-        "[imagePipeline] UnoRouter failed → Nano Banana:",
-        msg.slice(0, 200),
+        `[imagePipeline] UnoRouter FAILED → 2) Nano Banana | ${msg.slice(0, 200)}`,
       );
     }
   } else if (isUnorouterConfigured()) {
     const b = canUseUnorouterToday();
     errors.push(`unorouter: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] UnoRouter daily budget ${b.used}/${b.limit} → Nano Banana`,
+      `[imagePipeline] UnoRouter budget exhausted (${b.used}/${b.limit} rem=${b.remaining}) → 2) Nano Banana`,
     );
   } else {
-    console.warn("[imagePipeline] UnoRouter not configured (UNOROUTER_API_KEY) → Nano Banana");
+    console.warn("[imagePipeline] UnoRouter not configured → 2) Nano Banana");
   }
 
-  // 2) Nano Banana (Gemini native image + optional face)
+  // ══════════════════════════════════════════════════════════════════
+  // 2) Nano Banana — Gemini image models
+  //    ✅ face.jpg: base64 inlineData in generateContent (multimodal)
+  //    Kamchilik: ≈4 image/key/kun free quota, 429 tez yetadi
+  // ══════════════════════════════════════════════════════════════════
   if (isNanoBananaConfigured() && canUseNanoBananaToday().ok) {
+    console.log(
+      `[imagePipeline] → 2) Nano Banana (Gemini${face ? " + multimodal face.jpg inlineData" : ""})`,
+    );
     try {
-      const buffer = await nanoBananaImage(effectivePrompt, { face });
+      const buffer = await nanoBananaImage(identityPrompt, { face });
       return { buffer, provider: "nanobanana" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`nanobanana: ${msg}`);
       console.warn(
-        "[imagePipeline] Nano Banana failed → Skywork:",
-        msg.slice(0, 200),
+        `[imagePipeline] Nano Banana FAILED → 3) Skywork | ${msg.slice(0, 200)}`,
       );
     }
   } else if (isNanoBananaConfigured()) {
     const b = canUseNanoBananaToday();
     errors.push(`nanobanana: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] Nano Banana daily budget ${b.used}/${b.limit} → Skywork`,
+      `[imagePipeline] Nano Banana budget exhausted (${b.used}/${b.limit} rem=${b.remaining}) → 3) Skywork`,
     );
   } else {
-    console.warn("[imagePipeline] Nano Banana not configured → Skywork");
+    console.warn("[imagePipeline] Nano Banana not configured → 3) Skywork");
   }
 
-  // 3) Skywork
+  // ══════════════════════════════════════════════════════════════════
+  // 3) Skywork — theme-gateway SSE
+  //    ✅ face.jpg: base64 → source_images → /api/sse/image/update
+  //    Kamchilik: credit asosida; SSE ba'zan "no file_url"
+  // ══════════════════════════════════════════════════════════════════
   if (isSkyworkConfigured() && canUseSkyworkToday().ok) {
+    console.log(
+      `[imagePipeline] → 3) Skywork SSE${face ? " + edit API face.jpg source_images" : ""}`,
+    );
     try {
-      const buffer = await skyworkImage(effectivePrompt, { face });
+      const buffer = await skyworkImage(identityPrompt, { face });
       return { buffer, provider: "skywork" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`skywork: ${msg}`);
       console.warn(
-        "[imagePipeline] Skywork failed → xKiro:",
-        msg.slice(0, 200),
+        `[imagePipeline] Skywork FAILED → 4) xKiro LAST RESORT (workflow only) | ${msg.slice(0, 200)}`,
       );
     }
   } else if (isSkyworkConfigured()) {
     const b = canUseSkyworkToday();
     errors.push(`skywork: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] Skywork daily budget ${b.used}/${b.limit} → xKiro`,
+      `[imagePipeline] Skywork budget exhausted (${b.used}/${b.limit} rem=${b.remaining}) → 4) xKiro last resort`,
     );
   } else {
-    console.warn("[imagePipeline] Skywork not configured → xKiro");
+    console.warn("[imagePipeline] Skywork not configured → 4) xKiro last resort");
   }
 
-  // 4) xKiro (strictly workflow style only — ZERO humans / ONLY workflow)
+  // ══════════════════════════════════════════════════════════════════
+  // 4) xKiro — ABSOLUTE LAST RESORT
+  //    ❌ face.jpg ISHLATILMAYDI — model free tier image edit qilmaydi
+  //    ✅ Mavzuga mos workflow/sxema diagram (topic-aware, no humans)
+  //    Muammo: async job — 3+ daqiqa kutish mumkin
+  // ══════════════════════════════════════════════════════════════════
   if (isXkiroConfigured() && canUseXkiroToday().ok) {
+    const xkiroPrompt = workflowPrompt || schematicPrompt || prompt;
+    console.warn(
+      `[imagePipeline] → 4) xKiro LAST RESORT — workflow diagram (NO face.jpg). ` +
+        `All identity providers failed/exhausted. Prompt mode: ${
+          workflowPrompt ? "workflowPrompt" : schematicPrompt ? "schematicPrompt" : "main prompt"
+        }`,
+    );
     try {
-      const targetWorkflowPrompt = workflowPrompt || schematicPrompt || prompt;
-      const buffer = await xkiroImage(targetWorkflowPrompt, {
-        face: null, // Strictly NO human face for xKiro: pure workflow diagrams only
-        workflowPrompt: targetWorkflowPrompt,
+      const buffer = await xkiroImage(xkiroPrompt, {
+        face: null,                  // ← NO face ref: xKiro = workflow diagrams only
+        workflowPrompt: xkiroPrompt, // ← Forces topic-aware workflow diagram mode
       });
       return { buffer, provider: "xkiro" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`xkiro: ${msg}`);
       console.warn(
-        "[imagePipeline] xKiro failed — all providers exhausted:",
-        msg.slice(0, 200),
+        `[imagePipeline] xKiro FAILED — ALL providers exhausted: ${msg.slice(0, 200)}`,
       );
     }
   } else if (isXkiroConfigured()) {
     const b = canUseXkiroToday();
     errors.push(`xkiro: budget ${b.used}/${b.limit}`);
     console.warn(
-      `[imagePipeline] xKiro daily budget ${b.used}/${b.limit} — all providers exhausted`,
+      `[imagePipeline] xKiro budget exhausted (${b.used}/${b.limit}) — ALL providers exhausted`,
     );
   } else {
-    console.warn("[imagePipeline] xKiro not configured (XKIRO_API_KEY)");
+    console.warn("[imagePipeline] xKiro not configured (XKIRO_API_KEY) — ALL providers exhausted");
   }
 
   const ur = isUnorouterConfigured() ? canUseUnorouterToday() : null;
@@ -192,8 +256,9 @@ export async function generateImageBuffer(
 export function logAllImageBudgets(): void {
   logBrandFace();
   console.log(
-    `[AI] REQUIRE_BRAND_FACE: ${env.REQUIRE_BRAND_FACE} ` +
-      `(identity: UnoRouter + Nano Banana + Skywork — all support brand face; xKiro is strictly humanless workflow)`,
+    `[AI] REQUIRE_BRAND_FACE: ${env.REQUIRE_BRAND_FACE} | ` +
+      `Face chain: 1)UnoRouter(edit) → 2)NanoBanana(multimodal) → 3)Skywork(edit) | ` +
+      `Last resort: 4)xKiro(workflow diagram, NO face)`,
   );
   logUnorouterBudget();
   logNanoBananaBudgets();
