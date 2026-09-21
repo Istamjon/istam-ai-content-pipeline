@@ -509,6 +509,9 @@ data/
 | `npm run cf:resolve` | List/resolve Cloudflare accounts |
 | `npm run tokens:status` | Token status |
 | `npm run tokens:refresh` | Refresh expiring tokens |
+| `npm test` | Unit tests |
+| `npm run test:int` | Integration tests (OAuth token refresh, mock HTTP socket) |
+| `npm run test:all` | Unit + integration + `langgraph.json` check |
 | `npm run test:meta` | Meta API test post |
 | `npm run canonical:list` | List canonical docs |
 
@@ -571,8 +574,14 @@ ESLint still reports legacy `process.env` usage outside `env.ts` (non-blocking i
 ```bash
 npm run build
 npm run lint
-npm test
+npm test        # unit
+npm run test:int  # integration (OAuth token refresh)
 ```
+
+The integration suite in `src/oauth/tokenRefresh.int.test.ts` starts an ephemeral
+HTTP server on `127.0.0.1:0` and re-points the global `fetch` at it, so it runs
+fully offline. It snapshots and restores `data/tokens/*` and `.env`, so it is
+safe to run on a machine holding real credentials.
 
 LangGraph Studio (optional):
 

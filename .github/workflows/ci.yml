@@ -39,6 +39,12 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # Covers the OAuth token-refresh critical path (src/oauth/tokenRefresh.ts)
+      # against a real local HTTP socket. A stale access token is the most
+      # expensive silent failure in the pipeline, so this must not be skipped.
+      - name: Integration tests
+        run: npm run test:int
+
       - name: Smoke — image prompt builder
         run: |
           node --input-type=module -e "
