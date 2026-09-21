@@ -24,11 +24,15 @@ jobs:
           VDS_HOST: ${{ secrets.VDS_HOST }}
           VDS_USER: ${{ secrets.VDS_USER }}
           VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+          UNOROUTER_API_KEY: ${{ secrets.UNOROUTER_API_KEY }}
         run: |
           [ -n "$VDS_HOST" ] && [ -n "$VDS_USER" ] && [ -n "$VDS_SSH_KEY" ] || {
             echo "::error::Missing VDS_* secrets"
             exit 1
           }
+          if [ -z "$UNOROUTER_API_KEY" ]; then
+            echo "::warning::UNOROUTER_API_KEY secret is not set — the existing VDS .env value will be kept. Add it in Settings → Secrets and variables → Actions."
+          fi
 
       - name: Checkout (for face.jpg)
         uses: actions/checkout@v4
@@ -48,6 +52,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+          UNOROUTER_API_KEY: ${{ secrets.UNOROUTER_API_KEY }}
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
@@ -55,7 +60,7 @@ jobs:
           port: ${{ secrets.VDS_PORT || 22 }}
           command_timeout: 40m
           script_stop: false
-          envs: REMOTE_APP_DIR
+          envs: REMOTE_APP_DIR,UNOROUTER_API_KEY
           script: |
             set -e
             APP_DIR="${REMOTE_APP_DIR:-}"
@@ -98,7 +103,7 @@ jobs:
             upsert DRY_RUN false
             upsert CRON_RUN_ON_START false
             upsert TZ Asia/Tashkent
-            upsert UNOROUTER_API_KEY sk-PKwNQE6VVAacQpuTzTaAcQn6vPFp4cR79tIoyB8TrW1LVFUQ
+            upsert UNOROUTER_API_KEY "${UNOROUTER_API_KEY:-}"
             upsert UNOROUTER_BASE_URL https://api.unorouter.com/v1
             upsert UNOROUTER_IMAGE_MODEL gpt-image-2:free
             upsert UNOROUTER_FALLBACK_MODELS "gpt-image-2,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free"

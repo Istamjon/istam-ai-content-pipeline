@@ -27,10 +27,11 @@ data/images/
 data/images/**
 !data/images/.gitkeep
 # Personal brand face (keep local/VDS only — not in git)
-data/brand/face.jpg
-data/brand/face.jpeg
-data/brand/face.png
-data/brand/face.webp
+# WARNING: .gitignore never untracks files that were already committed.
+# If face.jpg is tracked, run:
+#   git rm --cached data/brand/face.jpg data/brand/face.original.jpg
+data/brand/face*
+!data/brand/.gitkeep
 data/app.db
 data/app.db-*
 data/cloudflare-accounts.json

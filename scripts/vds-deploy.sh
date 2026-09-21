@@ -35,8 +35,31 @@ set_env_if_missing() {
   printf '\n%s=%s\n' "$key" "$val" >> .env
 }
 
+upsert_env() {
+  key="$1"; val="$2"
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${val}|" .env
+  else
+    printf '\n%s=%s\n' "$key" "$val" >> .env
+  fi
+}
+
+# Credentials must arrive from the environment (GitHub Actions secret, passed
+# through deploy.yml). Never hardcode them here — this repository is public.
+# Overwrites the existing value so a ROTATED key actually propagates to .env.
+# Value is passed explicitly (no `${!key}` indirect expansion) to stay portable.
+sync_secret_from_ci() {
+  key="$1"; cur="${2:-}"
+  if [ -z "$cur" ]; then
+    echo "WARN: $key not supplied by CI — keeping existing .env value"
+    return 0
+  fi
+  upsert_env "$key" "$cur"
+  echo "Synced $key from CI environment"
+}
+
 # Ensure UnoRouter is provisioned before docker starts
-set_env_if_missing UNOROUTER_API_KEY sk-PKwNQE6VVAacQpuTzTaAcQn6vPFp4cR79tIoyB8TrW1LVFUQ
+sync_secret_from_ci UNOROUTER_API_KEY "${UNOROUTER_API_KEY:-}"
 set_env_if_missing UNOROUTER_BASE_URL https://api.unorouter.com/v1
 set_env_if_missing UNOROUTER_IMAGE_MODEL gpt-image-2:free
 set_env_if_missing UNOROUTER_FALLBACK_MODELS "gpt-image-2,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free"
@@ -171,22 +194,7 @@ if [ "$RESTART" != "0" ] && [ "$RESTART" != "na" ]; then
 fi
 
 # Ensure daily policy keys exist — only fill MISSING keys (never clobber operator limits)
-set_env_if_missing() {
-  key="$1"; val="$2"
-  if grep -q "^${key}=" .env 2>/dev/null; then
-    return 0
-  fi
-  printf '\n%s=%s\n' "$key" "$val" >> .env
-}
-
-upsert_env() {
-  key="$1"; val="$2"
-  if grep -q "^${key}=" .env 2>/dev/null; then
-    sed -i "s|^${key}=.*|${key}=${val}|" .env
-  else
-    printf '\n%s=%s\n' "$key" "$val" >> .env
-  fi
-}
+# NOTE: set_env_if_missing / upsert_env are defined near the top of this script.
 # Align slots (3–6) with per-platform caps (>= max slots so random plan is not wasted)
 set_env_if_missing CRON_RANDOM true
 set_env_if_missing CRON_SLOTS_MIN 3
@@ -206,7 +214,7 @@ set_env_if_missing DAILY_LIMIT_BLOGGER 6
 set_env_if_missing THREADS_MAX_PARTS 6
 set_env_if_missing DRY_RUN false
 set_env_if_missing TZ Asia/Tashkent
-set_env_if_missing UNOROUTER_API_KEY sk-PKwNQE6VVAacQpuTzTaAcQn6vPFp4cR79tIoyB8TrW1LVFUQ
+# UNOROUTER_API_KEY is synced from the CI environment at the top of this script.
 set_env_if_missing UNOROUTER_BASE_URL https://api.unorouter.com/v1
 set_env_if_missing UNOROUTER_IMAGE_MODEL gpt-image-2:free
 set_env_if_missing UNOROUTER_FALLBACK_MODELS "gpt-image-2,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free"

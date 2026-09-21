@@ -32,6 +32,7 @@ jobs:
           VDS_HOST: ${{ secrets.VDS_HOST }}
           VDS_USER: ${{ secrets.VDS_USER }}
           VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+          UNOROUTER_API_KEY: ${{ secrets.UNOROUTER_API_KEY }}
         run: |
           missing=0
           [ -z "$VDS_HOST" ] && echo "Missing secret: VDS_HOST" && missing=1
@@ -41,10 +42,17 @@ jobs:
             echo "::error::Add VDS_HOST, VDS_USER, VDS_SSH_KEY in repo Settings → Secrets"
             exit 1
           fi
+          if [ -z "$UNOROUTER_API_KEY" ]; then
+            echo "::warning::UNOROUTER_API_KEY secret is not set — vds-deploy.sh will keep the existing VDS .env value. Add it in Settings → Secrets and variables → Actions."
+          fi
           echo "Secrets present"
 
       - name: Deploy over SSH (pull + scripts/vds-deploy.sh)
         uses: appleboy/ssh-action@v1.2.0
+        env:
+          # Forwarded to vds-deploy.sh, which upserts it into the VDS .env.
+          # Credentials must never be hardcoded in scripts/ — this repo is public.
+          UNOROUTER_API_KEY: ${{ secrets.UNOROUTER_API_KEY }}
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
@@ -55,6 +63,7 @@ jobs:
           # between EVERY script line, which breaks multi-line case blocks.
           # The script already does `set -euo pipefail` for stop-on-error.
           script_stop: false
+          envs: UNOROUTER_API_KEY
           script: |
             set -euo pipefail
             APP_DIR="${{ secrets.VDS_PATH }}"
