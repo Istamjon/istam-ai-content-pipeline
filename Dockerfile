@@ -2,7 +2,7 @@
 # Build:  docker compose build
 # Run:    docker compose up -d
 
-FROM node:22-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 
 WORKDIR /app
 
@@ -26,7 +26,7 @@ RUN rm -rf node_modules \
   && node --input-type=module -e "import 'dotenv/config'; console.log('dotenv-ok')"
 
 # ── Runtime ──────────────────────────────────────────────────────────
-FROM node:22-bookworm-slim AS runtime
+FROM node:25-bookworm-slim AS runtime
 
 WORKDIR /app
 
