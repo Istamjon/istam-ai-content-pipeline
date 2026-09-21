@@ -124,6 +124,9 @@ export async function generateImageBuffer(
         face,
         schematicPrompt,
         workflowPrompt,
+        // Identity required → let a failed face-edit cascade to Nano Banana
+        // instead of UnoRouter silently returning a faceless image.
+        requireFace: requireIdentity,
       });
       return { buffer, provider: "unorouter" };
     } catch (e) {

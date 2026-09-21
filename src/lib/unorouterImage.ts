@@ -289,6 +289,18 @@ export type UnorouterImageOptions = {
   face?: BrandFaceRef | null;
   schematicPrompt?: string;
   workflowPrompt?: string;
+  /**
+   * Identity is mandatory (brand face present + REQUIRE_BRAND_FACE=true).
+   *
+   * When true, this provider may ONLY return an image produced by
+   * /images/edits with the face reference. If that fails it throws instead of
+   * degrading to a faceless /images/generations call — so the caller cascades
+   * to the next identity-capable provider (Nano Banana → Skywork).
+   *
+   * Without this, a failed edit silently returned a faceless image from the
+   * same model and the waterfall never advanced.
+   */
+  requireFace?: boolean;
 };
 
 /**
@@ -325,6 +337,9 @@ export async function unorouterImage(
   }
 
   let lastErr: unknown;
+  // Identity is mandatory → a failed edit must cascade, never degrade in place.
+  const mustUseFace = Boolean(options?.requireFace && options?.face?.buffer);
+  const identitySkipped: string[] = [];
 
   for (const model of usableModels) {
     console.log(`[unorouter] trying model "${model}"...`);
@@ -345,7 +360,21 @@ export async function unorouterImage(
         );
         return editBuf;
       }
+      if (mustUseFace) {
+        throw new Error(
+          `UnoRouter: face-preserving /images/edits failed for "${model}" while ` +
+            `REQUIRE_BRAND_FACE is on — refusing to degrade to a faceless ` +
+            `generation. Cascading to the next identity provider.`,
+        );
+      }
       console.log(`[unorouter] edit failed for "${model}" → falling back to generations API`);
+    } else if (mustUseFace) {
+      // Model cannot accept an image reference → cannot preserve identity. Skip it.
+      identitySkipped.push(model);
+      console.log(
+        `[unorouter] model "${model}" skipped: no /images/edits support (identity required)`,
+      );
+      continue;
     }
 
     // 2) Standard generations mode
@@ -391,6 +420,14 @@ export async function unorouterImage(
         continue;
       }
     }
+  }
+
+  if (mustUseFace && identitySkipped.length === usableModels.length) {
+    throw new Error(
+      `UnoRouter: no available model supports face-preserving /images/edits ` +
+        `(skipped: ${identitySkipped.join(", ")}) while REQUIRE_BRAND_FACE is on. ` +
+        `Cascading to the next identity provider.`,
+    );
   }
 
   throw new Error(

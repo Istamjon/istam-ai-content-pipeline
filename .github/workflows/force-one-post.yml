@@ -1,8 +1,12 @@
 # Force one pipeline run on VDS (with optional brand face from secret).
-# After deploy: set BRAND_FACE_B64 secret, then run this workflow.
 #
-#   gh secret set BRAND_FACE_B64 < face.b64
+# The brand face is NOT stored in git (it is a personal photo). It is shipped
+# from the BRAND_FACE_B64 repository secret:
+#
+#   base64 -i face.jpg | tr -d '\n' | gh secret set BRAND_FACE_B64
 #   gh workflow run force-one-post.yml
+#
+# The secret must decode to a JPEG larger than 1000 bytes.
 
 name: Force One Post VDS
 
@@ -34,8 +38,25 @@ jobs:
             echo "::warning::UNOROUTER_API_KEY secret is not set — the existing VDS .env value will be kept. Add it in Settings → Secrets and variables → Actions."
           fi
 
-      - name: Checkout (for face.jpg)
-        uses: actions/checkout@v4
+      - name: Materialise brand face from BRAND_FACE_B64 secret
+        env:
+          BRAND_FACE_B64: ${{ secrets.BRAND_FACE_B64 }}
+        run: |
+          if [ -z "$BRAND_FACE_B64" ]; then
+            echo "::error::BRAND_FACE_B64 is not set. Create it from your local photo:"
+            echo "::error::  base64 -i face.jpg | tr -d '\n' | gh secret set BRAND_FACE_B64"
+            exit 1
+          fi
+          mkdir -p .face-staging/data/brand
+          printf '%s' "$BRAND_FACE_B64" | tr -d '\n\r' | base64 -d > .face-staging/data/brand/face.jpg
+          size=$(wc -c < .face-staging/data/brand/face.jpg)
+          magic=$(head -c 2 .face-staging/data/brand/face.jpg | od -An -tx1 | tr -d ' \n')
+          echo "decoded bytes=$size magic=$magic"
+          [ "$size" -gt 1000 ] || { echo "::error::decoded face is only $size bytes (pipeline needs >1000)"; exit 1; }
+          case "$magic" in
+            ffd8) echo "OK: valid JPEG header" ;;
+            *) echo "::error::decoded face is not a JPEG (magic=$magic)"; exit 1 ;;
+          esac
 
       - name: SCP brand face to VDS
         uses: appleboy/scp-action@v0.1.7
@@ -44,9 +65,9 @@ jobs:
           username: ${{ secrets.VDS_USER }}
           key: ${{ secrets.VDS_SSH_KEY }}
           port: ${{ secrets.VDS_PORT || 22 }}
-          source: "data/brand/face.jpg"
+          source: ".face-staging/data/brand/face.jpg"
           target: "/tmp/istam-brand-face/"
-          strip_components: 0
+          strip_components: 1
 
       - name: Place face + set 4/day limits + run pipeline once
         uses: appleboy/ssh-action@v1.2.0
