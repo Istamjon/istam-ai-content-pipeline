@@ -80,8 +80,13 @@ jobs:
           console.log('OK sources=', sources.length, 'fitScore=', ok.score);
           "
 
-      # Full eslint currently fails on legacy process.env usage outside env.ts.
-      # Keep as non-blocking report until cleaned up.
+      # ESLint is report-only because the codebase violates several of its own
+      # rules — measured at 170 problems (134 errors) across 39 files:
+      #   no-process-env 84 · no-instanceof 32 · no-non-null-assertion 27
+      #   no-useless-escape 8 · no-unused-vars 5 · prefer-const 4 · no-explicit-any 4
+      # Note: fixing only `process.env` usage would NOT make this pass — 50
+      # errors from the other rules would remain. Flip to blocking once the
+      # count reaches zero, otherwise the gate stays decorative.
       - name: ESLint (report only)
         continue-on-error: true
         run: npm run lint

@@ -528,7 +528,7 @@ node scripts/reset-image-soft-budget.mjs   # clear soft image counters (UTC day)
 |------|----------|
 | Brand reject | Off-topic / crypto / rumor articles skipped early |
 | Fact ground | Claims must map to source / FACTS |
-| Quality fail | Up to 2 rewrite attempts, then skip article |
+| Quality fail | Up to 3 rewrite passes (first draft + 2 retries), then skip article |
 | No image | Skip publish entirely |
 | Soft style | Not enough to pass if facts fail |
 | Telegram layout | **One** `sendPhoto` with caption (image + text together) |

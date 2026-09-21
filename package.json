@@ -51,14 +51,11 @@
     "dotenv": "^17.4.2",
     "form-data": "^4.0.6",
     "node-cron": "^4.6.0",
-    "undici": "^7.28.0",
+    "undici": "^7.29.1",
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "sharp": "^0.34.0"
-  },
-  "resolutions": {
-    "**/filelist/minimatch": "5.1.8"
+    "sharp": "^0.35.4"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
@@ -79,5 +76,11 @@
     "prettier": "^3.8.3",
     "ts-jest": "^29.4.9",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "js-yaml": "^4.3.2",
+    "brace-expansion": "^1.1.18",
+    "browserslist": "^4.28.7",
+    "baseline-browser-mapping": "^2.11.0"
   }
 }
