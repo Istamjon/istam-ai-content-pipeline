@@ -185,7 +185,12 @@ export async function generateImageBuffer(
       `[imagePipeline] → 3) Skywork SSE${face ? " + edit API face.jpg source_images" : ""}`,
     );
     try {
-      const buffer = await skyworkImage(identityPrompt, { face });
+      const buffer = await skyworkImage(identityPrompt, {
+        face,
+        // Identity required → let a failed edit cascade instead of silently
+        // inventing a generic person via the create API.
+        requireFace: requireIdentity,
+      });
       return { buffer, provider: "skywork" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

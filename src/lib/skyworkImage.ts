@@ -184,8 +184,15 @@ function canUseKeySlot(slot: SkyworkKeySlot): boolean {
   return b.remaining > 0;
 }
 
+/**
+ * Gateway base URL.
+ * `SKYWORK_GATEWAY_URL` is the documented setting (see .env.example);
+ * `SKYWORK_BASE_URL` is honoured as an override for backwards compatibility.
+ */
 function gatewayBase(): string {
-  return (env.SKYWORK_GATEWAY_URL || DEFAULT_GATEWAY).replace(/\/$/, "");
+  const base =
+    process.env.SKYWORK_BASE_URL || env.SKYWORK_GATEWAY_URL || DEFAULT_GATEWAY;
+  return base.replace(/\/+$/, "");
 }
 
 function resolveAspectRatio(): string | undefined {
@@ -341,6 +348,14 @@ function orderUsableSlots(slots: SkyworkKeySlot[]): SkyworkKeySlot[] {
 
 export type SkyworkImageOptions = {
   face?: { mimeType: string; base64: string; path?: string } | null;
+  /**
+   * Identity is mandatory (brand face present + REQUIRE_BRAND_FACE=true).
+   *
+   * When true, a failed image *edit* throws instead of falling back to the
+   * create API with a generic invented person. That fallback produced a face
+   * that was not the user's, while the pipeline still reported success.
+   */
+  requireFace?: boolean;
 };
 
 async function generateOnceWithKeyRaw(
@@ -350,7 +365,7 @@ async function generateOnceWithKeyRaw(
   resolution: string,
   face?: { mimeType?: string; base64: string } | null,
 ): Promise<Buffer> {
-  const base = (process.env.SKYWORK_BASE_URL || DEFAULT_GATEWAY).replace(/\/+$/, "");
+  const base = gatewayBase();
   let url: string;
   let body: Record<string, unknown>;
 
@@ -425,6 +440,7 @@ async function generateOnceWithKey(
   aspect: string | undefined,
   resolution: string,
   face?: { mimeType?: string; base64: string } | null,
+  requireFace = false,
 ): Promise<Buffer> {
   if (face?.base64) {
     try {
@@ -433,6 +449,16 @@ async function generateOnceWithKey(
       const msg = e instanceof Error ? e.message : String(e);
       // If edit API failed due to internal backend failure (Gemini/Seedream), retry with create API
       if (/Image editing failed|Gemini failed|Seedream|model failed/i.test(msg)) {
+        if (requireFace) {
+          // The create fallback below invents a generic person — the exact
+          // opposite of identity preservation. Fail so the pipeline cascades
+          // to the next provider instead.
+          throw new Error(
+            `Skywork: image edit failed and REQUIRE_BRAND_FACE is on — refusing ` +
+              `the create-API fallback (it would invent a generic face). ` +
+              `Cascading to the next provider. Cause: ${msg.slice(0, 160)}`,
+          );
+        }
         console.warn(
           `[skywork] ${slot.label} edit API backend failure → fallback to create API: ${msg.slice(0, 120)}`,
         );
@@ -475,6 +501,8 @@ export async function skyworkImage(
   const aspect = resolveAspectRatio();
   const resolution = resolveResolution();
   const face = options?.face;
+  // Identity mandatory → a failed edit must cascade, never invent a generic face.
+  const requireFace = Boolean(options?.requireFace && face?.base64);
   const usable = orderUsableSlots(slots.filter(canUseKeySlot));
   const remMap = (label: string) => {
     const s = usable.find((x) => x.label === label);
@@ -514,6 +542,7 @@ export async function skyworkImage(
         aspect,
         resolution,
         face,
+        requireFace,
       );
       const used = incrementProviderImageUsage(slot.providerKey, 1);
       console.log(
