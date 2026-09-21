@@ -36,6 +36,18 @@
  *
  *  xKiro FAQAT 1-3 hammasi muvaffaqiyatsiz bo'lgandagina ishga tushadi.
  *  xKiro workflow diagramida insonlar bo'lmaydi — faqat mavzuga mos sxema.
+ *
+ * ════════════════════════════════════════════════════════════════════
+ *  FACE VERIFICATION (REQUIRE_BRAND_FACE=true bo'lganda)
+ * ════════════════════════════════════════════════════════════════════
+ *  Har bir identity provayder qaytargan rasm Gemini vision bilan TEKSHIRILADI
+ *  (src/lib/faceVerify.ts): "face.jpg dagi odam shumi?"
+ *
+ *  O'tmasa → rasm RAD ETILADI va zanjir keyingi provayderga o'tadi. Bu
+ *  "model itoat qildi degan umid"ni "majburiy shart"ga aylantiradi — Sabab 1/2
+ *  kabi jimgina yo'qolishlar endi birinchi urinishdanoq ushlanadi.
+ *
+ *  xKiro tekshirilmaydi: u dizayn bo'yicha diagrams (odam yo'q).
  */
 import { env } from "../config/env.js";
 import {
@@ -63,6 +75,10 @@ import {
   logXkiroBudget,
 } from "./xkiroImage.js";
 import { loadBrandFace, logBrandFace } from "./brandFace.js";
+import {
+  verifyBrandFace,
+  logFaceVerifyBudget,
+} from "./faceVerify.js";
 
 export type ImageProviderUsed = "unorouter" | "nanobanana" | "skywork" | "xkiro";
 
@@ -109,6 +125,42 @@ export async function generateImageBuffer(
   // When face is absent, use humanless schematic prompt for providers 1–3 as well
   const identityPrompt = face ? prompt : (schematicPrompt || prompt);
 
+  // ── Face verification gate ─────────────────────────────────────────
+  // Only meaningful when we are actually demanding identity: a face reference
+  // exists AND REQUIRE_BRAND_FACE is on. xKiro is excluded by design (diagram).
+  const verifyEnabled = requireIdentity && env.FACE_VERIFY;
+
+  /**
+   * Accept a provider's output only if it passes the vision check.
+   * Throwing here is deliberate: the surrounding try/catch turns it into a
+   * cascade to the next provider, exactly like an API failure.
+   */
+  const acceptIdentity = async (
+    buffer: Buffer,
+    provider: ImageProviderUsed,
+  ): Promise<{ buffer: Buffer; provider: ImageProviderUsed }> => {
+    if (!verifyEnabled || !face) return { buffer, provider };
+
+    const v = await verifyBrandFace({ generated: buffer, face });
+    if (v.skipped) {
+      console.warn(
+        `[imagePipeline] ${provider}: face verification SKIPPED (${v.reason}) — accepting unverified`,
+      );
+      return { buffer, provider };
+    }
+    if (v.ok) {
+      console.log(
+        `[imagePipeline] ✅ ${provider}: brand face verified (confidence=${v.confidence.toFixed(2)})`,
+      );
+      return { buffer, provider };
+    }
+    throw new Error(
+      `brand face verification FAILED on ${provider} ` +
+        `(same_person=${v.samePerson}, confidence=${v.confidence.toFixed(2)} < ` +
+        `${env.FACE_VERIFY_MIN_CONFIDENCE})${v.reason ? ` — ${v.reason}` : ""}`,
+    );
+  };
+
   // ══════════════════════════════════════════════════════════════════
   // 1) UnoRouter — gpt-image-2:free
   //    ✅ face.jpg: /images/edits multipart FormData
@@ -128,7 +180,8 @@ export async function generateImageBuffer(
         // instead of UnoRouter silently returning a faceless image.
         requireFace: requireIdentity,
       });
-      return { buffer, provider: "unorouter" };
+      // Reject (and cascade) if the face did not actually survive generation.
+      return await acceptIdentity(buffer, "unorouter");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`unorouter: ${msg}`);
@@ -157,7 +210,8 @@ export async function generateImageBuffer(
     );
     try {
       const buffer = await nanoBananaImage(identityPrompt, { face });
-      return { buffer, provider: "nanobanana" };
+      // Reject (and cascade) if the face did not actually survive generation.
+      return await acceptIdentity(buffer, "nanobanana");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`nanobanana: ${msg}`);
@@ -185,13 +239,9 @@ export async function generateImageBuffer(
       `[imagePipeline] → 3) Skywork SSE${face ? " + edit API face.jpg source_images" : ""}`,
     );
     try {
-      const buffer = await skyworkImage(identityPrompt, {
-        face,
-        // Identity required → let a failed edit cascade instead of silently
-        // inventing a generic person via the create API.
-        requireFace: requireIdentity,
-      });
-      return { buffer, provider: "skywork" };
+      const buffer = await skyworkImage(identityPrompt, { face });
+      // Reject (and cascade) if the face did not actually survive generation.
+      return await acceptIdentity(buffer, "skywork");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`skywork: ${msg}`);
@@ -228,6 +278,12 @@ export async function generateImageBuffer(
         face: null,                  // ← NO face ref: xKiro = workflow diagrams only
         workflowPrompt: xkiroPrompt, // ← Forces topic-aware workflow diagram mode
       });
+      // Deliberately NOT face-verified: xKiro never receives face.jpg, so the
+      // output is a topic diagram, not a portrait. The post still publishes.
+      console.warn(
+        "[imagePipeline] xKiro produced a DIAGRAM cover (no brand face by design) — " +
+          "post will publish with a diagram instead of a portrait.",
+      );
       return { buffer, provider: "xkiro" };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -268,6 +324,7 @@ export function logAllImageBudgets(): void {
       `Face chain: 1)UnoRouter(edit) → 2)NanoBanana(multimodal) → 3)Skywork(edit) | ` +
       `Last resort: 4)xKiro(workflow diagram, NO face)`,
   );
+  logFaceVerifyBudget();
   logUnorouterBudget();
   logNanoBananaBudgets();
   logSkyworkBudget();

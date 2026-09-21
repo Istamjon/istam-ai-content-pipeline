@@ -118,7 +118,9 @@ export const env = {
   /** Optional source_platform field for Skywork gateway */
   SKYWORK_SOURCE_PLATFORM: process.env.SKYWORK_SOURCE_PLATFORM || "",
   /**
-   * xKiro Image API (waterfall #3 after Skywork).
+   * xKiro Image API (waterfall #4 — ABSOLUTE LAST RESORT, after Skywork).
+   * Text-to-image only: generates a topic-aware workflow/diagram cover and is
+   * NEVER given face.jpg (it cannot preserve identity).
    * Free model: sensenova/sensenova-u1.5-lite (no wallet needed).
    * Paid model: gpt-image (requires deposited balance).
    * Async job API: POST /v1/images/generations → GET /v1/images/generations/{id}
@@ -146,12 +148,65 @@ export const env = {
     parseInt(process.env.DAILY_XKIRO_LIMIT || "25", 10) || 25,
   ),
   /**
-   * When brand face.jpg is present, only use identity-capable image providers
-   * (Nano Banana, Skywork). Both providers in the waterfall support face identity.
+   * When brand face.jpg is present, only use identity-capable image providers.
+   * All three identity providers in the waterfall support face.jpg:
+   *   1) UnoRouter (/images/edits)  2) Nano Banana (inlineData)  3) Skywork (source_images)
+   * xKiro is diagram-only and never receives the face.
    * Default true. Set REQUIRE_BRAND_FACE=false to allow text-only person fallback.
    */
   REQUIRE_BRAND_FACE: !["0", "false", "no", "off"].includes(
     (process.env.REQUIRE_BRAND_FACE || "true").toLowerCase().trim(),
+  ),
+  /**
+   * Single source of truth for the brand person's appearance, injected into
+   * every identity prompt (see src/config/brandIdentity.ts).
+   *
+   * IMPORTANT: the pipeline does NOT detect faces — this text plus face.jpg is
+   * all the model gets. If the real appearance changes (e.g. you grow a beard),
+   * update this value; a stale description actively fights the reference photo.
+   *
+   * Default: "Uzbek man in his mid-30s, completely clean-shaven, short dark
+   * textured hair with neat faded sides, dark brown eyes".
+   */
+  BRAND_IDENTITY_DESCRIPTION: process.env.BRAND_IDENTITY_DESCRIPTION || "",
+  /**
+   * Verify that a generated cover actually contains the brand face, using a
+   * Gemini vision pass (src/lib/faceVerify.ts). When verification fails the
+   * pipeline cascades to the next identity provider instead of publishing a
+   * generic person.
+   *
+   * Only runs when REQUIRE_BRAND_FACE is on AND face.jpg is present.
+   * Default true. Set FACE_VERIFY=false to disable (saves Gemini quota).
+   */
+  FACE_VERIFY: !["0", "false", "no", "off"].includes(
+    (process.env.FACE_VERIFY || "true").toLowerCase().trim(),
+  ),
+  /**
+   * Gemini model used for the face verification pass. Any multimodal Gemini
+   * model accepts image input. Override if your key cannot access the default.
+   */
+  GEMINI_VISION_MODEL:
+    process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash",
+  /**
+   * Soft daily face-verification calls PER Gemini key (UTC). Kept separate from
+   * DAILY_GEMINI_LIMIT so verification never starves article text generation.
+   * 0 = unlimited soft cap.
+   */
+  DAILY_FACEVERIFY_LIMIT: Math.max(
+    0,
+    parseInt(process.env.DAILY_FACEVERIFY_LIMIT || "40", 10) || 40,
+  ),
+  /**
+   * Minimum confidence (0–1) the vision pass must report to accept an image as
+   * "the same person". Below this the image is rejected and the pipeline
+   * cascades to the next provider.
+   */
+  FACE_VERIFY_MIN_CONFIDENCE: Math.min(
+    1,
+    Math.max(
+      0,
+      parseFloat(process.env.FACE_VERIFY_MIN_CONFIDENCE || "0.6") || 0.6,
+    ),
   ),
   // Pollinations entries removed (2026-09): text=Gemini (multi-key),
   // image=Nano Banana → Skywork. See src/lib/geminiText.ts + imagePipeline.ts.

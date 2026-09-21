@@ -19,6 +19,7 @@ import {
   incrementProviderImageUsage,
   utcToday,
 } from "../db.js";
+import { likenessClause, antiPoseClause } from "../config/brandIdentity.js";
 import type { BrandFaceRef } from "./brandFace.js";
 
 const DEFAULT_MODELS = [
@@ -149,11 +150,12 @@ async function tryEditGeneration(
       new Blob([new Uint8Array(face.buffer)], { type: face.mimeType || "image/jpeg" }),
       "face.jpg",
     );
-    // Strong identity prompt — brand face must dominate composition
+    // Strong identity prompt — brand face must dominate composition.
+    // Wording comes from the single source of truth (config/brandIdentity.ts) so
+    // it can never drift from the other providers' prompts.
     const editPrompt =
-      `IMPORTANT: The person in face.jpg is the MAIN SUBJECT. Preserve exact facial features: ` +
-      `clean-shaven Uzbek man, mid-30s, NO beard, NO mustache, NO goatee, ` +
-      `smooth jaw, short dark faded hair, confident expression. ` +
+      `IMPORTANT: The person in face.jpg is the MAIN SUBJECT. ${likenessClause()}. ` +
+      `${antiPoseClause()} ` +
       `Integrate naturally into scene: ${prompt}`;
     form.append("prompt", editPrompt);
     form.append("model", model);

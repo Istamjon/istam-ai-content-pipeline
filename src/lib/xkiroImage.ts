@@ -229,45 +229,6 @@ async function createJob(
   return job.id;
 }
 
-/** Create async image edit job (with reference image / brand face) → returns job ID. */
-async function createEditJob(
-  slot: XkiroKeySlot,
-  imageBuffer: Buffer,
-  prompt: string,
-  mimeType: string = "image/jpeg",
-  size: string = "1024x1024",
-): Promise<string> {
-  const form = new FormData();
-  form.append(
-    "image",
-    new Blob([new Uint8Array(imageBuffer)], { type: mimeType }),
-    "face.jpg",
-  );
-  form.append("prompt", prompt);
-  form.append("model", "gpt-image");
-  form.append("size", size);
-
-  const res = await fetch(`${XKIRO_BASE}/images/edits`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${slot.apiKey}`,
-    },
-    body: form,
-    signal: AbortSignal.timeout(45_000),
-  });
-
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status}: ${t.slice(0, 400)}`);
-  }
-
-  const job = (await res.json()) as { id?: string };
-  if (!job.id) {
-    throw new Error(`No job ID: ${JSON.stringify(job).slice(0, 200)}`);
-  }
-  return job.id;
-}
-
 /** Poll GET /v1/images/generations/{id} until succeeded/failed. Max ~3 min. */
 async function pollJob(
   slot: XkiroKeySlot,
@@ -322,39 +283,38 @@ async function downloadBuffer(url: string): Promise<Buffer> {
 }
 
 export type XkiroImageOptions = {
+  /**
+   * Always null in practice. xKiro is the diagram-only last resort and cannot
+   * preserve facial identity, so imagePipeline never sends the brand face here.
+   * Passing a real buffer is a programming error and throws (see below) — a
+   * silent ignore would produce a faceless image reported as a face cover.
+   */
   face?: { buffer: Buffer; mimeType?: string; path?: string } | null;
   schematicPrompt?: string;
   workflowPrompt?: string;
 };
 
 /**
- * Concise, high-impact edit prompt specifically designed for gpt-image edits.
- * Directs the model to preserve exact facial identity and facial structure from face.jpg.
- */
-function buildFaceEditPrompt(prompt: string): string {
-  const match = prompt.match(/"([^"]+)"/);
-  const heading = match ? match[1] : "AI Engineering";
-  return (
-    `Preserve the exact facial features, facial structure, skin tone, hair, and likeness of the person in this photo. ` +
-    `The person is an Uzbek male in his mid-30s, completely clean-shaven with strictly NO beard, NO mustache, NO goatee, and smooth clean jawline. ` +
-    `Create a stunning, photorealistic executive portrait of this exact person (waist-up) in a high-tech modern AI laboratory and engineering office. ` +
-    `The person is wearing sharp dark professional clothing with subtle teal (#036158) accents. ` +
-    `Beside them, radiant holographic architecture diagrams and glowing cyan network pipelines float in the 3D space. ` +
-    `On-image title: "${heading}". ` +
-    `Cinematic volumetric lighting, 8k resolution, photorealistic, ultra-sharp detail, high-end editorial keynote quality.`
-  );
-}
-
-/**
  * Generate image with xKiro — multi-MODEL + multi-KEY waterfall.
- * If face option provided: attempts gpt-image /images/edits first with face.jpg.
- * If face is absent or face edit fails: falls back to text-to-image with
- * SCHEMATIC PROMPT (strictly no humans / pure tech architecture diagrams).
+ *
+ * xKiro is the ABSOLUTE LAST RESORT and is diagram-only: it receives a
+ * topic-aware workflow prompt and never face.jpg. (It used to expose a
+ * gpt-image /images/edits path with a hardcoded "clean-shaven Uzbek man"
+ * description — dead code, since imagePipeline always passed face: null, and a
+ * second source of identity drift. Removed.)
  */
 export async function xkiroImage(
   prompt: string,
   options?: XkiroImageOptions,
 ): Promise<Buffer> {
+  if (options?.face?.buffer) {
+    throw new Error(
+      "xKiro is diagram-only and cannot preserve the brand face — it must never " +
+        "be given face.jpg. Remove xKiro from the identity path (imagePipeline " +
+        "passes face: null) instead of silently producing a faceless image.",
+    );
+  }
+
   const allSlots = getXkiroKeySlots();
   if (allSlots.length === 0) throw new Error("No xKiro keys (set XKIRO_API_KEY)");
 
@@ -380,48 +340,12 @@ export async function xkiroImage(
 
   console.log(
     `[xkiro] day=${utcToday()} models=[${usableModels.map((m) => m.split("/").pop()).join("→")}] ` +
-      `keys=${usableSlots.length}/${allSlots.length} budget=${budget.used}/${budget.limit || "∞"}` +
-      (options?.face?.buffer ? " (with face ref)" : " (schematic mode)"),
+      `keys=${usableSlots.length}/${allSlots.length} budget=${budget.used}/${budget.limit || "∞"} ` +
+      `(diagram-only mode)`,
   );
 
   if (usableSlots.length === 0) {
     throw new Error(`xKiro: all keys exhausted (${budget.used}/${budget.limit || "∞"})`);
-  }
-
-  // 1) If face reference provided and workflowPrompt is not specified, attempt image edit with gpt-image
-  if (options?.face?.buffer && !options?.workflowPrompt) {
-    console.log(`[xkiro] attempting brand face image edit (model=gpt-image)...`);
-    const editPrompt = buildFaceEditPrompt(safePrompt);
-    for (const slot of usableSlots) {
-      if (isKeyExhausted(slot.apiKey)) continue;
-      console.log(`[xkiro] → edit model=gpt-image key=${slot.label}`);
-      try {
-        const jobId = await createEditJob(
-          slot,
-          options.face.buffer,
-          editPrompt,
-          options.face.mimeType || "image/jpeg",
-          size,
-        );
-        console.log(`[xkiro] edit job=${jobId}`);
-        const imageUrl = await pollJob(slot, jobId, "gpt-image");
-        const buffer = await downloadBuffer(imageUrl);
-        const used = incrementProviderImageUsage(slot.providerKey, 1);
-        console.log(
-          `[xkiro] ✅ edit model=gpt-image key=${slot.label} bytes=${buffer.length} daily=${used}/${perKey || "∞"}`,
-        );
-        return buffer;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.warn(`[xkiro] ✗ edit ${slot.label}/gpt-image: ${msg.slice(0, 180)}`);
-        if (isRotatableKeyFailure(msg)) {
-          markKeyExhausted(slot, msg);
-        }
-      }
-    }
-    console.warn(
-      `[xkiro] brand face edit failed across keys → falling back to pure humanless workflow diagram`,
-    );
   }
 
   if (usableModels.length === 0) {

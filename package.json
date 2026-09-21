@@ -54,6 +54,9 @@
     "undici": "^7.28.0",
     "zod": "^4.4.3"
   },
+  "optionalDependencies": {
+    "sharp": "^0.34.0"
+  },
   "resolutions": {
     "**/filelist/minimatch": "5.1.8"
   },

@@ -8,7 +8,7 @@ The pipeline discovers AI/engineering articles, rewrites them in professional **
 |--------|--------|
 | Orchestration | [LangGraph.js](https://github.com/langchain-ai/langgraphjs) |
 | Text | **Google Gemini Free** (multi-key rotation) |
-| Images | **Nano Banana** → **Skywork** |
+| Images | **UnoRouter** → **Nano Banana** → **Skywork** → **xKiro** (diagram) |
 | Storage | SQLite (`better-sqlite3`), canonical JSON, local tokens |
 | Runtime | Node.js (ESM), TypeScript |
 
@@ -148,6 +148,13 @@ ENABLED_PLATFORMS=telegram,linkedin,facebook,instagram,threads
 Providers **1–3 are identity-capable**: they receive the real photo bytes and are
 the only ones that can reproduce the brand face. xKiro never gets the photo.
 
+**Diagram covers (xKiro / humanless fallback) use a glassmorphism style:**
+frosted translucent panels over a deep gradient, soft blurred teal light behind
+the glass, white labels kept on the panels for contrast. Prompts also carry an
+explicit accuracy contract — the node sequence is authoritative, arrows must
+follow real data flow, and invented nodes/labels are forbidden — so a technical
+cover is *correct*, not merely attractive.
+
 ### Brand face (`data/brand/face.jpg`)
 
 Identity-preserving covers need the real photo bytes on a multimodal provider.
@@ -157,16 +164,41 @@ The photo is **not** in git (`.gitignore`) — on the VDS it lives at
 | Situation | Result |
 |-----------|--------|
 | File missing / wrong path / `BRAND_FACE_IMAGE` | Providers 1–3 fall back to a text-only prompt (generic person, no likeness) |
-| `REQUIRE_BRAND_FACE=true` (default), face present | Providers 1–3 may **only** return a face-preserving result. A failed `/images/edits` **throws and cascades to the next identity provider** — it never degrades into a faceless image from the same model |
+| `REQUIRE_BRAND_FACE=true` (default), face present | Providers 1–3 may **only** return a face-preserving result. A failed edit **throws and cascades to the next identity provider** — it never degrades into a faceless image from the same model |
+| Verification rejects the result | The cover is **not** the brand person → the image is discarded and the pipeline cascades to the next provider (see below) |
 | All identity providers fail/exhausted | **xKiro** produces a humanless workflow diagram; the post is still published |
 | `REQUIRE_BRAND_FACE=false` | Providers 1–3 may fall back to text-only generation |
-| File very large (e.g. >400KB / multi-MB) | Prefer ~512–1024px JPEG; optional `sharp` auto-downscales for APIs |
+| File very large (e.g. >400KB / multi-MB) | Prefer ~512–1024px JPEG; `sharp` auto-downscales for APIs |
+
+#### Face verification (`src/lib/faceVerify.ts`)
+
+The pipeline never *detects* faces — `face.jpg` is sent as a byte-for-byte
+reference. To catch the case where a provider ignores it, every identity result
+is checked by a **Gemini vision pass**: reference photo + generated cover in one
+request, and the model must answer whether the same individual appears.
+
+| Env | Default | Purpose |
+|-----|---------|---------|
+| `FACE_VERIFY` | `true` | Enable the vision check (only runs when `REQUIRE_BRAND_FACE=true` and face.jpg exists) |
+| `GEMINI_VISION_MODEL` | `gemini-2.5-flash` | Any multimodal Gemini model works |
+| `DAILY_FACEVERIFY_LIMIT` | `40` | Soft cap **per Gemini key** (UTC), in its own bucket so it never eats the text quota |
+| `FACE_VERIFY_MIN_CONFIDENCE` | `0.6` | Below this the image is rejected |
+| `BRAND_IDENTITY_DESCRIPTION` | built-in Uzbek description | The appearance wording injected into every identity prompt — **update it if your real appearance changes** |
+
+**Failure policy:** if verification *runs* and says "different person", the image
+is rejected. If verification *cannot run* (no key, quota, network), the image is
+accepted **with a warning** — the pass is a safety net on top of the primary
+mechanism, and blocking all publishing when the free Gemini quota runs out would
+turn a quality guard into an outage.
+
+xKiro covers are intentionally **not** verified: they are diagrams by design.
 
 Soft caps (env):
 
 - `UNOROUTER_EDIT_MODELS` — extra models that accept `/images/edits` (face-capable). Built-ins: `gpt-image-2:free`, `gpt-image-2`
 - `DAILY_NANOBANANA_LIMIT` (default 3 **per key**; multi-key rotation)
 - `SKYWORK_API_KEY` / `_2`…`_5` (or `SKYWORK_API_KEYS`) + `DAILY_SKYWORK_LIMIT` **per key** (default 4; credit fail → next key)
+- `DAILY_XKIRO_LIMIT` (default 25 **per key**)
 - Daily loop: soft budgets reset each **UTC day**; key order = day-offset round-robin + highest remaining first (not always key #1)
 - `REQUIRE_BRAND_FACE` (default `true` when you want identity-only)
 

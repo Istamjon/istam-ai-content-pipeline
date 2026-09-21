@@ -8,8 +8,13 @@
  *
  * Brand colors: #036158 teal + #5EEAD4 cyan.
  * Length target: ≤ 2800 chars (Nano Banana truncates ~2500; identity must survive lead).
- * Provider pipeline: Nano Banana (primary) → Skywork (fallback).
+ * Provider pipeline: UnoRouter → Nano Banana → Skywork → xKiro (diagram only).
  */
+import {
+  identityClause,
+  antiPoseClause,
+  facialHairAvoidTerms,
+} from "./brandIdentity.js";
 
 export const brandImageColors = {
   primary: "#036158",
@@ -708,16 +713,21 @@ function buildMustHaveBlocks(
   pose: ImagePoseId,
 ): string[] {
   const poseSpec = POSES[pose];
+  // NOTE: the identity wording and the anti-pose rule live ONCE, in the [IDENTITY]
+  // lead block that precedes this one, and the pose is stated here — so the
+  // separate [POSE LOCK] block was pure duplication. Repeating them pushed the
+  // P0 block set past the prompt budget, which silently cut [TECH VISUAL],
+  // [COMPOSITION] and [EYE-CATCH] off the end (see the assembly code below).
   const personBlock = faceRef
-    ? `[MANDATORY PERSON — IDENTITY + NEW POSE]: MUST appear — one professional Uzbek man in his mid-30s, face prominently visible (minimum 25% of canvas area), waist-up. EXACT LIKENESS TO face.jpg: completely clean-shaven face (strictly NO beard, NO goatee, NO mustache, smooth clean jawline and cheeks), short dark textured hair with neat faded sides, dark brown eyes. Do NOT copy face.jpg pose, hands, crop, clothes, or background. NEW POSE — ${poseSpec.label}: ${poseSpec.body}. Outfit: dark smart-casual with teal accent. Dramatic cinematic key light illuminating the face. Sharp, highly detailed editorial portrait.`
+    ? `[MANDATORY PERSON — IDENTITY + NEW POSE]: MUST appear — the SAME person as face.jpg (see [IDENTITY] above), face prominently visible (minimum 25% of canvas), waist-up. NEW POSE — ${poseSpec.label}: ${poseSpec.body}. Outfit: dark smart-casual with teal accent. Dramatic cinematic key light on the face. Sharp, highly detailed editorial portrait.`
     : `[MANDATORY PERSON + POSE]: MUST appear — one professional adult (AI engineer vibe, sharp face, modern attire), prominently visible waist-up (minimum 25% of canvas). Integrated INTO the scene with the tech hologram — full-bleed editorial, NOT a flat cutout. Pose — ${poseSpec.label}: ${poseSpec.body}. Teal accent outfit, extreme dramatic cinematic lighting making the face pop against the dark background.`;
 
   return [
-    `[FULL-BLEED CANVAS] The final image IS the social cover — edge-to-edge 1:1. NOT a photo of a poster. NOT artwork inside a wooden/gold/metal picture frame. NOT floating framed art on a wall. NOT phone/laptop/browser mockup. NOT double borders, matte, polaroid, drop-shadow card. Scene fills the square directly.`,
+    `[FULL-BLEED CANVAS] The final image IS the cover — edge-to-edge 1:1. NOT a framed poster or picture frame on a wall, NOT a phone/laptop/browser mockup, NOT a double border, matte or polaroid card.`,
     personBlock,
     // Do NOT put language names as visual title hints — models paint them as literal cover text.
-    `[TITLE TEXT] ONE line only. Spell exactly, character by character: "${heading}". Ultra-massive premium sans-serif (editorial keynote style), extreme high contrast glowing white or cyan on pitch black background, tight tracking, perfect kerning. Short on purpose — fill width with EPIC SCALE not more words. Latin letters only. No paraphrase, no subtitle, no second line, no extra words, no gibberish.`,
-    `[NO LOGO] No IO/IstamAI monogram, badge, watermark, or logo. Never paint language/meta labels as text (forbidden words on image: Uzbek, Oʻzbek, Latin, English, Cyrillic).`,
+    `[TITLE TEXT] ONE line only. Spell exactly, character by character: "${heading}". Ultra-massive premium sans-serif, extreme high contrast white/cyan on black, tight tracking. Latin letters only — no paraphrase, no subtitle, no second line, no gibberish.`,
+    `[NO LOGO] No IO/IstamAI monogram, badge or watermark. Never paint language/meta labels (forbidden words on image: Uzbek, Oʻzbek, Latin, English, Cyrillic).`,
   ];
 }
 
@@ -780,80 +790,130 @@ export function buildPremiumImagePrompt(
   );
   const must = buildMustHaveBlocks(heading, faceRef, pose);
 
-  // ── Lead (strongest requirements first; IDENTITY must be in first ~300 chars for Nano truncation safety) ──
-  // faceRef block first so Nano Banana (Gemini) preserves identity even at short context limits.
+  // ── Prompt assembly (priority-ordered) ─────────────────────────────────
+  // Blocks are appended in priority order and the loop stops BEFORE the budget
+  // would be exceeded, so the prompt is never cut mid-sentence.
+  //
+  // The previous implementation built one giant `lead` and then either kept it
+  // whole or sliced it at an arbitrary character offset. Because the lead had
+  // grown past the budget, it was silently chopping off [COMPOSITION],
+  // [EYE-CATCH] and [STYLE/COLORS] — every cover got the same composition and
+  // lost its palette instructions, while the code still reported success. The
+  // cover *looked* fine, so nobody noticed.
+  //
+  // 2800 chars: Nano Banana truncates around 2500, so identity + title must sit
+  // in the first blocks.
+  const MAX_PROMPT = 2800;
+
+  // Identity block goes first: Nano Banana (Gemini) truncates long prompts, and
+  // identity is the one requirement that must never be the part that gets lost.
   const faceLead = faceRef
-    ? `[IDENTITY] REFERENCE IMAGE: face.jpg = ORIGINAL FACE REFERENCE. Preserve exact facial identity: clean-shaven Uzbek man in mid-30s, strictly NO BEARD, NO MUSTACHE, NO GOATEE, smooth chin and jawline, short dark faded hair. New pose/scene — never clone face.jpg body pose or background.`
+    ? `[IDENTITY] REFERENCE IMAGE: face.jpg = ORIGINAL FACE REFERENCE. Preserve exact facial identity: ${identityClause()}. ${antiPoseClause()}`
     : "";
-  const lead = [
+
+  // P0 — never dropped: identity, full-bleed, person, title, logo ban, pose, palette.
+  const criticalBlocks = [
     faceLead,
     `Scroll-stopping ultra-premium FULL-BLEED social media cover, square 1:1, LinkedIn/Telegram ready — the canvas itself is the cover, not a framed photo.`,
     must[0], // [FULL-BLEED CANVAS]
     must[1], // [IDENTITY + NEW POSE] or [PERSON + POSE]
     must[2], // [TITLE TEXT] exact heading
     must[3], // [NO LOGO]
-    `[POSE LOCK (${poseSpec.label})]: ${poseSpec.body}. Different from any previous post and from the face.jpg reference pose.`,
+    // (No [POSE LOCK] block: personBlock above already carries the pose recipe.)
+    `[STYLE/COLORS]: brand teal #036158, cyan #5EEAD4, white title text, deep black field. Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
+  ].filter(Boolean);
+
+  // P1 — visual variety. This is what stops every cover looking identical, so it
+  // ranks above the supporting rules.
+  const visualBlocks = [
     `[TECH VISUAL] (same 3D space as person, holographic layers): ${p.centerIdea}. Topic DNA: ${concepts}.`,
     `[COMPOSITION (${hook.label})]: ${hook.layout}.`,
     `[EYE-CATCH]: ${hook.eyeCatch}.`,
     `${p.coverFraming}.`,
-    `[STYLE/COLORS]: brand teal #036158, cyan #5EEAD4, white title text, deep black field. Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
-  ]
-    .filter(Boolean)
-    .join(" ");
+  ].filter(Boolean);
 
-  // ── Extended ───────────────────────────────────────────────────────────
-  const extended = [
-    ``,
-    `Cover narrative:`,
-    narrative,
-    ``,
-    `Professional framing rules:`,
-    `- Full bleed to all edges — zero picture-frame, zero white margin card.`,
-    `- Person and holograms in ONE continuous scene (same light, same depth).`,
-    `- Title is on-canvas overlay only — not paper inside a frame.`,
-    `- Absolutely no IO / IstamAI / monogram logo anywhere.`,
-    ``,
-    `Layout zones:`,
-    `- TOP band: POWER TITLE "${heading}" — single line, oversized, premium, short.`,
-    `- MAIN: PERSON in pose "${poseSpec.label}" + tech hologram mid-ground.`,
-    `- Generous negative space around title so type stays crisp and elegant.`,
-    `- No nested rectangles, no poster-on-wall, no device bezel, no logo corner.`,
-    ``,
-    `Text rule: the ONLY readable words on the image are exactly: "${heading}". Short = beautiful. No subtitle, no other labels, no language names, no logo text, no gibberish.`,
-    ``,
+  // P2 — supporting rules, added only while they fit (least important last).
+  const supportingBlocks = [
+    `Hard avoid: ${facialHairAvoidTerms()}same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, painting the words Uzbek/Oʻzbek/Latin/English/Cyrillic, misspelled/gibberish text, any title not equal to the quoted heading, more than 5 agent nodes, duplicate node labels, missing person.`,
+    `Framing rules: full bleed to all edges (zero picture-frame, zero white margin card); person and holograms in ONE continuous scene with the same light and depth; title is an on-canvas overlay only, never paper inside a frame; absolutely no IO / IstamAI / monogram logo anywhere.`,
+    `Text rule: the ONLY readable words on the image are exactly "${heading}" — no subtitle, no other labels, no language names, no logo text, no gibberish.`,
+    `Layout zones: TOP band = POWER TITLE "${heading}" (single line, oversized); MAIN = person in pose "${poseSpec.label}" + tech hologram mid-ground; generous negative space around the title; no nested rectangles, no poster-on-wall, no device bezel.`,
     faceRef
-      ? `[IDENTITY vs POSE] Reference image face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE). High likeness from face.jpg: clean-shaven, strictly NO facial hair, NO beard, NO goatee, NO mustache, smooth clean jawline. New pose (${poseSpec.label}); no cloning face.jpg stance/hands/crop/background. Nano Banana, Skywork, and UnoRouter receive this reference.`
+      ? `[IDENTITY vs POSE] face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE); high likeness required, identity only. New pose (${poseSpec.label}). UnoRouter, Nano Banana and Skywork all receive this reference; xKiro does not (diagram-only).`
       : `Person: photoreal professional AI creator vibe. ONE person only. Pose: ${poseSpec.label}.`,
-    ``,
-    `Hard avoid: beard, facial hair, goatee, mustache, stubble beard, same pose as face.jpg, picture frame, poster on wall, phone/laptop mockup, double border, IO/monogram/IstamAI logo, watermarks, third-party logos, QR, cartoon, anime, painting the words Uzbek/Oʻzbek/Latin/English/Cyrillic, misspelled/gibberish text, any title not equal to the quoted heading, more than 5 agent nodes, duplicate node labels, missing person.`,
-  ].join("\n");
+    `Cover narrative: ${narrative}`,
+  ].filter(Boolean);
 
-  let full = (lead + "\n" + extended).trim();
-  // Prefer keeping lead (identity + colors + pose) intact when trimming.
-  // 2800: Nano Banana truncates ~2500 chars; keep identity block safe within lead.
-  const maxLen = 2800;
-  if (full.length > maxLen) {
-    const leadLen = lead.length;
-    if (leadLen >= maxLen - 40) {
-      // Keep color + title anchors even if lead is huge
-      const colorLine = ` Colors: brand teal #036158, cyan #5EEAD4, white title text, deep black field.`;
-      const titleAnchor = ` Exact on-image title: "${heading}".`;
-      const body = lead.slice(0, maxLen - colorLine.length - titleAnchor.length - 20).trimEnd();
-      full = (body + colorLine + titleAnchor).trimEnd();
-    } else {
-      const budget = maxLen - leadLen - 2;
-      full = (lead + "\n" + extended.slice(0, Math.max(0, budget))).trimEnd();
-    }
+  const parts: string[] = [];
+  let used = 0;
+  const addBlock = (block: string): boolean => {
+    const cost = block.length + 1; // +1 for the joining space
+    if (used + cost > MAX_PROMPT) return false;
+    parts.push(block);
+    used += cost;
+    return true;
+  };
+
+  // Strict priority order: the FIRST block that does not fit ends assembly.
+  // (Skipping it and continuing would let a low-priority block in while a
+  // higher-priority one was dropped — which is how [TECH VISUAL] used to vanish
+  // while "Hard avoid" still made it into the prompt.)
+  let saturated = false;
+  for (const b of [...criticalBlocks, ...visualBlocks, ...supportingBlocks]) {
+    if (saturated) break;
+    if (!addBlock(b)) saturated = true;
   }
+
+  const full = parts.join(" ").trim();
+
+  if (full.length > MAX_PROMPT) {
+    // Only reachable if the P0 blocks alone exceed the budget — a real
+    // configuration error, so say so instead of shipping a truncated prompt.
+    console.warn(
+      `[imagePrompt] P0 blocks exceed ${MAX_PROMPT} chars (${full.length}) — ` +
+        `shorten BRAND_IDENTITY_DESCRIPTION or the pose/heading text.`,
+    );
+  }
+
   return { prompt: full, preset, composition, pose, heading };
 }
 
 /**
+ * Shared visual style for BOTH diagram prompts:
+ *   buildSchematicImagePrompt → providers 1–3 when no face is available
+ *   buildWorkflowImagePrompt  → xKiro (absolute last resort)
+ *
+ * GLASSMORPHISM, deliberately. The previous wording pushed models toward heavy
+ * neon/cyberpunk glow, which produced attractive but unreadable diagrams. Frosted
+ * glass panels over a deep gradient read as premium, keep the node labels legible,
+ * and stay consistent across every diagram the pipeline ever publishes.
+ */
+const GLASS_STYLE = [
+  `[STYLE — GLASSMORPHISM] Frosted-glass panels: translucent cards (65–80% opacity), 24–32px rounded corners, 1px translucent white borders, soft backdrop blur, faint top-edge highlight, soft diffuse shadows so panels float.`,
+  `Background: smooth #0A0A0A → #06302C gradient with 2–3 heavily blurred teal #036158 / cyan #5EEAD4 orbs BEHIND the glass (blurred light, never sharp shapes). Layered depth. Amber #F59E0B marks decision nodes.`,
+  `Clean premium UI — NOT cyberpunk. Labels stay pure white #FFFFFF ON the glass, never over a bright orb; blur must never soften letterforms. NO excessive glow, NO neon bloom, no lens flare, no particles, no swirls.`,
+].join(" ");
+
+/**
+ * Shared accuracy contract for both diagram prompts.
+ *
+ * The node list is authoritative. Left to itself a model happily invents
+ * plausible-but-wrong nodes (dropping the re-ranker, reversing an arrow, adding
+ * a fake API name), which makes a technical cover look authoritative while being
+ * factually wrong. These rules pin the topology down.
+ */
+const ACCURACY_RULES = [
+  `[ACCURACY — MANDATORY] Draw EXACTLY the nodes below, in that order — never invent, merge, drop or duplicate one.`,
+  `Every arrow follows real data/control flow and is labelled; no unreachable node, no orphan arrow; a backward arrow ONLY as a labelled retry loop.`,
+  `Node labels: 1–3 factual words, never invented code, numbers or API names.`,
+  `Rounded rectangle = step, diamond = decision, dashed = async; add a small legend. No gibberish.`,
+].join(" ");
+
+/**
  * Build human-less technical schematic / diagram cover prompt.
  * Used when face identity is unavailable.
- * STRICTLY NO PEOPLE / NO FACES — clean architecture diagram, system node graph,
- * technical flowchart. Minimal glow. Precise and readable.
+ * STRICTLY NO PEOPLE / NO FACES — glassmorphism architecture diagram, system node
+ * graph, technical flowchart. Precise, accurate and readable.
  */
 export function buildSchematicImagePrompt(
   topicTitle: string,
@@ -881,17 +941,20 @@ export function buildSchematicImagePrompt(
   const preset = pickImagePreset(seed, options?.preset || "workflow");
   const composition = pickCompositionHook(seed, preset, options?.composition);
 
-  // Topic-specific diagram visual — mapped from concepts
+  // Topic-specific diagram visual — mapped from concepts.
+  // Node sequences are the technically correct ones (see ACCURACY_RULES): e.g. a
+  // RAG flow must include the re-ranker, and a LangGraph retry must be drawn as a
+  // loop back to the agent node rather than a straight line to END.
   const diagramType = concepts.match(/\b(RAG|retriev|vector|embed)/i)
-    ? "retrieval-augmented generation pipeline: query → embed → vector-search → context → LLM → answer"
+    ? "retrieval-augmented generation: User Query → Query Embedder → Vector Search (top-k) → Re-ranker → Context Assembly → LLM → Grounded Answer; indexing side: Documents → Chunker → Embedder → Vector DB"
     : concepts.match(/\b(agent|orchestrat|swarm|multi|tool)/i)
-    ? "multi-agent system graph: supervisor node → specialist agents → tool calls → memory → output"
+    ? "multi-agent system: User Request → Orchestrator → Planner → [Researcher | Executor | Critic] → Tool Calls → Shared Memory → Aggregator → Final Answer"
     : concepts.match(/\b(LangGraph|workflow|state|graph|node)/i)
-    ? "LangGraph state machine: START → nodes → conditional edges → END, typed state transitions"
+    ? "LangGraph state machine: START → Input Validation → Agent Node → Tool Node → Conditional Router → [Continue → END | Retry → Agent Node]; typed shared state + checkpointer"
     : concepts.match(/\b(infra|kubernetes|deploy|serving|latency|gateway)/i)
-    ? "infrastructure deployment diagram: load-balancer → model-server → cache → database → monitoring"
+    ? "production deployment: Client → API Gateway → Load Balancer → Model Server → Response Cache → Vector DB → Response, with Monitoring sidecar"
     : concepts.match(/\b(eval|benchmark|test|monitor|cicd)/i)
-    ? "evaluation pipeline: input → model → judge → metrics → report → iterate"
+    ? "evaluation pipeline: Eval Dataset → Model Under Test → Responses → LLM Judge + Metrics → Report → Iterate"
     : `system architecture diagram for: ${concepts.slice(0, 100)}`;
 
   const lead = [
@@ -901,19 +964,14 @@ export function buildSchematicImagePrompt(
     `[TITLE] Exact text, one line only: "${heading}". Large, bold, high-contrast white or teal on dark background.`,
     `[NO LOGO] No IO/IstamAI monogram, badge, or watermark anywhere.`,
     `[DIAGRAM SUBJECT] ${diagramType}. Topic context: ${concepts.slice(0, 120)}.`,
-    `[VISUAL STYLE] Clean flat or isometric diagram. Crisp labeled boxes/nodes with short text labels (1-3 words each). Clear directional arrows showing data flow. Minimal but purposeful color: teal #036158 for primary nodes, white labels, dark (#0A0A0A) background. Subtle depth only where it aids clarity — NO excessive neon glow, NO bloom effects, NO lens flare, NO particle storms, NO decorative swirls.`,
-    `[LAYOUT] Logical left-to-right or top-to-bottom flow that matches how the system actually works. Every node and arrow must have a clear purpose. Empty/decorative elements are forbidden.`,
+    GLASS_STYLE,
+    ACCURACY_RULES,
+    `[LAYOUT] Logical left-to-right or top-to-bottom flow that matches how the system actually works, grouped into faint glass zones. Empty or decorative elements are forbidden.`,
   ].join(" ");
 
   const extended = [
     ``,
-    `Diagram requirements:`,
-    `- Each node: short readable label (1-3 words), clear shape (rectangle, diamond, oval).`,
-    `- Arrows: labeled when needed (e.g. "API call", "embeddings", "state update").`,
-    `- Groups/zones: use faint borders to group related nodes (e.g. "Agent Layer", "Storage").`,
-    `- Title "${heading}" placed prominently at top, oversized, very readable.`,
-    `- Absolutely zero human figures, silhouettes, faces, hands, or characters anywhere.`,
-    `- Hard avoid: excessive glow, neon bloom, particle effects, decorative swirls, abstract shapes with no meaning, blurry elements, unreadable text.`,
+    `Requirements: render the node sequence above exactly, in order; arrows labelled; related nodes grouped into faint glass zones (1–2 words); title "${heading}" prominent at top, oversized and readable; include a tiny shape legend; every element serves the diagram; zero humans, faces, hands or characters; hard avoid glow, neon bloom, swirls, abstract shapes with no meaning, blurry elements, unreadable text.`,
   ].join("\n");
 
   const prompt = (lead + "\n" + extended).trim().slice(0, 2500);
@@ -923,8 +981,9 @@ export function buildSchematicImagePrompt(
 
 /**
  * Build dedicated AI Workflow schematic cover prompt for xKiro.
- * Topic-aware: extracts actual workflow structure from title/hint.
- * Clean, precise, minimal glow — readable and informative.
+ * Topic-aware: derives the real pipeline topology from the title/hint.
+ * Glassmorphism style — frosted panels, deep gradient, soft blurred light.
+ * Technically accurate node sequence, readable and informative.
  * STRICTLY NO HUMANS / NO FACES — pure technical diagram.
  */
 export function buildWorkflowImagePrompt(
@@ -951,74 +1010,88 @@ export function buildWorkflowImagePrompt(
   const seed = topicTitle + "|workflow|" + concepts;
   const composition = pickCompositionHook(seed, "workflow", options?.composition);
 
-  // Derive specific workflow topology from topic content
+  // Derive the workflow topology from the topic.
+  // Each spec is the technically correct pipeline, not a plausible-looking guess:
+  // RAG keeps the re-ranker, LangGraph draws the retry as a loop back to the agent
+  // node, MCP uses the real host → client → server topology.
   const raw = `${topicTitle} ${topicHint || ""}`.toLowerCase();
 
   const workflowSpec =
     raw.match(/rag|retriev|vector|embed|knowledge/)
       ? {
-          nodes: "Query → Embedder → VectorDB → Retriever → Context Merger → LLM → Answer",
-          detail: "Retrieval-augmented generation pipeline with vector similarity search",
-          zones: "Ingestion zone (top): Document → Chunker → Embedder → VectorDB; Query zone (bottom): User Query → Embed → Search → LLM",
+          nodes:
+            "User Query → Query Embedder → Vector Search (top-k) → Re-ranker → Context Assembly → LLM → Grounded Answer",
+          detail:
+            "Retrieval-augmented generation: embed the query, retrieve the top-k chunks, re-rank them, assemble the context, then answer",
+          zones:
+            "Indexing zone (top): Documents → Chunker → Embedder → Vector DB; Query zone (bottom): Query → Embed → Search → Re-rank → Assemble → LLM",
         }
       : raw.match(/multi.?agent|swarm|crew|orchestrat/)
       ? {
-          nodes: "User Request → Orchestrator → [Planner | Researcher | Executor | Reviewer] → Tool Calls → Memory → Final Response",
-          detail: "Multi-agent orchestration system with parallel specialist agents",
-          zones: "Supervisor layer (center): Orchestrator routing to agents; Worker layer (ring): specialized agents; Tool layer (outer): APIs, DB, search",
+          nodes:
+            "User Request → Orchestrator → Planner → [Researcher | Executor | Critic] → Tool Calls → Shared Memory → Aggregator → Final Answer",
+          detail:
+            "Multi-agent orchestration: a supervisor plans, delegates to specialist agents, aggregates their results; shared memory is read and written by every worker (draw it as a dashed two-way link)",
+          zones:
+            "Supervisor layer (center): Orchestrator; Worker layer (ring): Planner, Researcher, Executor, Critic; Tool layer (outer): APIs, DB, Web Search",
         }
       : raw.match(/langgraph|state.?graph|state.?machine|graph|node|edge/)
       ? {
-          nodes: "START → [Input Validator → Agent Node → Tool Node] → Conditional Router → [Retry | Continue] → END",
-          detail: "LangGraph state machine with typed state, conditional edges, and retry loops",
-          zones: "State schema (top-left box); Main graph (center): nodes and directed edges; Checkpoint store (bottom-right)",
+          nodes:
+            "START → Input Validation → Agent Node → Tool Node → Conditional Router → [Continue → END | Retry → Agent Node]",
+          detail:
+            "LangGraph state machine: typed shared state, conditional edges, and a dashed retry loop from the router back to the Agent Node",
+          zones:
+            "State schema box (top-left): typed fields; Main graph (center): nodes + directed edges; Checkpointer (bottom-right): persists thread state",
         }
       : raw.match(/mcp|model.?context|tool.?call|function.?call/)
       ? {
-          nodes: "LLM → MCP Client → [Tool A | Tool B | Tool C] → Results → LLM Context",
-          detail: "Model Context Protocol: LLM-to-tools communication layer",
-          zones: "LLM box (left); MCP bridge (center); Tool servers (right): each with icon and label",
+          nodes:
+            "Host App (LLM) → MCP Client → MCP Server → [Tools | Resources | Prompts] → Tool Result → back to Host",
+          detail:
+            "Model Context Protocol: the host's client talks to a server that exposes tools, resources and prompts",
+          zones:
+            "Host (left): the LLM application; MCP client/server bridge (center): JSON-RPC; Capability servers (right): Tools, Resources, Prompts",
         }
       : raw.match(/eval|benchmark|test|monitor|judge/)
       ? {
-          nodes: "Input Dataset → Model → Responses → LLM Judge → Metrics → Dashboard → Iterate",
-          detail: "LLM evaluation and continuous improvement pipeline",
-          zones: "Data prep (left); Inference (center); Evaluation (right): judge + metrics + report",
+          nodes:
+            "Eval Dataset → Model Under Test → Responses → LLM Judge + Metrics → Report → Iterate",
+          detail:
+            "LLM evaluation loop: run the dataset, score responses with a judge, aggregate metrics, then iterate",
+          zones:
+            "Data prep (left): dataset + rubric; Inference (center): model under test; Evaluation (right): judge, metrics, report",
         }
       : raw.match(/deploy|infra|serving|latency|scale|k8s|kubernetes/)
       ? {
-          nodes: "Client → API Gateway → Load Balancer → Model Server → Cache → Vector DB → Response",
-          detail: "Production AI infrastructure deployment topology",
-          zones: "Edge layer (top): gateway; Compute layer (middle): servers; Storage layer (bottom): cache + DB",
+          nodes:
+            "Client → API Gateway → Load Balancer → Model Server → Response Cache → Vector DB → Response",
+          detail:
+            "Production AI serving: gateway, load balancing, model servers, response cache and vector store, with a monitoring sidecar",
+          zones:
+            "Edge layer (top): gateway + auth; Compute layer (middle): load balancer + model servers; Storage layer (bottom): cache + vector DB; sidecar: Monitoring",
         }
       : {
-          nodes: `Input → Processing → AI Model → Output → Feedback Loop`,
+          nodes: `Input → Processing → AI Model → Output → Feedback`,
           detail: `AI system workflow for: ${concepts.slice(0, 80)}`,
-          zones: `Input zone (left) → Core processing (center) → Output zone (right)`,
+          zones: `Input zone (left) → Core processing (center) → Output zone (right); dashed feedback arrow from Output back to Input`,
         };
 
   const lead = [
     `[NO HUMANS. NO FACES. NO PEOPLE. NO BODIES. NO CHARACTERS. NO AVATARS. ZERO.]`,
-    `Clean technical AI workflow diagram — precise, readable, educational. NOT abstract art. NOT random glowing shapes.`,
+    `Clean technical AI workflow diagram — precise, readable, educational. NOT abstract art.`,
     `Full-bleed 1:1 social media cover for AI Engineering. Canvas IS the cover, no frames, no mockups, no device bezels.`,
-    `[TITLE] Exact text, one line: "${heading}". Large, bold, white or teal, maximum contrast, top of image.`,
+    `[TITLE] Exact text, one line: "${heading}". Large, bold, white, maximum contrast, top of image.`,
     `[NO LOGO] No IO/IstamAI monogram, badge, or watermark.`,
     `[WORKFLOW DIAGRAM] ${workflowSpec.detail}. Node sequence: ${workflowSpec.nodes}.`,
     `[LAYOUT ZONES] ${workflowSpec.zones}.`,
-    `[STYLE] Flat or isometric technical diagram. Each node: rounded rectangle with clear 1-2 word label. Arrows: thin directional lines with labels. Colors: teal #036158 for main nodes, white text, amber #F59E0B for decision/gateway nodes, dark #0A0A0A background. Clean vector look. Subtle shadow only. NO excessive glow, NO neon bloom, NO particle effects, NO decorative swirls, NO lens flares.`,
+    GLASS_STYLE,
+    ACCURACY_RULES,
   ].join(" ");
 
   const extended = [
     ``,
-    `Diagram requirements:`,
-    `- Render the actual node sequence: ${workflowSpec.nodes}`,
-    `- Each node clearly labeled (1-2 words max per node).`,
-    `- Arrows show data/control flow direction; label key transitions.`,
-    `- Group related nodes with faint border zones if needed.`,
-    `- Title "${heading}" dominant at the top, bold, easily readable at thumbnail size.`,
-    `- Every element serves the diagram — no decorative-only shapes.`,
-    `- Absolutely zero human figures, silhouettes, faces, hands, or characters.`,
-    `- Hard avoid: excessive neon glow, bloom effects, abstract swirls, unreadable micro-text, blurry backgrounds, random particle storms.`,
+    `Requirements: node sequence exactly as above (authoritative); nodes labelled 1–3 words, never invented; arrows labelled; related nodes grouped into faint glass zones; title "${heading}" dominant at the top, readable at thumbnail size; every element serves the diagram; zero humans, faces, hands or characters; hard avoid neon glow, bloom, swirls, unreadable micro-text, blurry backgrounds, invented labels.`,
   ].join("\n");
 
   const prompt = (lead + "\n" + extended).trim().slice(0, 2500);

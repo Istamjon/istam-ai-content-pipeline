@@ -348,14 +348,6 @@ function orderUsableSlots(slots: SkyworkKeySlot[]): SkyworkKeySlot[] {
 
 export type SkyworkImageOptions = {
   face?: { mimeType: string; base64: string; path?: string } | null;
-  /**
-   * Identity is mandatory (brand face present + REQUIRE_BRAND_FACE=true).
-   *
-   * When true, a failed image *edit* throws instead of falling back to the
-   * create API with a generic invented person. That fallback produced a face
-   * that was not the user's, while the pipeline still reported success.
-   */
-  requireFace?: boolean;
 };
 
 async function generateOnceWithKeyRaw(
@@ -440,31 +432,30 @@ async function generateOnceWithKey(
   aspect: string | undefined,
   resolution: string,
   face?: { mimeType?: string; base64: string } | null,
-  requireFace = false,
 ): Promise<Buffer> {
   if (face?.base64) {
     try {
       return await generateOnceWithKeyRaw(slot, prompt, aspect, resolution, face);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      // If edit API failed due to internal backend failure (Gemini/Seedream), retry with create API
+      // The edit API (which is the ONLY path that can preserve identity) failed
+      // on Skywork's side (Gemini/Seedream backend). There is no honest fallback
+      // inside this provider:
+      //
+      //   • create API without source_images cannot see face.jpg at all, so any
+      //     person it draws is invented — previously this code passed a
+      //     hardcoded "clean-shaven Uzbek man, mid-30s…" description, which
+      //     silently replaced the brand face with a generic stranger.
+      //
+      // So we always surface the failure and let imagePipeline cascade to the
+      // next identity provider (and finally to an xKiro diagram). Never return
+      // a faceless image that the caller believes contains the brand face.
       if (/Image editing failed|Gemini failed|Seedream|model failed/i.test(msg)) {
-        if (requireFace) {
-          // The create fallback below invents a generic person — the exact
-          // opposite of identity preservation. Fail so the pipeline cascades
-          // to the next provider instead.
-          throw new Error(
-            `Skywork: image edit failed and REQUIRE_BRAND_FACE is on — refusing ` +
-              `the create-API fallback (it would invent a generic face). ` +
-              `Cascading to the next provider. Cause: ${msg.slice(0, 160)}`,
-          );
-        }
-        console.warn(
-          `[skywork] ${slot.label} edit API backend failure → fallback to create API: ${msg.slice(0, 120)}`,
+        throw new Error(
+          `Skywork: image edit (identity path) failed — no identity-preserving ` +
+            `fallback exists in this provider, so refusing to invent a generic ` +
+            `person. Cascading to the next provider. Cause: ${msg.slice(0, 160)}`,
         );
-        const identityPrompt =
-          `Professional clean-shaven Uzbek man, mid-30s, short dark hair, confident expression: ${prompt}`;
-        return await generateOnceWithKeyRaw(slot, identityPrompt, aspect, resolution, null);
       }
       throw e;
     }
@@ -501,8 +492,6 @@ export async function skyworkImage(
   const aspect = resolveAspectRatio();
   const resolution = resolveResolution();
   const face = options?.face;
-  // Identity mandatory → a failed edit must cascade, never invent a generic face.
-  const requireFace = Boolean(options?.requireFace && face?.base64);
   const usable = orderUsableSlots(slots.filter(canUseKeySlot));
   const remMap = (label: string) => {
     const s = usable.find((x) => x.label === label);
@@ -542,7 +531,6 @@ export async function skyworkImage(
         aspect,
         resolution,
         face,
-        requireFace,
       );
       const used = incrementProviderImageUsage(slot.providerKey, 1);
       console.log(
