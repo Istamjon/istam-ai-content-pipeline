@@ -18,7 +18,8 @@ function ensureImagesDir(): void {
 
 /**
  * Generate post image:
- *   Nano Banana → Skywork (both support brand face identity).
+ *   UnoRouter(edit) → Nano Banana → Skywork  (all support brand face identity)
+ *   → xKiro workflow diagram (no face) as the absolute last resort.
  * On total failure → no imagePath → graph skips publish.
  */
 export async function generateImage(

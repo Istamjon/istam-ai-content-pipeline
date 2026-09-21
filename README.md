@@ -134,33 +134,43 @@ ENABLED_PLATFORMS=telegram,linkedin,facebook,instagram,threads
 ## Image waterfall
 
 ```
-Nano Banana (Gemini) → Skywork Image API
+1) UnoRouter (gpt-image-2:free)  →  2) Nano Banana (Gemini)
+   →  3) Skywork  →  4) xKiro (workflow diagram, NO face)
 ```
 
 | Provider | Role | `face.jpg` identity |
 |----------|------|---------------------|
-| **Nano Banana** | Primary Gemini image when Free/Paid quota allows | Yes (image+text) |
-| **Skywork** | Account credits / daily benefit after Nano fails | Yes (edit + `source_images`) |
+| **UnoRouter** | Primary — `gpt-image-2:free` via `/images/edits` (multipart) | Yes |
+| **Nano Banana** | Gemini image models, `inlineData` multimodal | Yes |
+| **Skywork** | Credits / daily benefit after Nano fails (`source_images`) | Yes |
+| **xKiro** | Absolute last resort — topic-aware workflow diagram | **No** |
+
+Providers **1–3 are identity-capable**: they receive the real photo bytes and are
+the only ones that can reproduce the brand face. xKiro never gets the photo.
 
 ### Brand face (`data/brand/face.jpg`)
 
 Identity-preserving covers need the real photo bytes on a multimodal provider.
+The photo is **not** in git (`.gitignore`) — on the VDS it lives at
+`data/brand/face.jpg`, and CI ships it from the `BRAND_FACE_B64` secret.
 
 | Situation | Result |
 |-----------|--------|
-| File missing / wrong path / `BRAND_FACE_IMAGE` | Prompt has generic person, no likeness |
-| Nano Banana + Skywork both fail/exhausted | With default `REQUIRE_BRAND_FACE=true` → **no image** (does not invent a random face) |
-| `REQUIRE_BRAND_FACE=false` | No identity-capable provider fallback exists — still no image |
+| File missing / wrong path / `BRAND_FACE_IMAGE` | Providers 1–3 fall back to a text-only prompt (generic person, no likeness) |
+| `REQUIRE_BRAND_FACE=true` (default), face present | Providers 1–3 may **only** return a face-preserving result. A failed `/images/edits` **throws and cascades to the next identity provider** — it never degrades into a faceless image from the same model |
+| All identity providers fail/exhausted | **xKiro** produces a humanless workflow diagram; the post is still published |
+| `REQUIRE_BRAND_FACE=false` | Providers 1–3 may fall back to text-only generation |
 | File very large (e.g. >400KB / multi-MB) | Prefer ~512–1024px JPEG; optional `sharp` auto-downscales for APIs |
 
 Soft caps (env):
 
+- `UNOROUTER_EDIT_MODELS` — extra models that accept `/images/edits` (face-capable). Built-ins: `gpt-image-2:free`, `gpt-image-2`
 - `DAILY_NANOBANANA_LIMIT` (default 3 **per key**; multi-key rotation)
 - `SKYWORK_API_KEY` / `_2`…`_5` (or `SKYWORK_API_KEYS`) + `DAILY_SKYWORK_LIMIT` **per key** (default 4; credit fail → next key)
 - Daily loop: soft budgets reset each **UTC day**; key order = day-offset round-robin + highest remaining first (not always key #1)
 - `REQUIRE_BRAND_FACE` (default `true` when you want identity-only)
 
-**Policy:** no image → **do not publish**.
+**Policy:** only when **all four** providers fail → **do not publish**.
 
 ---
 

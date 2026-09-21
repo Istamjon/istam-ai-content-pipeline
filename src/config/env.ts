@@ -57,6 +57,17 @@ export const env = {
   UNOROUTER_FALLBACK_MODELS:
     process.env.UNOROUTER_FALLBACK_MODELS ||
     "gpt-image:free,glm-image-1:free,sensenova-6.8-flash-lite:free,cogview-4-250304:free",
+  /**
+   * Extra models that accept an image reference via POST /images/edits
+   * (multipart). ONLY these can preserve the brand face — every other model is
+   * prompt-only and would produce a faceless image.
+   *
+   * Comma-separated. Merged with the built-in defaults (gpt-image-2:free,
+   * gpt-image-2), so you can add a newly discovered edit-capable model with an
+   * .env change only:
+   *   UNOROUTER_EDIT_MODELS="some-new-image-model:free"
+   */
+  UNOROUTER_EDIT_MODELS: process.env.UNOROUTER_EDIT_MODELS || "",
   DAILY_UNOROUTER_LIMIT: Math.max(
     0,
     parseInt(process.env.DAILY_UNOROUTER_LIMIT || "15", 10) || 15,

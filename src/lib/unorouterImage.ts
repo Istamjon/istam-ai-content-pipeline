@@ -34,13 +34,28 @@ const DEFAULT_MODELS = [
 ] as const;
 
 /**
- * Models that support /images/edits endpoint (multipart face reference).
- * gpt-image-2:free has highest identity fidelity.
+ * Built-in models that support the /images/edits endpoint (multipart face
+ * reference). gpt-image-2:free has the highest identity fidelity.
+ *
+ * Only edit-capable models can preserve the brand face; every other model is
+ * prompt-only. Extend the set at runtime with UNOROUTER_EDIT_MODELS.
  */
-const EDIT_CAPABLE_MODELS = new Set([
+const DEFAULT_EDIT_MODELS = [
   "gpt-image-2:free",
   "gpt-image-2",
-]);
+] as const;
+
+/**
+ * Edit-capable model set = built-ins + UNOROUTER_EDIT_MODELS (comma-separated).
+ * Resolved per call so an .env change takes effect without a rebuild.
+ */
+export function resolveEditModels(): Set<string> {
+  const extra = (env.UNOROUTER_EDIT_MODELS || "")
+    .split(/[,\n;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return new Set<string>([...DEFAULT_EDIT_MODELS, ...extra]);
+}
 
 /** Models temporarily paused after rate limit (429) or busy errors */
 const exhaustedModels = new Map<string, number>();
@@ -340,6 +355,7 @@ export async function unorouterImage(
   // Identity is mandatory → a failed edit must cascade, never degrade in place.
   const mustUseFace = Boolean(options?.requireFace && options?.face?.buffer);
   const identitySkipped: string[] = [];
+  const editModels = resolveEditModels();
 
   for (const model of usableModels) {
     console.log(`[unorouter] trying model "${model}"...`);
@@ -347,8 +363,8 @@ export async function unorouterImage(
     // 1) If brand face reference is provided, try edit mode first (best identity fidelity)
     const modelBase = model.replace(/:free$/, "");
     const supportsEdit =
-      EDIT_CAPABLE_MODELS.has(model) ||
-      EDIT_CAPABLE_MODELS.has(modelBase) ||
+      editModels.has(model) ||
+      editModels.has(modelBase) ||
       model.includes("edit");
 
     if (options?.face?.buffer && supportsEdit) {
@@ -447,6 +463,14 @@ export function logUnorouterBudget(): void {
   console.log(
     `[AI] UNOROUTER total today (UTC): ${total.used}/${total.limit || "∞"} remaining=${total.remaining} ` +
       `primary=${env.UNOROUTER_IMAGE_MODEL} models=[${models.join(", ")}]`,
+  );
+  const editModels = resolveEditModels();
+  const usableEdit = models.filter(
+    (m) => editModels.has(m) || editModels.has(m.replace(/:free$/, "")),
+  );
+  console.log(
+    `[AI]   face-capable (/images/edits): ${usableEdit.length > 0 ? usableEdit.join(", ") : "NONE — brand face cannot be preserved"}` +
+      (env.UNOROUTER_EDIT_MODELS ? ` | extra from env: ${env.UNOROUTER_EDIT_MODELS}` : ""),
   );
   for (const m of models) {
     if (isModelExhausted(m)) console.log(`[AI]   model "${m}" [paused-60s]`);
