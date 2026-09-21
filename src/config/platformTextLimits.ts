@@ -5,10 +5,7 @@
 import type { Platform } from "../agent/state.js";
 
 export type TextStrategy =
-  | "full"
-  | "telegram_teaser"
-  | "threads_chain"
-  | "short_single";
+  "full" | "telegram_native" | "threads_chain" | "short_single";
 
 export type FooterMode = "full" | "compact" | "none";
 
@@ -33,12 +30,15 @@ export const PLATFORM_TEXT_POLICIES: Record<Platform, PlatformTextPolicy> = {
     platform: "telegram",
     apiHardLimit: 4096,
     captionHardLimit: 1024,
-    strategy: "telegram_teaser",
+    strategy: "telegram_native",
     maxHashtags: 5,
     footerMode: "compact",
-    audienceNotes: "Uzbek tech learners — hook in channel, depth on Telegra.ph",
+    // Full article stays inside Telegram: photo caption + continuation
+    // message(s). Kept under one extra message so a post is never a flood.
+    softBodyTarget: 3500,
+    audienceNotes: "Uzbek tech learners — full article read inside Telegram",
     styleNotes: "Clear practical Uzbek; HTML bold/links OK",
-    formatFeatures: ["html", "photo_caption", "telegraph", "linebreaks"],
+    formatFeatures: ["html", "photo_caption", "multi_message", "linebreaks"],
   },
   linkedin: {
     platform: "linkedin",
@@ -132,7 +132,10 @@ export function splitIntoThreadParts(
   if (clean.length <= maxLen) return [clean];
 
   const sentences: string[] = [];
-  const paras = clean.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+  const paras = clean
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter(Boolean);
   for (const p of paras) {
     const bits = p.match(/[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$/g) || [p];
     for (const b of bits) {
@@ -234,4 +237,85 @@ export function smartTruncate(text: string, limit: number): string {
   if (space >= minKeep) return window.slice(0, space).trimEnd() + "…";
 
   return window.slice(0, limit - 1).trimEnd() + "…";
+}
+
+/** Matches an opening/closing/self-closing HTML tag. */
+const TAG_RE = /<\/?([a-zA-Z][a-zA-Z0-9]*)[^>]*>/g;
+
+/**
+ * Largest position ≤ `cut` at which `html` is a *valid* fragment: not inside a
+ * half-written tag, not inside an unclosed element, and not ending on a
+ * dangling entity. The returned value is always a plain string index into
+ * `html`, so `html.slice(0, result)` stays a true prefix of the source.
+ */
+function balancedHtmlCut(html: string, cut: number): number {
+  let end = cut;
+
+  // 1. Not mid-tag: a "<" with no ">" after it means the cut split a tag
+  //    (e.g. `<a href="https://www.linked`). Telegram would reject it.
+  const lastLt = html.lastIndexOf("<", end - 1);
+  const lastGt = html.lastIndexOf(">", end - 1);
+  if (lastLt > lastGt) end = lastLt;
+
+  // 2. Not inside an element: rewind to the outermost still-open tag so the
+  //    fragment has no unclosed <b>/<a>. Rewinding (rather than appending
+  //    synthetic closers) keeps the result a true prefix of `text`.
+  const prefix = html.slice(0, end);
+  const open: Array<{ name: string; start: number }> = [];
+  TAG_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = TAG_RE.exec(prefix)) !== null) {
+    const raw = m[0];
+    const name = m[1].toLowerCase();
+    if (raw.startsWith("</")) {
+      const at = open.map((o) => o.name).lastIndexOf(name);
+      if (at >= 0) open.splice(at, 1);
+    } else if (!raw.endsWith("/>")) {
+      open.push({ name, start: m.index });
+    }
+  }
+  if (open.length) end = Math.min(end, ...open.map((o) => o.start));
+
+  // 3. No dangling entity: `&amp;` cut to `&am` renders literally in HTML mode.
+  return html.slice(0, end).replace(/&[a-zA-Z]{0,5}$/, "").length;
+}
+
+/**
+ * Cut `text` to at most `limit` chars at a sentence (then paragraph, then word)
+ * boundary, never leaving a dangling HTML entity or an unclosed tag behind.
+ *
+ * Why this exists: Telegram delivers a long post as a photo caption plus
+ * continuation message(s). The caption MUST be an exact prefix of the full
+ * text, so the continuation can be derived with a plain `slice()` — otherwise
+ * the reader sees the opening twice. Cutting at a boundary keeps the caption
+ * from ending mid-thought; the entity and tag guards keep the fragment valid
+ * for `parse_mode=HTML`, which Telegram otherwise rejects outright. Because
+ * both guards only ever rewind, the result is still a strict prefix.
+ */
+export function truncateHtmlPrefix(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const window = text.slice(0, limit);
+  const minKeep = Math.floor(limit * 0.5);
+
+  let cut = -1;
+  for (let i = window.length - 1; i >= minKeep; i--) {
+    const ch = window[i];
+    if (
+      (ch === "." || ch === "!" || ch === "?" || ch === "…") &&
+      (i + 1 >= window.length || /\s/.test(window[i + 1]))
+    ) {
+      cut = i + 1;
+      break;
+    }
+  }
+  if (cut < 0) {
+    const para = window.lastIndexOf("\n\n");
+    if (para >= minKeep) cut = para;
+  }
+  if (cut < 0) {
+    const sp = window.lastIndexOf(" ");
+    cut = sp > Math.floor(limit * 0.4) ? sp : limit;
+  }
+
+  return text.slice(0, balancedHtmlCut(text, cut)).trimEnd();
 }

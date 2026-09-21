@@ -29,6 +29,69 @@ GLOBAL RULES (must follow):
 8. One article = one coherent topic. No topic-switching or contradictory statements.
 `.trim();
 
+/**
+ * Copywriting craft. Applied to every reader-facing writer.
+ *
+ * Deliberately compatible with GLOBAL_RULES: this is persuasion through
+ * clarity, specificity and stakes — NOT hype or clickbait. Every technique here
+ * makes the reader understand faster or act sooner; none of them requires
+ * exaggerating a fact.
+ */
+const COPY_CRAFT = `
+COPYWRITING CRAFT (this is what makes the post worth reading):
+
+A. THE HOOK (first 1–2 lines) decides whether anything else is read.
+   Open with ONE of these, and only with something the source supports:
+   - The concrete thing: a named tool, version, limit, or number from the source.
+   - The production pain: the failure/limitation the reader already recognises.
+   - The stakes: what goes wrong if this is ignored.
+   - The honest contrast: the common assumption vs. what the source actually shows.
+   The hook must be a complete, specific statement. No warm-up, no preamble,
+   no "let me explain", no restating the title.
+
+B. BODY STRUCTURE — Problem → Stakes → Solution (PAS):
+   1. Problem: name it precisely (what breaks, where, under what condition).
+   2. Stakes: why it matters in production — only if the source supports it.
+   3. Solution: how it is addressed, in the source's own steps.
+   Then: 1 honest limitation, then 1 concrete next action.
+   The reader must be able to act on the next action today.
+
+C. SPECIFICITY BEATS ADJECTIVES.
+   - Every abstract claim must be followed by the concrete detail that proves it.
+   - Replace intensifiers with facts: not "juda tez" but the actual number if the
+     source has one; if it does not, drop the intensifier entirely.
+   - Name the thing. "Vosita" → the actual tool name from the source.
+   - A sentence with no information the reader did not already have is deleted.
+
+D. RHYTHM AND SCANNABILITY.
+   - Paragraphs of 1–3 sentences. One idea per paragraph.
+   - Vary sentence length: a short sentence after a long one lands harder.
+   - Use line breaks deliberately; the feed is scanned before it is read.
+   - Active voice. Concrete verbs. Cut "bo'ladi/edi" padding where possible.
+
+E. ADDRESS THE READER.
+   - Uzbek: address the reader as "siz". Write to one person, not an audience.
+   - Make the benefit and the next step explicit for that person.
+
+F. BANNED (instant rewrite if present):
+   - Generic openers: "Bugungi tez o'zgarayotgan dunyoda", "Sun'iy intellekt
+     hayotimizni o'zgartirmoqda", "In today's fast-paced world",
+     "AI is changing everything".
+   - Empty intensifiers: juda, nihoyatda, hayratlanarli, kuchli, inqilobiy,
+     shubhasiz, albatta, ma'lumki / powerful, revolutionary, game-changing,
+     groundbreaking, seamless.
+   - Rhetorical filler: "Tasavvur qiling…", "Imagine…", "Bilasizmi…".
+   - Restating the title as the first line.
+   - Summarising what you are about to say instead of saying it.
+   - Closing with vague inspiration ("Kelajak yorqin") instead of a next action.
+
+G. SELF-CHECK before returning (silently):
+   - Does the first line contain a specific, source-supported fact?
+   - Does every paragraph earn its place, or can it be deleted?
+   - Is there exactly one concrete next action at the end?
+   - Would an engineer who reads this learn something they can use?
+`.trim();
+
 // ─── Roles (system prompts) ───────────────────────────────────────────────
 
 export const roles = {
@@ -72,6 +135,8 @@ Do NOT add source lines (no "Manba:", no "Source:", no URL footer).
 Do NOT add "Author:" line or hashtags — the platform formatter appends them automatically.
 ${GLOBAL_RULES}
 
+${COPY_CRAFT}
+
 BRAND CONTEXT:
 ${BRAND}
 
@@ -114,6 +179,8 @@ FACT DISCIPLINE (highest priority):
 - Do NOT add "Author:" line or hashtags — the platform formatter appends them automatically.
 - PLAIN TEXT ONLY: Absolutely NO Markdown formatting (no **bold**, *italic*, __underline__, # headers). Social feeds render asterisks and hashtags literally. Emphasize with spacing and words.
 ${GLOBAL_RULES}
+
+${COPY_CRAFT}
 
 BRAND CONTEXT:
 ${BRAND}
@@ -194,7 +261,8 @@ export function buildRewriteUserPrompt(input: {
 
   // Pull FACTS block from analyst summary if present
   const factsFromBrief =
-    input.summary?.match(/FACTS:\s*([\s\S]*?)(?:\nNOTES:|$)/i)?.[1]?.trim() || "";
+    input.summary?.match(/FACTS:\s*([\s\S]*?)(?:\nNOTES:|$)/i)?.[1]?.trim() ||
+    "";
 
   return `
 TASK: Write an ORIGINAL social post for Istam Obidov. Do NOT copy sentences from the source.
@@ -209,21 +277,25 @@ FACT GROUNDING (critical — violations = fail):
 7) Prefer qualitative claims over numbers when the source has no exact figures.
 
 LENGTH:
-- Target 700–1600 characters.
-- Hard max ~1800 characters. Complete every sentence. Never truncate mid-sentence or mid-word.
+- Target 1200–2200 characters. Density over length: every sentence must carry
+  information the reader did not already have. Do not pad to reach the target.
+- Hard max ~2600 characters. Complete every sentence. Never truncate mid-sentence or mid-word.
 - End with a complete bullet under "Asosiy faktlar:" — never cut a word short.
 
 POST REQUIREMENTS:
-1) Language: Uzbek (Latin), professional and clear.
+1) Language: Uzbek (Latin), professional and clear. Address the reader as "siz".
 2) Hybrid voice: Teacher + Mentor + Senior AI Engineer (Istam Obidov).
-3) If TYPE is news_fast → short: facts + why it matters + 1 practical takeaway from the source.
-4) If TYPE is tech_deep (or unknown) → within length limit:
-   - Hook (1–2 lines) about THIS article's topic
-   - What it is (simple, source-aligned)
-   - Why it matters in production (only if supported by source)
-   - 3–5 short practical steps ONLY if the source supports them; otherwise fewer steps
-   - 1 honest limitation (from source or "manba cheklangan")
-   - One concrete next action grounded in the article
+3) If TYPE is news_fast → short: the specific fact + why it matters + 1 practical takeaway from the source.
+4) If TYPE is tech_deep (or unknown) → within length limit, follow Problem → Stakes → Solution:
+   - Hook (1–2 lines): a specific, source-supported fact, production pain, or stake.
+     Never restate the title. Never open with a generic statement about AI.
+   - Problem: name precisely what breaks, and under what condition.
+   - Stakes: why it matters in production (only if supported by source).
+   - Solution: 3–5 short practical steps ONLY if the source supports them; otherwise
+     fewer steps. Each step starts with a concrete verb.
+   - 1 honest limitation (from source or "manba cheklangan").
+   - One concrete next action the reader can take today.
+   Use short paragraphs (1–3 sentences), one idea each, and vary sentence length.
 5) REQUIRED closing section "Asosiy faktlar:" with 3–5 bullet lines (• …).
    - Each bullet MUST be a short, concrete claim from ALLOWED FACTS or SOURCE only.
    - Do not invent bullets. If fewer than 3 solid facts exist, write only those that are solid.
@@ -272,7 +344,7 @@ PASS (OK: yes) only if ALL are true:
 - No hype/drama; original enough (not verbatim dump)
 - Has practical takeaway
 - Complete sentences (not truncated mid-word)
-- Reasonable social length (prefer under ~2000 chars)
+- Reasonable social length (prefer under ~2600 chars)
 - FACT_OK: yes — every specific claim (product names, features, numbers, steps) is supported by SOURCE EXCERPT
 - No mixed/confused topics that are not together in the source
 - No invented tools or metrics
@@ -288,7 +360,7 @@ FAIL (OK: no) if:
 IMPORTANT: FACT_OK: no means the draft MUST fail (OK: no). Never soft-pass factual issues.
 
 DRAFT:
-${text.slice(0, 2200)}
+${text.slice(0, 2800)}
 
 SOURCE URL: ${sourceUrl || "n/a"}
 
@@ -333,15 +405,18 @@ TASK: Adapt and write this technical article post in professional English for Li
 RULES:
 1) Keep 100% of the facts, numbers, tools, constraints, and architecture steps from the approved Uzbek post.
 2) Persona: Istam Obidov (Teacher + Senior AI Engineer). Clear, engaging, direct, authoritative.
-3) Structure:
-   - Strong hook (1–2 lines) defining the real production engineering problem/solution
-   - Clear explanation of what the technology is and why it matters
-   - 3–5 practical steps / engineering takeaways
-   - 1 honest limitation / production caution
-   - Closing "Key Takeaways:" bullet lines (• …)
+3) Structure — Problem → Stakes → Solution:
+   - Hook (1–2 lines): a specific, source-supported fact, production pain, or stake.
+     Never restate the title. Never open with a generic statement about AI.
+   - Problem: what breaks, precisely, and under what condition.
+   - Stakes: why it matters in production.
+   - 3–5 practical steps / engineering takeaways. Each starts with a concrete verb.
+   - 1 honest limitation / production caution.
+   - Closing "Key Takeaways:" bullet lines (• …) and one concrete next action.
+   Short paragraphs (1–3 sentences), one idea each, varied sentence length.
 4) PLAIN TEXT ONLY: DO NOT use markdown bold (**word**), italics (*word*), or headers (# Header). Platforms display markdown characters literally.
 5) NO hashtags and NO author signature lines (the platform publisher appends these).
-6) Length: target 800–1600 characters. Fit cleanly on LinkedIn and Threads multi-part.
+6) Length: target 1200–2200 characters. Fit cleanly on LinkedIn and Threads multi-part.
 7) Output ONLY the English post text.
 
 TOPIC TITLE: ${input.title}

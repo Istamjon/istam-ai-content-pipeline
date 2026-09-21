@@ -186,8 +186,7 @@ export const env = {
    * Gemini model used for the face verification pass. Any multimodal Gemini
    * model accepts image input. Override if your key cannot access the default.
    */
-  GEMINI_VISION_MODEL:
-    process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash",
+  GEMINI_VISION_MODEL: process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash",
   /**
    * Soft daily face-verification calls PER Gemini key (UTC). Kept separate from
    * DAILY_GEMINI_LIMIT so verification never starves article text generation.
@@ -227,8 +226,7 @@ export const env = {
   CLOUDFLARE_API_TOKEN_3: process.env.CLOUDFLARE_API_TOKEN_3 || "",
   /** Workers AI text-to-image model — FLUX.2-dev */
   CLOUDFLARE_IMAGE_MODEL:
-    process.env.CLOUDFLARE_IMAGE_MODEL ||
-    "@cf/black-forest-labs/flux-2-dev",
+    process.env.CLOUDFLARE_IMAGE_MODEL || "@cf/black-forest-labs/flux-2-dev",
   /**
    * Image quality profile:
    * - balanced (default): 1024×1024, steps 15 → ~2–3 free images/day per account
@@ -246,11 +244,12 @@ export const env = {
       (process.env.IMAGE_QUALITY === "premium" ? "1536" : "1024"),
     10,
   ),
-  CLOUDFLARE_IMAGE_STEPS: parseInt(
-    process.env.CLOUDFLARE_IMAGE_STEPS ||
-      (process.env.IMAGE_QUALITY === "premium" ? "25" : "15"),
-    10,
-  ) || 15,
+  CLOUDFLARE_IMAGE_STEPS:
+    parseInt(
+      process.env.CLOUDFLARE_IMAGE_STEPS ||
+        (process.env.IMAGE_QUALITY === "premium" ? "25" : "15"),
+      10,
+    ) || 15,
   /**
    * Soft daily cap **per Cloudflare account** (successful gens).
    * Free Workers AI ≈ 10k Neurons/day/account; balanced 1024@15 ≈ 2–3 images.
@@ -314,13 +313,9 @@ export const env = {
   ),
   /** Set TOKEN_ALERT_ENABLED=false to disable expiry Telegram alerts. */
   TOKEN_ALERT_ENABLED: process.env.TOKEN_ALERT_ENABLED !== "false",
-  /**
-   * Telegra.ph long-form for Telegram (full article link in channel).
-   * Token auto-created via API if missing.
-   */
-  TELEGRAPH_ENABLED: process.env.TELEGRAPH_ENABLED !== "false",
-  TELEGRAPH_ACCESS_TOKEN: process.env.TELEGRAPH_ACCESS_TOKEN || "",
-  TELEGRAPH_SHORT_NAME: process.env.TELEGRAPH_SHORT_NAME || "IstamAI",
+  // Telegra.ph removed (2026-09): Telegram delivers the full article natively
+  // (photo caption + continuation messages), so no external long-form page and
+  // no TELEGRAPH_* configuration is needed.
   /** LinkedIn app credentials (OAuth) — from developer.linkedin.com */
   LINKEDIN_CLIENT_ID: process.env.LINKEDIN_CLIENT_ID || "",
   LINKEDIN_CLIENT_SECRET: process.env.LINKEDIN_CLIENT_SECRET || "",
@@ -378,14 +373,15 @@ export const env = {
     "https://localhost:3000/auth/threads/callback",
   X_CLIENT_ID: process.env.X_CLIENT_ID || "",
   X_CLIENT_SECRET: process.env.X_CLIENT_SECRET || "",
-  X_REDIRECT_URI: process.env.X_REDIRECT_URI || "http://localhost:3000/auth/x/callback",
+  X_REDIRECT_URI:
+    process.env.X_REDIRECT_URI || "http://localhost:3000/auth/x/callback",
   GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || "",
   GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || "",
   BLOGGER_REDIRECT_URI:
-    process.env.BLOGGER_REDIRECT_URI || "http://localhost:3000/auth/blogger/callback",
+    process.env.BLOGGER_REDIRECT_URI ||
+    "http://localhost:3000/auth/blogger/callback",
   /** Target blog URL — id is auto-resolved from public feed / OAuth */
-  BLOGGER_URL:
-    process.env.BLOGGER_URL || "https://istamjon.blogspot.com/",
+  BLOGGER_URL: process.env.BLOGGER_URL || "https://istamjon.blogspot.com/",
   BLOGGER_ACCESS_TOKEN: process.env.BLOGGER_ACCESS_TOKEN || "",
   BLOGGER_REFRESH_TOKEN: process.env.BLOGGER_REFRESH_TOKEN || "",
   /** Optional override; empty = auto (public feed → 6041787032258205448 for istamjon.blogspot.com) */
@@ -516,7 +512,9 @@ function provided(name: string): string | undefined {
   return raw === undefined || raw.trim() === "" ? undefined : raw.trim();
 }
 
-const INT_RULES: ReadonlyArray<readonly [name: string, min: number, max: number]> = [
+const INT_RULES: ReadonlyArray<
+  readonly [name: string, min: number, max: number]
+> = [
   ["DAILY_GEMINI_LIMIT", 0, 100_000],
   ["DAILY_UNOROUTER_LIMIT", 0, 100_000],
   ["DAILY_NANOBANANA_LIMIT", 0, 100_000],
@@ -552,42 +550,61 @@ for (const [name, min, max] of INT_RULES) {
   const raw = provided(name);
   if (raw === undefined) continue;
   if (!z.coerce.number().int().min(min).max(max).safeParse(raw).success) {
-    configErrors.push(`${name}="${raw}" — ${min}..${max} oralig'idagi butun son kutilgan`);
+    configErrors.push(
+      `${name}="${raw}" — ${min}..${max} oralig'idagi butun son kutilgan`,
+    );
   }
 }
 
-const ENUM_RULES: ReadonlyArray<readonly [name: string, allowed: readonly string[]]> = [
+const ENUM_RULES: ReadonlyArray<
+  readonly [name: string, allowed: readonly string[]]
+> = [
   ["SKYWORK_RESOLUTION", ["1K", "2K", "4K"]],
   ["IMAGE_QUALITY", ["balanced", "premium"]],
   ["LINKEDIN_POST_AS", ["person", "organization", "both", "auto"]],
-  ["XKIRO_IMAGE_SIZE", ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"]],
+  [
+    "XKIRO_IMAGE_SIZE",
+    ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"],
+  ],
 ];
 
 for (const [name, allowed] of ENUM_RULES) {
   const raw = provided(name);
   if (raw === undefined) continue;
   if (!allowed.some((a) => a.toLowerCase() === raw.toLowerCase())) {
-    configErrors.push(`${name}="${raw}" — ruxsat etilgan qiymatlar: ${allowed.join(" | ")}`);
+    configErrors.push(
+      `${name}="${raw}" — ruxsat etilgan qiymatlar: ${allowed.join(" | ")}`,
+    );
   }
 }
 
 const rawCronTimes = provided("CRON_TIMES");
 if (rawCronTimes) {
   const clock = /^([01]?\d|2[0-3]):[0-5]\d$/;
-  for (const part of rawCronTimes.split(",").map((s) => s.trim()).filter(Boolean)) {
+  for (const part of rawCronTimes
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)) {
     if (!clock.test(part)) {
-      configErrors.push(`CRON_TIMES — "${part}" noto'g'ri; HH:MM kutilgan (masalan 09:30,19:30)`);
+      configErrors.push(
+        `CRON_TIMES — "${part}" noto'g'ri; HH:MM kutilgan (masalan 09:30,19:30)`,
+      );
     }
   }
 }
 
 const rawRatio = provided("SKYWORK_ASPECT_RATIO");
 if (rawRatio && !/^(\d{1,2}:\d{1,2}|auto)$/.test(rawRatio)) {
-  configErrors.push(`SKYWORK_ASPECT_RATIO="${rawRatio}" — W:H (masalan 1:1) yoki auto kutilgan`);
+  configErrors.push(
+    `SKYWORK_ASPECT_RATIO="${rawRatio}" — W:H (masalan 1:1) yoki auto kutilgan`,
+  );
 }
 
 const rawConfidence = provided("FACE_VERIFY_MIN_CONFIDENCE");
-if (rawConfidence && !z.coerce.number().min(0).max(1).safeParse(rawConfidence).success) {
+if (
+  rawConfidence &&
+  !z.coerce.number().min(0).max(1).safeParse(rawConfidence).success
+) {
   configErrors.push(
     `FACE_VERIFY_MIN_CONFIDENCE="${rawConfidence}" — 0..1 oralig'idagi son kutilgan`,
   );
@@ -598,7 +615,9 @@ if (rawTz) {
   try {
     new Intl.DateTimeFormat("en-US", { timeZone: rawTz });
   } catch {
-    configErrors.push(`TZ="${rawTz}" — noto'g'ri IANA timezone (masalan Asia/Tashkent)`);
+    configErrors.push(
+      `TZ="${rawTz}" — noto'g'ri IANA timezone (masalan Asia/Tashkent)`,
+    );
   }
 }
 
@@ -632,9 +651,9 @@ if (env.CRON_WINDOW_START_HOUR >= env.CRON_WINDOW_END_HOUR) {
 // ── Soft warnings (degraded but runnable) ───────────────────────────
 const hasImageProvider = Boolean(
   env.UNOROUTER_API_KEY ||
-    env.GEMINI_API_KEY ||
-    env.SKYWORK_API_KEY ||
-    env.XKIRO_API_KEY,
+  env.GEMINI_API_KEY ||
+  env.SKYWORK_API_KEY ||
+  env.XKIRO_API_KEY,
 );
 if (!hasImageProvider) {
   configWarnings.push(

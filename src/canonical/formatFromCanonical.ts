@@ -4,11 +4,12 @@
  * Policy: src/config/platformTextLimits.ts
  */
 import type { Platform, FormattedPost } from "../agent/state.js";
-import { brand, buildBrandFooter } from "../config/brand.js";
+import { buildBrandFooter } from "../config/brand.js";
 import {
   getPlatformTextPolicy,
   smartTruncate,
   splitIntoThreadParts,
+  truncateHtmlPrefix,
   platformLimits,
 } from "../config/platformTextLimits.js";
 import { env } from "../config/env.js";
@@ -30,13 +31,14 @@ function stripNoise(text: string): string {
 }
 
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildContentHashtags(body: string, platform: Platform, max: number): string {
+function buildContentHashtags(
+  body: string,
+  platform: Platform,
+  max: number,
+): string {
   if (max <= 0) return "";
   const lower = body.toLowerCase();
   const topicTags: Array<{ re: RegExp; tag: string }> = [
@@ -59,7 +61,8 @@ function buildContentHashtags(body: string, platform: Platform, max: number): st
   const picked: string[] = [];
   const push = (tag: string) => {
     if (tag.toLowerCase() === "#langgraph") return;
-    if (!picked.some((t) => t.toLowerCase() === tag.toLowerCase())) picked.push(tag);
+    if (!picked.some((t) => t.toLowerCase() === tag.toLowerCase()))
+      picked.push(tag);
   };
 
   push("#IstamObidov");
@@ -146,47 +149,6 @@ function shortFormBody(clean: string, maxChars: number): string {
   return out;
 }
 
-/** Telegram media caption: complete thoughts, ≤ hard (HTML-safe plain then escape). */
-export function buildMediaCaption(
-  cleanBody: string,
-  hardLimit: number,
-  opts?: { telegraphUrl?: string; includeFooter?: boolean },
-): string {
-  const limit = Math.max(80, hardLimit - 8);
-  const footer = opts?.includeFooter
-    ? buildBrandFooter("telegram", "compact")
-    : "";
-  const linkBlock = opts?.telegraphUrl
-    ? `\n\n📖 <b>Toʻliq maqola</b>\n<a href="${escapeHtml(opts.telegraphUrl)}">${escapeHtml(opts.telegraphUrl)}</a>`
-    : "";
-
-  const reserved = (footer ? footer.length + 2 : 0) + linkBlock.length;
-  const hookBudget = Math.max(60, limit - reserved);
-
-  const plain = cleanBody
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  let hook = shortFormBody(plain, hookBudget);
-  hook = smartTruncate(hook, hookBudget);
-
-  let caption = `${escapeHtml(hook)}${linkBlock}`;
-  if (footer) caption = `${caption}\n\n${footer}`;
-
-  if (caption.length > hardLimit) {
-    // Drop footer, keep link
-    caption = `${escapeHtml(smartTruncate(plain, Math.max(40, hardLimit - linkBlock.length - 4)))}${linkBlock}`;
-  }
-  if (caption.length > hardLimit) {
-    caption = smartTruncate(
-      caption.replace(/<[^>]+>/g, ""),
-      hardLimit,
-    );
-  }
-  return caption.slice(0, hardLimit);
-}
-
 function formatOne(
   platform: Platform,
   body: string,
@@ -201,14 +163,15 @@ function formatOne(
 
   // Threads: multi-part chain
   if (policy.strategy === "threads_chain") {
-    const maxParts = Math.max(
-      1,
-      Math.min(12, env.THREADS_MAX_PARTS || 6),
-    );
+    const maxParts = Math.max(1, Math.min(12, env.THREADS_MAX_PARTS || 6));
     // Body only in parts; tiny brand line on last part only if room
     const parts = splitIntoThreadParts(clean, hard, maxParts);
     if (parts.length === 0) {
-      return { text: smartTruncate(clean, hard), hasImage, parts: [smartTruncate(clean, hard)] };
+      return {
+        text: smartTruncate(clean, hard),
+        hasImage,
+        parts: [smartTruncate(clean, hard)],
+      };
     }
     // Optional last-part hashtag if space
     const tags = buildContentHashtags(clean, platform, policy.maxHashtags);
@@ -249,28 +212,27 @@ function formatOne(
     };
   }
 
-  // Telegram: full text for Telegraph; caption prepared without URL (URL at publish)
-  if (policy.strategy === "telegram_teaser") {
+  // Telegram: the whole article ships inside Telegram itself — no external
+  // long-form page. `text` is the complete channel post; `caption` is a strict
+  // PREFIX of it, so the publisher sends the caption under the photo and
+  // derives the continuation with a plain slice() (no duplicated opening).
+  if (policy.strategy === "telegram_native") {
     const capHard = policy.captionHardLimit ?? 1024;
-    // Full channel text for Telegra.ph source (HTML body)
-    const fullCore = clean;
     const fullPacked = packText(
-      escapeHtml(fullCore),
+      escapeHtml(clean),
       footer,
       hashtags,
-      Math.min(soft, 12000),
+      soft,
       false,
     );
-    const caption = buildMediaCaption(clean, capHard, {
-      includeFooter: true,
-    });
+    const caption = truncateHtmlPrefix(fullPacked, capHard);
     console.log(
-      `[format] ${platform} strategy=teaser full=${fullPacked.length} caption=${caption.length}/${capHard}`,
+      `[format] ${platform} strategy=native full=${fullPacked.length} caption=${caption.length}/${capHard}`,
     );
     return {
       text: fullPacked,
       caption,
-      hasImage: hasImage,
+      hasImage,
     };
   }
 
@@ -281,11 +243,13 @@ function formatOne(
   if (core.length > target - footer.length - hashtags.length - 10) {
     const budget = Math.max(
       80,
-      target - (footer ? footer.length + 2 : 0) - (hashtags ? hashtags.length + 2 : 0),
+      target -
+        (footer ? footer.length + 2 : 0) -
+        (hashtags ? hashtags.length + 2 : 0),
     );
     core = smartTruncate(core, budget);
   }
-  let text = packText(core, footer, hashtags, hard, false);
+  const text = packText(core, footer, hashtags, hard, false);
 
   // If under-utilizing a lot on long platforms, keep as-is (canonical may be short)
   console.log(
@@ -350,7 +314,7 @@ export function formatAllFromCanonical(
     }
     // THREADS and LINKEDIN posts are in English; all others are in Uzbek
     const isEnglishPlatform = platform === "linkedin" || platform === "threads";
-    const platformBody = isEnglishPlatform ? (doc.bodyEn || doc.body) : doc.body;
+    const platformBody = isEnglishPlatform ? doc.bodyEn || doc.body : doc.body;
     out[platform] = formatOne(platform, platformBody, hasImage);
   }
   return out;

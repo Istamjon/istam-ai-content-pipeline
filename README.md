@@ -97,7 +97,7 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 
 | Platform | Notes |
 |----------|--------|
-| **Telegram** | Photo + caption (one post); video + caption; long body → Telegra.ph + teaser |
+| **Telegram** | Photo + caption, then continuation message(s) — the full article stays inside Telegram |
 | **LinkedIn** | Person post (+ optional company if scoped); image upload |
 | **Facebook** | Page photo/video post; needs **never-expiring Page token** |
 | **Instagram** | Graph API via Page + IG Business ID; image or Reels (public URL) |
@@ -374,7 +374,6 @@ TELEGRAM_CHANNEL=
 # Manual publish via Telegram bot (photo/video + caption → all platforms)
 TELEGRAM_BOT_INBOUND=true
 TELEGRAM_ADMIN_IDS=123456789
-TELEGRAPH_ENABLED=true
 
 # LinkedIn OAuth tokens / app
 LINKEDIN_CLIENT_ID=
@@ -482,7 +481,7 @@ src/
   agent/           # LangGraph nodes, prompts, state
   canonical/       # Single source of truth for post body + derived formats
   config/          # brand, env, image presets
-  lib/             # Gemini, images, scrape, telegraph, schedule
+  lib/             # Gemini, images, scrape, image hosting, schedule
   oauth/           # Auth providers, token store, refresh
   platforms/       # telegram, linkedin, facebook, instagram, threads, x, blogger
   scheduler.ts     # Random / fixed / interval modes
@@ -534,8 +533,7 @@ node scripts/reset-image-soft-budget.mjs   # clear soft image counters (UTC day)
 | Quality fail | Up to 3 rewrite passes (first draft + 2 retries), then skip article |
 | No image | Skip publish entirely |
 | Soft style | Not enough to pass if facts fail |
-| Telegram layout | **One** `sendPhoto` with caption (image + text together) |
-| Telegra.ph | Hero image first, then paragraphs |
+| Telegram layout | `sendPhoto`/`sendVideo` + caption, then continuation message(s) — full article stays in Telegram |
 
 ---
 

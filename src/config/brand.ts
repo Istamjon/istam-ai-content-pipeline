@@ -63,8 +63,18 @@ export const brand = {
   ],
 
   targetAudience: {
-    primary: ["Beginner Developer", "Junior Developer", "Students", "IT entrepreneurs"],
-    secondary: ["Middle Developer", "AI Engineer", "Startup Founder", "Tech Enthusiast"],
+    primary: [
+      "Beginner Developer",
+      "Junior Developer",
+      "Students",
+      "IT entrepreneurs",
+    ],
+    secondary: [
+      "Middle Developer",
+      "AI Engineer",
+      "Startup Founder",
+      "Tech Enthusiast",
+    ],
   },
 
   contentPhilosophy: [
@@ -118,7 +128,8 @@ export const brand = {
 
   writingStyle: {
     modes: ["Teacher", "Mentor", "Senior AI Engineer", "Software Architect"],
-    approach: "Hybrid — pick the best mode for the topic (news = concise teacher; deep tech = senior engineer + architect)",
+    approach:
+      "Hybrid — pick the best mode for the topic (news = concise teacher; deep tech = senior engineer + architect)",
   },
 
   toneOfVoice: [
@@ -198,7 +209,12 @@ export const brand = {
    * Always-safe brand tags (no #LangGraph).
    * Content-specific tags are generated per post in formatPosts.
    */
-  hashtags: ["#IstamObidov", "#AIEngineering", "#OzbekistonTech", "#ProductionAI"],
+  hashtags: [
+    "#IstamObidov",
+    "#AIEngineering",
+    "#OzbekistonTech",
+    "#ProductionAI",
+  ],
 
   /**
    * Display order: LinkedIn • Telegram • YouTube • Threads • X • Instagram
@@ -467,7 +483,8 @@ export function buildBrandFooter(
 
   const profiles = brand.socialProfiles;
   const title = brand.footerTitle || `Author: ${brand.name}`;
-  const tagline = brand.footerTagline || "AI Engineering | AI Agents | Automation";
+  const tagline =
+    brand.footerTagline || "AI Engineering | AI Agents | Automation";
   const compactProfiles = profiles.filter((p) =>
     ["LinkedIn", "Telegram", "YouTube"].includes(p.label),
   );
@@ -489,7 +506,7 @@ export function buildBrandFooter(
     return "";
   }
 
-  // LinkedIn, Facebook, Instagram, Blogger, Telegra.ph body
+  // LinkedIn, Facebook, Instagram, Blogger
   const lines = list.map((p) => `${p.label}: ${p.url}`);
   return ["────────", title, tagline, "", ...lines].join("\n");
 }

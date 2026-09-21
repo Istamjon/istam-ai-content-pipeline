@@ -1,13 +1,27 @@
+/**
+ * Telegram channel publishing.
+ *
+ * Layout: the ENTIRE article is delivered inside Telegram itself.
+ *   - image/video present → media post with a caption (first ≤1024 chars),
+ *     then the remainder as continuation message(s) (≤4096 each)
+ *   - no media           → the whole post as message(s)
+ *
+ * There is no external long-form page (Telegra.ph was removed): the caption is
+ * a strict prefix of the full text, so the continuation is a plain slice with
+ * nothing repeated and nothing lost.
+ *
+ * Note: Telegram's 4096 message / 1024 caption limits apply to every account,
+ * including Premium — Premium raises file upload size, not text limits.
+ */
 import { env } from "../config/env.js";
 import fs from "fs";
 import path from "path";
-import { brand } from "../config/brand.js";
-import {
-  createTelegraphPage,
-  buildTelegramTeaser,
-} from "../lib/telegraph.js";
+import { truncateHtmlPrefix } from "../config/platformTextLimits.js";
 
 type TgResult = { success: boolean; error?: string };
+
+/** Telegram media caption hard limit. */
+const CAPTION_HARD = 1024;
 
 async function parseTelegramResponse(response: Response): Promise<{
   ok: boolean;
@@ -38,6 +52,7 @@ async function parseTelegramResponse(response: Response): Promise<{
   }
 }
 
+/** Send text, split into ≤4096-char messages (Telegram's per-message limit). */
 async function sendMessage(
   token: string,
   chatId: string,
@@ -50,20 +65,23 @@ async function sendMessage(
     chunks.push(remaining.slice(0, 4096));
     remaining = remaining.slice(4096);
   }
+  if (chunks.length === 0) return { success: true };
 
   for (const chunk of chunks) {
-    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: chunk,
-        parse_mode: "HTML",
-        // Enable preview so telegra.ph card shows
-        disable_web_page_preview: !preview,
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
+    const response = await fetch(
+      `https://api.telegram.org/bot${token}/sendMessage`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: chunk,
+          parse_mode: "HTML",
+          disable_web_page_preview: !preview,
+        }),
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
     const data = await parseTelegramResponse(response);
     if (!data.ok) {
       return {
@@ -94,16 +112,18 @@ async function sendPhoto(
   const form = new FormData();
   form.append("chat_id", chatId);
   form.append("photo", new File([buffer], filename, { type: mime }));
-  // Always attach caption so image + text stay one Telegram post
   const cap = (caption || "").trim() || " ";
-  form.append("caption", cap.slice(0, 1024));
+  form.append("caption", cap.slice(0, CAPTION_HARD));
   form.append("parse_mode", "HTML");
 
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
-    method: "POST",
-    body: form,
-    signal: AbortSignal.timeout(120_000),
-  });
+  const response = await fetch(
+    `https://api.telegram.org/bot${token}/sendPhoto`,
+    {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(120_000),
+    },
+  );
 
   const data = await parseTelegramResponse(response);
   if (!data.ok) {
@@ -123,7 +143,7 @@ async function sendVideo(
 ): Promise<TgResult> {
   const buffer = fs.readFileSync(videoPath);
   const filename = path.basename(videoPath) || "video.mp4";
-  const ext = path.extname(filename).toLowerCase();
+  const ext = path.extname(videoPath).toLowerCase();
   const mime =
     ext === ".mov"
       ? "video/quicktime"
@@ -135,15 +155,18 @@ async function sendVideo(
   form.append("chat_id", chatId);
   form.append("video", new File([buffer], filename, { type: mime }));
   const cap = (caption || "").trim() || " ";
-  form.append("caption", cap.slice(0, 1024));
+  form.append("caption", cap.slice(0, CAPTION_HARD));
   form.append("parse_mode", "HTML");
   form.append("supports_streaming", "true");
 
-  const response = await fetch(`https://api.telegram.org/bot${token}/sendVideo`, {
-    method: "POST",
-    body: form,
-    signal: AbortSignal.timeout(300_000),
-  });
+  const response = await fetch(
+    `https://api.telegram.org/bot${token}/sendVideo`,
+    {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(300_000),
+    },
+  );
 
   const data = await parseTelegramResponse(response);
   if (!data.ok) {
@@ -155,27 +178,20 @@ async function sendVideo(
   return { success: true };
 }
 
-function extractTitle(text: string): string {
-  const plain = text
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/Yangi\s+[\w\s.-]*maqolasi\s*:\s*/gi, "")
-    .replace(/Skywork(\s+AI)?\s*maqolasi\s*:\s*/gi, "")
-    .trim();
-  // Prefer short title-like first line; avoid dumping full hook as title
-  let first = plain.split(/\n/)[0]?.trim() || brand.name;
-  if (first.length > 70) {
-    const sp = first.slice(0, 70).lastIndexOf(" ");
-    first = (sp > 30 ? first.slice(0, sp) : first.slice(0, 70)).trim();
-  }
-  return first.slice(0, 100) || `Istam Obidov — AI Engineering`;
+/**
+ * Caption for the media post.
+ *
+ * MUST be a strict prefix of `text`, so the continuation is exactly
+ * `text.slice(caption.length)`. If the format layer ever breaks that invariant
+ * we recompute locally rather than trust it — a non-prefix caption would
+ * duplicate the opening of the article in the channel.
+ */
+function resolveCaption(text: string, prebuilt?: string): string {
+  const candidate = (prebuilt || "").trim();
+  if (candidate && text.startsWith(candidate)) return candidate;
+  return truncateHtmlPrefix(text, CAPTION_HARD);
 }
 
-/**
- * Publish to Telegram.
- * Long content → Telegra.ph full article + short channel teaser with link.
- * Enables much longer canonical body on Telegram without multi-message spam.
- */
 /**
  * Ops / admin alert (token expiry, health). Uses TELEGRAM_CHANNEL by default.
  * Does not count toward daily post limits.
@@ -190,7 +206,8 @@ export async function sendTelegramAlert(
     if (!token || !channel) {
       return {
         success: false,
-        error: "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL are required for alerts",
+        error:
+          "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL are required for alerts",
       };
     }
     return await sendMessage(token, channel, text, false);
@@ -205,113 +222,59 @@ export async function publishToTelegram(
   text: string,
   imagePath?: string,
   mediaKind: TelegramMediaKind = "image",
-  /** Preformatted caption ≤1024 from format layer (optional). */
+  /** Preformatted caption ≤1024 from the format layer (a prefix of `text`). */
   prebuiltCaption?: string,
 ): Promise<TgResult> {
   try {
     const token = env.TELEGRAM_BOT_TOKEN;
     const channel = env.TELEGRAM_CHANNEL;
     if (!token || !channel) {
-      return { success: false, error: "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL are required" };
+      return {
+        success: false,
+        error: "TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL are required",
+      };
     }
 
-    const CAPTION_HARD = 1024;
-    const useTelegraph = env.TELEGRAPH_ENABLED !== false;
-    let channelText = text;
-    let telegraphUrl = "";
-
-    // Telegra.ph for long text + still image — full article always when over caption budget
+    const hasMedia = Boolean(imagePath && fs.existsSync(imagePath));
     const isVideo =
       mediaKind === "video" ||
-      (Boolean(imagePath) &&
-        /\.(mp4|mov|webm|mkv)$/i.test(imagePath || ""));
-    const needsTelegraph =
-      useTelegraph && !isVideo && (text.length > 700 || Boolean(imagePath));
-    if (needsTelegraph) {
-      try {
-        const page = await createTelegraphPage({
-          title: extractTitle(text),
-          content: text,
-          imagePath:
-            imagePath && fs.existsSync(imagePath) && !isVideo
-              ? imagePath
-              : undefined,
-          authorName: brand.name,
-          authorUrl: brand.socialLinks.telegram,
-        });
-        telegraphUrl = page.url;
-        channelText = buildTelegramTeaser(text, page.url);
-        console.log("[telegram] Telegra.ph:", telegraphUrl);
-      } catch (e) {
-        console.warn("[telegram] Telegra.ph failed, posting smart teaser only:", e);
-        channelText = buildTelegramTeaser(text, "");
-      }
+      (hasMedia && /\.(mp4|mov|webm|mkv)$/i.test(imagePath || ""));
+
+    // No media → the post is pure text, one or more messages.
+    if (!hasMedia) {
+      return await sendMessage(token, channel, text, false);
     }
 
-    if (imagePath && fs.existsSync(imagePath)) {
-      // Prefer format-layer caption; else teaser; never mid-sentence slice
-      let caption = (prebuiltCaption || channelText || " ").trim();
-      if (telegraphUrl && !caption.includes(telegraphUrl)) {
-        // Ensure full-article link present when we have Telegra.ph
-        caption = buildTelegramTeaser(text, telegraphUrl);
-      }
-      if (caption.length > CAPTION_HARD) {
-        caption = buildTelegramTeaser(text, telegraphUrl || "").slice(0, CAPTION_HARD);
-        // buildTelegramTeaser already respects ~1024; hard clamp without mid-word if still over
-        if (caption.length > CAPTION_HARD) {
-          const sp = caption.lastIndexOf(" ", CAPTION_HARD - 1);
-          caption =
-            (sp > 40 ? caption.slice(0, sp) : caption.slice(0, CAPTION_HARD - 1)).trim() +
-            "…";
-        }
-      }
-      console.log(`[telegram] captionLen=${caption.length}/${CAPTION_HARD}`);
+    const caption = resolveCaption(text, prebuiltCaption);
+    const remainder = text.slice(caption.length).trim();
+    console.log(
+      `[telegram] caption=${caption.length}/${CAPTION_HARD} continuation=${remainder.length}`,
+    );
 
-      if (isVideo) {
-        const video = await sendVideo(token, channel, imagePath, caption);
-        if (!video.success) {
-          console.warn(
-            "[telegram] sendVideo failed, falling back to message:",
-            video.error,
-          );
-          return await sendMessage(
-            token,
-            channel,
-            channelText,
-            Boolean(telegraphUrl),
-          );
-        }
-        console.log("[telegram] single video+caption post OK");
-        return { success: true };
-      }
+    const head = isVideo
+      ? await sendVideo(token, channel, imagePath as string, caption)
+      : await sendPhoto(token, channel, imagePath as string, caption);
 
-      // ONE post: image + text together (caption under photo — not two messages)
-      const photo = await sendPhoto(token, channel, imagePath, caption);
-      if (!photo.success) {
-        console.warn(
-          "[telegram] sendPhoto failed, falling back to message:",
-          photo.error,
-        );
-        return await sendMessage(
-          token,
-          channel,
-          channelText,
-          Boolean(telegraphUrl),
-        );
+    if (!head.success) {
+      console.warn(
+        `[telegram] ${isVideo ? "sendVideo" : "sendPhoto"} failed, posting text only:`,
+        head.error,
+      );
+      return await sendMessage(token, channel, text, false);
+    }
+    console.log(`[telegram] ${isVideo ? "video" : "photo"}+caption post OK`);
+
+    // The rest of the article stays inside Telegram as a continuation.
+    if (remainder) {
+      const follow = await sendMessage(token, channel, remainder, false);
+      if (!follow.success) {
+        console.warn("[telegram] continuation failed:", follow.error);
+        return { success: true, error: `continuation failed: ${follow.error}` };
       }
-      console.log("[telegram] single photo+caption post OK");
-      if (telegraphUrl && caption.length >= CAPTION_HARD - 20) {
-        const linkMsg =
-          `📖 <b>Toʻliq matn</b>\n<a href="${telegraphUrl}">${telegraphUrl}</a>`;
-        const follow = await sendMessage(token, channel, linkMsg, true);
-        if (!follow.success) {
-          console.warn("[telegram] telegra follow-up failed:", follow.error);
-        }
-      }
-      return { success: true };
+      console.log("[telegram] continuation message OK");
     }
 
-    return await sendMessage(token, channel, channelText, Boolean(telegraphUrl));
+    return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
   }

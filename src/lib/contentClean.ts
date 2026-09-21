@@ -68,31 +68,14 @@ export function stripSourceIntros(text: string): string {
     /\bYangi\s+[\w\s./-]{0,30}(Skywork|DeepMind|Actualize|blog)[\w\s./-]{0,20}\s+maqolasi\s*:\s*/gi,
     "",
   );
-  t = t.replace(/\b(Skywork\s*AI|DeepMind)\s+maqolasi(ga|da)?\s*[:,]?\s*/gi, "");
+  t = t.replace(
+    /\b(Skywork\s*AI|DeepMind)\s+maqolasi(ga|da)?\s*[:,]?\s*/gi,
+    "",
+  );
   return t.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 /** Full reader-facing clean: source intros + markdown noise. */
 export function cleanPostBody(text: string): string {
   return stripMarkdownNoise(stripSourceIntros((text || "").trim()));
-}
-
-export function stripHtmlToPlain(text: string): string {
-  return text
-    .replace(/<a\s+href="([^"]+)"[^>]*>([^<]*)<\/a>/gi, "$2")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .trim();
-}
-
-/** Remove Author/hashtag blocks for Telegraph body (footer re-added cleanly). */
-export function stripFooterAndTags(text: string): string {
-  let t = stripHtmlToPlain(text);
-  t = t.replace(/\n*Author:\s*[\s\S]*$/i, "");
-  t = t.replace(/\n*#[\w\u0400-\u04FF]+(\s+#[\w\u0400-\u04FF]+)*\s*$/g, "");
-  t = t.replace(/\n*AI Engineering\s*\|\s*AI Agents[\s\S]*$/i, "");
-  return t.trim();
 }
