@@ -50,7 +50,12 @@ export function loadTokens(platform: OAuthPlatform): StoredTokens | null {
 
 export function saveTokens(tokens: StoredTokens): void {
   if (!fs.existsSync(tokensDir)) fs.mkdirSync(tokensDir, { recursive: true });
-  fs.writeFileSync(fileFor(tokens.platform), JSON.stringify(tokens, null, 2), "utf8");
+  fs.writeFileSync(fileFor(tokens.platform), JSON.stringify(tokens, null, 2), {
+    encoding: "utf8",
+    // Owner-only: this file holds OAuth access + refresh tokens.
+    // NOTE: `mode` only applies when the file is created; chmod existing files once.
+    mode: 0o600,
+  });
   // Mirror into process.env always; .env file is best-effort (read-only in Docker)
   syncEnv(tokens);
   console.log(`[tokenStore] Saved ${tokens.platform} → data/tokens/${tokens.platform}.json`);

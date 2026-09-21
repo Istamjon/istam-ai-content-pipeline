@@ -13,6 +13,7 @@ export default {
   },
   extensionsToTreatAsEsm: [".ts"],
   setupFiles: ["dotenv/config"],
-  passWithNoTests: true,
+  // No `passWithNoTests`: if the unit suite ever disappears, CI must go red
+  // instead of staying green. The integration script opts in explicitly.
   testTimeout: 20_000,
 };

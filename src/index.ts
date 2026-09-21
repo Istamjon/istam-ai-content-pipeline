@@ -29,6 +29,20 @@ try {
   console.warn("[net] undici IPv4 Agent not applied:", e);
 }
 
+// ── Global error handlers ───────────────────────────────────────────
+// Long-running cron worker: without these, a single unhandled rejection kills
+// the process mid-slot and the cause survives only in the container log.
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal] unhandledRejection:", reason);
+});
+// After an uncaughtException the process is in an undefined state, so log it
+// and exit(1) — `restart: unless-stopped` then brings the container back clean
+// instead of letting it limp on with corrupted state.
+process.on("uncaughtException", (err) => {
+  console.error("[fatal] uncaughtException:", err);
+  process.exit(1);
+});
+
 async function logAiConfig(): Promise<void> {
   // One-shot: re-open articles burned by old fetch-error permanent skip
   try {

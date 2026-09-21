@@ -1,4 +1,5 @@
 /* eslint-disable no-process-env */
+import { z } from "zod";
 
 function normalizeImageTempHours(hours: number): 1 | 12 | 24 | 72 {
   if (hours <= 1) return 1;
@@ -484,6 +485,181 @@ export const env = {
     Math.min(12, parseInt(process.env.THREADS_MAX_PARTS || "6", 10) || 6),
   ),
 };
+
+// ── Config validation ───────────────────────────────────────────────
+// Fail fast at boot instead of dying mid-pipeline with an opaque error.
+//
+// Only *provided* variables are shape-checked. Every value above carries a
+// built-in default, so demanding presence would break every deployment that
+// relies on those defaults — the goal is to catch typos and invalid values,
+// not to force a fully explicit .env. Cross-field checks use the effective
+// (post-default) values from `env`.
+const KNOWN_PLATFORMS = [
+  "telegram",
+  "linkedin",
+  "facebook",
+  "instagram",
+  "threads",
+  "x",
+  "blogger",
+] as const;
+
+const isTestRuntime =
+  Boolean(process.env.JEST_WORKER_ID) || process.env.NODE_ENV === "test";
+
+const configErrors: string[] = [];
+const configWarnings: string[] = [];
+
+/** Raw env value, or undefined when unset/blank (= "use the default"). */
+function provided(name: string): string | undefined {
+  const raw = process.env[name];
+  return raw === undefined || raw.trim() === "" ? undefined : raw.trim();
+}
+
+const INT_RULES: ReadonlyArray<readonly [name: string, min: number, max: number]> = [
+  ["DAILY_GEMINI_LIMIT", 0, 100_000],
+  ["DAILY_UNOROUTER_LIMIT", 0, 100_000],
+  ["DAILY_NANOBANANA_LIMIT", 0, 100_000],
+  ["DAILY_SKYWORK_LIMIT", 0, 100_000],
+  ["DAILY_XKIRO_LIMIT", 0, 100_000],
+  ["DAILY_FACEVERIFY_LIMIT", 0, 100_000],
+  ["DAILY_IMAGE_LIMIT", 0, 100_000],
+  ["DAILY_IMAGE_TOTAL", 0, 100_000],
+  ["DAILY_LIMIT_TELEGRAM", 0, 1000],
+  ["DAILY_LIMIT_LINKEDIN", 0, 1000],
+  ["DAILY_LIMIT_FACEBOOK", 0, 1000],
+  ["DAILY_LIMIT_INSTAGRAM", 0, 1000],
+  ["DAILY_LIMIT_X", 0, 1000],
+  ["DAILY_LIMIT_THREADS", 0, 1000],
+  ["DAILY_LIMIT_BLOGGER", 0, 1000],
+  ["IMAGE_WIDTH", 64, 8192],
+  ["IMAGE_HEIGHT", 64, 8192],
+  ["IMAGE_TEMP_HOURS", 1, 72],
+  ["CLOUDFLARE_IMAGE_STEPS", 1, 200],
+  ["TOKEN_ALERT_DAYS", 0, 3650],
+  ["CRON_SLOTS_PER_DAY", 1, 48],
+  ["CRON_SLOTS_MIN", 1, 24],
+  ["CRON_SLOTS_MAX", 1, 48],
+  ["CRON_WINDOW_START_HOUR", 0, 23],
+  ["CRON_WINDOW_END_HOUR", 1, 24],
+  ["CRON_MIN_GAP_MINUTES", 0, 1440],
+  ["CRON_INTERVAL_MINUTES", 1, 10_080],
+  ["MAX_ARTICLES_PER_RUN", 1, 100],
+  ["THREADS_MAX_PARTS", 1, 12],
+];
+
+for (const [name, min, max] of INT_RULES) {
+  const raw = provided(name);
+  if (raw === undefined) continue;
+  if (!z.coerce.number().int().min(min).max(max).safeParse(raw).success) {
+    configErrors.push(`${name}="${raw}" — ${min}..${max} oralig'idagi butun son kutilgan`);
+  }
+}
+
+const ENUM_RULES: ReadonlyArray<readonly [name: string, allowed: readonly string[]]> = [
+  ["SKYWORK_RESOLUTION", ["1K", "2K", "4K"]],
+  ["IMAGE_QUALITY", ["balanced", "premium"]],
+  ["LINKEDIN_POST_AS", ["person", "organization", "both", "auto"]],
+  ["XKIRO_IMAGE_SIZE", ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"]],
+];
+
+for (const [name, allowed] of ENUM_RULES) {
+  const raw = provided(name);
+  if (raw === undefined) continue;
+  if (!allowed.some((a) => a.toLowerCase() === raw.toLowerCase())) {
+    configErrors.push(`${name}="${raw}" — ruxsat etilgan qiymatlar: ${allowed.join(" | ")}`);
+  }
+}
+
+const rawCronTimes = provided("CRON_TIMES");
+if (rawCronTimes) {
+  const clock = /^([01]?\d|2[0-3]):[0-5]\d$/;
+  for (const part of rawCronTimes.split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (!clock.test(part)) {
+      configErrors.push(`CRON_TIMES — "${part}" noto'g'ri; HH:MM kutilgan (masalan 09:30,19:30)`);
+    }
+  }
+}
+
+const rawRatio = provided("SKYWORK_ASPECT_RATIO");
+if (rawRatio && !/^(\d{1,2}:\d{1,2}|auto)$/.test(rawRatio)) {
+  configErrors.push(`SKYWORK_ASPECT_RATIO="${rawRatio}" — W:H (masalan 1:1) yoki auto kutilgan`);
+}
+
+const rawConfidence = provided("FACE_VERIFY_MIN_CONFIDENCE");
+if (rawConfidence && !z.coerce.number().min(0).max(1).safeParse(rawConfidence).success) {
+  configErrors.push(
+    `FACE_VERIFY_MIN_CONFIDENCE="${rawConfidence}" — 0..1 oralig'idagi son kutilgan`,
+  );
+}
+
+const rawTz = provided("TZ");
+if (rawTz) {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: rawTz });
+  } catch {
+    configErrors.push(`TZ="${rawTz}" — noto'g'ri IANA timezone (masalan Asia/Tashkent)`);
+  }
+}
+
+const rawPlatforms = provided("ENABLED_PLATFORMS");
+if (rawPlatforms) {
+  const unknown = rawPlatforms
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+    .filter((p) => !(KNOWN_PLATFORMS as readonly string[]).includes(p));
+  if (unknown.length > 0) {
+    configErrors.push(
+      `ENABLED_PLATFORMS — noma'lum platforma(lar): ${unknown.join(", ")} ` +
+        `(ruxsat: ${KNOWN_PLATFORMS.join(", ")})`,
+    );
+  }
+}
+
+// ── Cross-field consistency (effective values) ──────────────────────
+if (env.CRON_SLOTS_MIN > env.CRON_SLOTS_MAX) {
+  configErrors.push(
+    `CRON_SLOTS_MIN (${env.CRON_SLOTS_MIN}) > CRON_SLOTS_MAX (${env.CRON_SLOTS_MAX}) — hech qanday slot tanlanmaydi`,
+  );
+}
+if (env.CRON_WINDOW_START_HOUR >= env.CRON_WINDOW_END_HOUR) {
+  configErrors.push(
+    `CRON_WINDOW_START_HOUR (${env.CRON_WINDOW_START_HOUR}) >= CRON_WINDOW_END_HOUR (${env.CRON_WINDOW_END_HOUR}) — bo'sh vaqt oynasi`,
+  );
+}
+
+// ── Soft warnings (degraded but runnable) ───────────────────────────
+const hasImageProvider = Boolean(
+  env.UNOROUTER_API_KEY ||
+    env.GEMINI_API_KEY ||
+    env.SKYWORK_API_KEY ||
+    env.XKIRO_API_KEY,
+);
+if (!hasImageProvider) {
+  configWarnings.push(
+    "Rasm provayderi kaliti yo'q (UNOROUTER_API_KEY / GEMINI_API_KEY / " +
+      "SKYWORK_API_KEY / XKIRO_API_KEY) — postlar rasmsiz chiqadi",
+  );
+}
+if (!env.GEMINI_API_KEY && !env.GEMINI_API_KEY_2 && !env.GEMINI_API_KEY_3) {
+  configWarnings.push("GEMINI_API_KEY yo'q — matn generatsiyasi ishlamaydi");
+}
+if (env.REQUIRE_BRAND_FACE && !env.FACE_VERIFY) {
+  configWarnings.push(
+    "REQUIRE_BRAND_FACE=true, lekin FACE_VERIFY=false — yaratilgan yuz tekshirilmaydi",
+  );
+}
+
+if (!isTestRuntime) {
+  for (const w of configWarnings) console.warn(`[env] ⚠ ${w}`);
+  if (configErrors.length > 0) {
+    console.error("[env] Konfiguratsiya xatosi:");
+    for (const e of configErrors) console.error(`  - ${e}`);
+    console.error("[env] .env ni tuzatib, qayta ishga tushiring.");
+    process.exit(1); // fail fast — boot paytida, pipeline o'rtasida emas
+  }
+}
 
 const dailyLimitByPlatform: Record<string, number> = {
   telegram: env.DAILY_LIMIT_TELEGRAM,
