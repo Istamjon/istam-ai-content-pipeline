@@ -21,6 +21,8 @@ export type PublishPayload = {
   parts?: string[];
   /** Optional prebuilt media caption (Telegram) */
   caption?: string;
+  /** Telegram rich-message HTML (rich path only; never the caption fallback) */
+  richHtml?: string;
 };
 
 export async function publishToPlatform(
@@ -28,14 +30,20 @@ export async function publishToPlatform(
   text: string,
   imagePath?: string,
   mediaKind: MediaKind = "image",
-  extra?: Pick<PublishPayload, "parts" | "caption">,
+  extra?: Pick<PublishPayload, "parts" | "caption" | "richHtml">,
 ): Promise<{ success: boolean; error?: string }> {
   const media = mediaKind === "none" ? undefined : imagePath;
   const kind = mediaKind === "video" ? "video" : "image";
 
   switch (platform) {
     case "telegram":
-      return publishToTelegram(text, media, kind, extra?.caption);
+      return publishToTelegram(
+        text,
+        media,
+        kind,
+        extra?.caption,
+        extra?.richHtml,
+      );
     case "linkedin":
       if (mediaKind === "video") {
         return {
@@ -48,7 +56,10 @@ export async function publishToPlatform(
       return publishToFacebook(text, media, kind);
     case "instagram":
       if (mediaKind === "none" || !media) {
-        return { success: false, error: "Instagram requires an image or video" };
+        return {
+          success: false,
+          error: "Instagram requires an image or video",
+        };
       }
       return publishToInstagram(text, media, kind);
     case "x":

@@ -34,6 +34,50 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * Brand footer → rich-message footer.
+ *
+ * `buildBrandFooter` opens the Telegram footer with an ASCII rule
+ * (`────────`). Rich messages have a real structural element for that, and
+ * Telegram renders it as a `divider` block, so swap the text rule for `<hr/>`
+ * and wrap the rest in `<footer>` (rendered as a `footer` block). Verified
+ * live: this payload produced the block sequence
+ * `photo → paragraph → divider → footer`.
+ *
+ * Returns "" when there is no footer, so `packText` drops it as usual.
+ */
+function richFooterBlock(footer: string): string {
+  const lines = footer.split("\n");
+  const first = (lines[0] || "").trim();
+  const isAsciiRule = /^[─—–\-_=]{3,}$/.test(first);
+  const rest = (isAsciiRule ? lines.slice(1) : lines).join("\n").trim();
+  if (!rest) return isAsciiRule ? "<hr/>" : "";
+  return `<hr/>\n<footer>${rest}</footer>`;
+}
+
+/**
+ * Telegram rich-message HTML — same content as `text`, richer rendering.
+ *
+ * Only Telegram uses this, and only on the rich path. The tags introduced here
+ * (`<hr/>`, `<footer>`) are rejected by the classic `parse_mode=HTML` parser
+ * (live probe: `Unsupported start tag "p"`), so this must never be substituted
+ * into `text`/`caption`, which the fallback layout also consumes.
+ */
+function buildTelegramRichHtml(
+  clean: string,
+  footer: string,
+  hashtags: string,
+  soft: number,
+): string {
+  return packText(
+    escapeHtml(clean),
+    richFooterBlock(footer),
+    hashtags,
+    soft,
+    false,
+  );
+}
+
 function buildContentHashtags(
   body: string,
   platform: Platform,
@@ -226,12 +270,18 @@ function formatOne(
       false,
     );
     const caption = truncateHtmlPrefix(fullPacked, capHard);
+    // Rich variant of the SAME post: identical text, but the ASCII rule becomes
+    // a real <hr/> and the brand block a <footer>. `text` above stays exactly as
+    // it was, because the caption/continuation fallback cannot parse rich-only
+    // tags.
+    const richHtml = buildTelegramRichHtml(clean, footer, hashtags, soft);
     console.log(
-      `[format] ${platform} strategy=native full=${fullPacked.length} caption=${caption.length}/${capHard}`,
+      `[format] ${platform} strategy=native full=${fullPacked.length} caption=${caption.length}/${capHard} rich=${richHtml.length}`,
     );
     return {
       text: fullPacked,
       caption,
+      richHtml,
       hasImage,
     };
   }

@@ -99,11 +99,70 @@ describe("publishToTelegram — rich single message", () => {
     const rich = richPayloadOf(calls[0]);
     // The image must be embedded at the top and referenced by id...
     expect(rich.html.startsWith('<img src="tg://photo?id=cover"/>')).toBe(true);
+    // ...on its OWN line, because the API documents that media can only be
+    // specified as a separate block.
+    expect(rich.html.startsWith('<img src="tg://photo?id=cover"/>\n\n')).toBe(
+      true,
+    );
     expect(rich.html).toContain("<b>Sarlavha</b>");
     // ...and the media entry must agree with that id and the upload part name.
     expect(rich.media).toEqual([
       { id: "cover", media: { type: "photo", media: "attach://cover.png" } },
     ]);
+  });
+
+  it("prefers the format layer's richHtml over the plain text", async () => {
+    const richHtml = "<p>Rich body</p>\n<hr/>\n<footer>Brand</footer>";
+
+    await publishToTelegram(ARTICLE, imagePath, "image", "Cap", richHtml);
+
+    const rich = richPayloadOf(calls[0]);
+    expect(rich.html).toContain("<footer>Brand</footer>");
+    expect(rich.html).toContain("Rich body");
+    // The plain text must NOT be what went out on the rich path.
+    expect(rich.html).not.toContain("Bu juda foydali maqola matni");
+  });
+
+  it("keeps rich-only tags off the fallback path", async () => {
+    // <hr/> and <footer> are rich-only: parse_mode=HTML rejects them outright
+    // (live probe: Unsupported start tag). If they leaked into the caption or
+    // the continuation, the fallback would fail and the post would be lost.
+    const richHtml = "<p>Rich body</p>\n<hr/>\n<footer>Brand</footer>";
+    queueResponses({ ok: false, description: "rich rejected" });
+
+    const res = await publishToTelegram(
+      ARTICLE,
+      imagePath,
+      "image",
+      "",
+      richHtml,
+    );
+
+    expect(res.success).toBe(true);
+    const photoBody = calls[1].init.body as FormData;
+    const caption = String(photoBody.get("caption"));
+    expect(caption).not.toContain("<hr/>");
+    expect(caption).not.toContain("<footer>");
+    const followBody = JSON.parse(String(calls[2].init.body)) as {
+      text: string;
+    };
+    expect(followBody.text).not.toContain("<hr/>");
+    expect(followBody.text).toContain("Bu juda foydali maqola matni");
+  });
+
+  it("names the upload part after the real image extension", async () => {
+    const jpg = path.join(path.dirname(imagePath), "cover.jpg");
+    fs.writeFileSync(jpg, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4]));
+
+    await publishToTelegram(ARTICLE, jpg);
+
+    const rich = richPayloadOf(calls[0]);
+    // A .png part name carrying JPEG bytes is needless ambiguity.
+    expect(rich.media).toEqual([
+      { id: "cover", media: { type: "photo", media: "attach://cover.jpg" } },
+    ]);
+    const body = calls[0].init.body as FormData;
+    expect(body.get("cover.jpg")).toBeTruthy();
   });
 
   it("uploads the file as a multipart part named to match attach://", async () => {

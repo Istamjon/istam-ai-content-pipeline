@@ -1,4 +1,9 @@
-import { StateAnnotation, PublishResult, GraphUpdate, Platform } from "../state.js";
+import {
+  StateAnnotation,
+  PublishResult,
+  GraphUpdate,
+  Platform,
+} from "../state.js";
 import { publishToPlatform } from "../../platforms/index.js";
 import {
   insertPost,
@@ -44,10 +49,7 @@ function contentHash(text: string): string {
   return createHash("sha256").update(text).digest("hex").slice(0, 32);
 }
 
-function skipAll(
-  results: PublishResult[],
-  error: string,
-): PublishResult[] {
+function skipAll(results: PublishResult[], error: string): PublishResult[] {
   return results.map((r) =>
     r.status === "pending" ? { ...r, status: "skipped" as const, error } : r,
   );
@@ -59,7 +61,11 @@ function sleep(ms: number): Promise<void> {
 
 /** Platforms that benefit from a second attempt after Meta/CDN glitches. */
 function isRetriablePlatformFail(platform: Platform, err?: string): boolean {
-  if (platform === "instagram" || platform === "threads" || platform === "facebook") {
+  if (
+    platform === "instagram" ||
+    platform === "threads" ||
+    platform === "facebook"
+  ) {
     return true;
   }
   return /unknown error|timeout|rate limit|temporar|try again|not ready|ECONNRESET|fetch failed|5\d\d/i.test(
@@ -80,6 +86,8 @@ async function publishOne(
     text: string;
     parts?: string[];
     caption?: string;
+    /** Telegram rich-message HTML (rich path only; never the caption fallback). */
+    richHtml?: string;
     dryRun: boolean;
   },
 ): Promise<boolean> {
@@ -96,9 +104,7 @@ async function publishOne(
   const platform = results[i].platform;
 
   if (opts.dryRun) {
-    console.log(
-      `[publish] DRY_RUN ✓ ${platform} (quality+image OK, not sent)`,
-    );
+    console.log(`[publish] DRY_RUN ✓ ${platform} (quality+image OK, not sent)`);
     results[i] = { ...results[i], status: "success" };
     return true;
   }
@@ -136,6 +142,7 @@ async function publishOne(
     {
       parts: opts.parts,
       caption: opts.caption,
+      richHtml: opts.richHtml,
     },
   );
 
@@ -196,7 +203,8 @@ export async function publish(
       Boolean(localImagePath) &&
       (localImagePath!.startsWith("http") || fs.existsSync(localImagePath!));
     if (!hasImage) {
-      const err = "publish blocked: image required (no imagePath / file missing)";
+      const err =
+        "publish blocked: image required (no imagePath / file missing)";
       console.warn(`[publish] ${err}`);
       freeLocalImages(localImagePath);
       const blocked = skipAll(state.publishResults, err);
@@ -262,6 +270,7 @@ export async function publish(
         text: formatted.text,
         parts: formatted.parts,
         caption: formatted.caption,
+        richHtml: formatted.richHtml,
         dryRun,
       });
       if (ok) anySuccess = true;
@@ -274,10 +283,7 @@ export async function publish(
         .filter(
           (i) =>
             results[i].status === "failed" &&
-            isRetriablePlatformFail(
-              results[i].platform,
-              results[i].error,
-            ),
+            isRetriablePlatformFail(results[i].platform, results[i].error),
         );
       if (retryIdx.length > 0) {
         console.warn(
@@ -300,6 +306,7 @@ export async function publish(
             text: formatted.text,
             parts: formatted.parts,
             caption: formatted.caption,
+            richHtml: formatted.richHtml,
             dryRun: false,
           });
           if (ok) anySuccess = true;
@@ -328,9 +335,7 @@ export async function publish(
       url: current.url,
       results,
       dryRun,
-    }).catch((e) =>
-      console.warn("[publish] report notify failed:", e),
-    );
+    }).catch((e) => console.warn("[publish] report notify failed:", e));
 
     return {
       publishResults: results,

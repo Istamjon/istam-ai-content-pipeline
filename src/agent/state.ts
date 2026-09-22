@@ -41,6 +41,16 @@ export interface FormattedPost {
    * If omitted, publisher uses text (may teaser internally).
    */
   caption?: string;
+  /**
+   * Telegram ONLY: the same post rendered for the rich-message path
+   * (`sendRichMessage`, Bot API 10.1+), which supports structural tags the
+   * classic `parse_mode=HTML` parser rejects — live probe: `<p>`/`<hr/>`/
+   * `<footer>` come back as `Unsupported start tag`.
+   *
+   * So this string must NEVER be handed to the caption/continuation fallback.
+   * When absent, the publisher reuses `text` for the rich path.
+   */
+  richHtml?: string;
 }
 
 export interface QualityResult {
@@ -61,8 +71,10 @@ const appendReducer = <T>(left: T[], right: T | T[]) => [
 ];
 
 /** Replace array entirely (for per-article publishResults that must not accumulate). */
-const replaceArrayReducer = <T>(left: T[] | undefined, right: T[] | undefined): T[] =>
-  right ?? left ?? [];
+const replaceArrayReducer = <T>(
+  left: T[] | undefined,
+  right: T[] | undefined,
+): T[] => right ?? left ?? [];
 
 const emptyFormatted = (): Record<Platform, FormattedPost | null> => ({
   telegram: null,

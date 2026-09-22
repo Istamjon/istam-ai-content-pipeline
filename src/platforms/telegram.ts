@@ -3,6 +3,8 @@
  *
  * Preferred layout: ONE rich message — the entire article plus the cover image
  * embedded as a block inside it (`sendRichMessage`, Bot API 10.1+, June 2026).
+ * The rich payload also carries structural tags the classic parser cannot parse
+ * (a real `<hr/>` divider and a `<footer>` brand block).
  *
  * Fallback layout: image/video post with a caption (first ≤1024 chars), then the
  * remainder as continuation message(s) (≤4096 each). Used when there is no image
@@ -19,6 +21,14 @@
  *   - sendPhoto caption: 1024 chars — UNCHANGED by the rich-message release.
  *     This is why the old layout had to spill into follow-up messages, and why
  *     "one message" is only possible through the rich path.
+ *
+ * Structural tags are rich-only. Live probe with `parse_mode=HTML`:
+ *   `can't parse entities: Unsupported start tag "p"` — so `<p>`, `<hr/>` and
+ *   `<footer>` must never leak into the caption/continuation path, which is why
+ *   the format layer produces a separate `richHtml` string.
+ *
+ * Block sequence verified live (probe C):
+ *   `photo → paragraph → divider → footer`
  */
 import { env } from "../config/env.js";
 import fs from "fs";
@@ -40,8 +50,18 @@ const MESSAGE_HARD = 4096;
  */
 const RICH_MEDIA_ID = "cover";
 
-/** Filename used for the multipart part, referenced as `attach://<name>`. */
-const RICH_MEDIA_FILENAME = "cover.png";
+/**
+ * Multipart part name for the cover, referenced as `attach://<name>`.
+ *
+ * The extension follows the real file so the part name never contradicts the
+ * part's MIME type — Telegram resolves media type from the MIME type, and a
+ * `cover.png` part carrying JPEG bytes is needless ambiguity.
+ */
+function richPartName(imagePath: string): string {
+  const ext = path.extname(imagePath).toLowerCase();
+  const safe = [".jpg", ".jpeg", ".png", ".webp"].includes(ext) ? ext : ".png";
+  return `${RICH_MEDIA_ID}${safe}`;
+}
 
 function mimeForImage(imagePath: string): string {
   const ext = path.extname(imagePath).toLowerCase();
@@ -140,13 +160,18 @@ async function sendRichMessage(
   imagePath?: string,
 ): Promise<TgResult> {
   const hasImage = Boolean(imagePath && fs.existsSync(imagePath));
+  const partName = hasImage ? richPartName(imagePath as string) : "";
 
   const richMessage: {
     html: string;
     media?: Array<{ id: string; media: { type: string; media: string } }>;
   } = {
+    // The cover goes on its own line: the API documents that "media can be
+    // specified only as a separate block". Live probe: this shape yields the
+    // block sequence `photo → paragraph`, i.e. the photo really does become its
+    // own block instead of being swallowed into the opening paragraph.
     html: hasImage
-      ? `<img src="tg://photo?id=${RICH_MEDIA_ID}"/>${html}`
+      ? `<img src="tg://photo?id=${RICH_MEDIA_ID}"/>\n\n${html}`
       : html,
   };
 
@@ -157,7 +182,7 @@ async function sendRichMessage(
     richMessage.media = [
       {
         id: RICH_MEDIA_ID,
-        media: { type: "photo", media: `attach://${RICH_MEDIA_FILENAME}` },
+        media: { type: "photo", media: `attach://${partName}` },
       },
     ];
     const form = new FormData();
@@ -165,8 +190,8 @@ async function sendRichMessage(
     // The Bot API takes nested objects as JSON strings on multipart requests.
     form.append("rich_message", JSON.stringify(richMessage));
     form.append(
-      RICH_MEDIA_FILENAME,
-      new File([fs.readFileSync(imagePath as string)], RICH_MEDIA_FILENAME, {
+      partName,
+      new File([fs.readFileSync(imagePath as string)], partName, {
         type: mimeForImage(imagePath as string),
       }),
     );
@@ -332,6 +357,12 @@ export async function publishToTelegram(
    * Used only by the FALLBACK layout — a rich message has no caption.
    */
   prebuiltCaption?: string,
+  /**
+   * Rich-message HTML from the format layer (same post, richer rendering).
+   * Used ONLY on the rich path: it may contain tags the classic
+   * `parse_mode=HTML` parser rejects. Falls back to `text` when absent.
+   */
+  richHtml?: string,
 ): Promise<TgResult> {
   try {
     const token = env.TELEGRAM_BOT_TOKEN;
@@ -355,16 +386,19 @@ export async function publishToTelegram(
     // failing the publish — the rich API is new, and a post that arrives in two
     // messages beats a post that does not arrive.
     if (env.TELEGRAM_RICH_MESSAGES && !isVideo) {
+      // Rich HTML when the format layer produced one, else the plain text.
+      const richBody = richHtml || text;
       const rich = await sendRichMessage(
         token,
         channel,
-        text,
+        richBody,
         hasMedia ? imagePath : undefined,
       );
       if (rich.success) {
         console.log(
-          `[telegram] rich single message OK (${text.length} chars` +
-            `${hasMedia ? " + embedded cover" : ", no image"})`,
+          `[telegram] rich single message OK (${richBody.length} chars` +
+            `${hasMedia ? " + embedded cover" : ", no image"}` +
+            `${richHtml ? ", rich html" : ""})`,
         );
         return { success: true };
       }
