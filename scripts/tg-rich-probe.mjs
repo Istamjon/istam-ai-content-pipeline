@@ -1,14 +1,18 @@
 /**
  * Probe what THIS bot's Telegram API actually accepts for long / rich messages.
  *
- * Answers, empirically, the questions the docs leave open:
- *   1. Does `sendRichMessage` exist for this bot?
- *   2. Does it work in a CHANNEL (the docs only confirm drafts are private-only)?
- *   3. Does it accept the `html` form (so we can reuse our existing formatted text)?
- *   4. What is the real maximum length — 32768 or still 4096?
- *   5. Did `sendPhoto`'s caption limit rise above 1024?
- *   6. Is the payload nested (`rich_message: {...}`) or flat (`html: "..."`)?
- *   7. Can a photo be embedded inside a rich message?
+ * Round 1 (answered):
+ *   - `sendRichMessage` with the NESTED shape `rich_message: {html}` works in a
+ *     CHANNEL (drafts are private-only; the final message is not).
+ *   - 20 000 chars in one message is accepted; 40 000 is rejected with
+ *     RICH_MESSAGE_TEXT_TOO_LONG. The ceiling is 32768.
+ *   - `sendPhoto` captions did NOT rise — 2000 is still rejected. So the caption
+ *     route cannot deliver a one-message post; sendRichMessage is the way.
+ *   - Media needs `InputRichMessageMedia { id, media }` — the first attempt was
+ *     rejected with: can't parse InputRichMessageMedia: Can't find field "id".
+ *
+ * Round 2 (this run): pin down the media shape so the cover image can live
+ * INSIDE the rich message instead of being a separate photo.
  *
  * Safety:
  *   - NEVER prints the token (only method names and API responses).
@@ -118,24 +122,6 @@ async function callJson(method, body) {
   }
 }
 
-async function callPhoto(chatId, caption) {
-  try {
-    const form = new FormData();
-    form.append("chat_id", String(chatId));
-    form.append("photo", new File([PNG], "probe.png", { type: "image/png" }));
-    form.append("caption", caption);
-    form.append("parse_mode", "HTML");
-    const res = await fetch(api("sendPhoto"), {
-      method: "POST",
-      body: form,
-      signal: AbortSignal.timeout(120_000),
-    });
-    return await parse(res);
-  } catch (e) {
-    return { http: 0, ok: false, description: `fetch error: ${e.message}` };
-  }
-}
-
 async function del(chatId, messageId) {
   if (!messageId) return "no message_id";
   const r = await callJson("deleteMessage", { chat_id: chatId, message_id: messageId });
@@ -153,67 +139,92 @@ function record(name, res, note = "") {
   });
 }
 
+/** sendRichMessage with a file part (multipart) — needed for attach:// uploads. */
+async function callRichMultipart(chatId, richMessage, file) {
+  try {
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("rich_message", JSON.stringify(richMessage));
+    if (file) {
+      form.append(file.partName, new File([file.buf], file.partName, { type: file.type }));
+    }
+    const res = await fetch(api("sendRichMessage"), {
+      method: "POST",
+      body: form,
+      signal: AbortSignal.timeout(120_000),
+    });
+    return await parse(res);
+  } catch (e) {
+    return { http: 0, ok: false, description: `fetch error: ${e.message}` };
+  }
+}
+
+const PNG_FILE = { buf: PNG, partName: "cover.png", type: "image/png" };
+
 // ── probes ─────────────────────────────────────────────────────────────────
 console.log("=== TARGETS ===");
 console.log(`channel=${CHANNEL ? "set" : "(none)"} admin=${ADMINS.length ? "set" : "(none)"}`);
 
-// 1. Does the method exist at all, and does it accept a CHANNEL?
+// ── round 1: regression check that the basics still hold ────────────────────
 if (CHANNEL) {
   const r = await callJson("sendRichMessage", {
     chat_id: CHANNEL,
     rich_message: { html: "<b>probe</b> — rich message support check" },
   });
-  record("rich_nested_html_channel", r, r.ok ? await del(CHANNEL, r.result?.message_id) : "");
+  record("r1_rich_html_channel", r, r.ok ? await del(CHANNEL, r.result?.message_id) : "");
 
-  // 6. If nested failed, is the shape flat instead?
-  if (!r.ok) {
-    const flat = await callJson("sendRichMessage", {
-      chat_id: CHANNEL,
-      html: "<b>probe</b> — flat shape check",
-    });
-    record("rich_flat_html_channel", flat, flat.ok ? await del(CHANNEL, flat.result?.message_id) : "");
-  }
-
-  // 4. Real maximum length. 20000 chars is well past the old 4096.
   const long20k = `<b>LONG20K</b>\n` + "a".repeat(19_990);
   const rl = await callJson("sendRichMessage", {
     chat_id: CHANNEL,
     rich_message: { html: long20k },
   });
-  record("rich_html_20000_chars_channel", rl, rl.ok ? await del(CHANNEL, rl.result?.message_id) : "");
-
-  // 40000 chars should exceed any plausible limit — confirms the ceiling exists.
-  const long40k = "b".repeat(40_000);
-  const rx = await callJson("sendRichMessage", {
-    chat_id: CHANNEL,
-    rich_message: { html: long40k },
-  });
-  record("rich_html_40000_chars_channel", rx, rx.ok ? await del(CHANNEL, rx.result?.message_id) : "");
-
-  // 5. Did sendPhoto's caption limit rise above 1024?
-  const cap2000 = await callPhoto(CHANNEL, "C".repeat(2000));
-  record("sendPhoto_caption_2000", cap2000, cap2000.ok ? await del(CHANNEL, cap2000.result?.message_id) : "");
-
-  const cap5000 = await callPhoto(CHANNEL, "D".repeat(5000));
-  record("sendPhoto_caption_5000", cap5000, cap5000.ok ? await del(CHANNEL, cap5000.result?.message_id) : "");
-
-  // 7. Can media be embedded? Guessed shape — the error text is the payload.
-  const mediaTry = await callJson("sendRichMessage", {
-    chat_id: CHANNEL,
-    rich_message: {
-      html: '<b>media probe</b><br/><img src="attach://probe.png"/>',
-      media: [{ type: "photo", media: "attach://probe.png" }],
-    },
-  });
-  record("rich_media_guess_channel", mediaTry, mediaTry.ok ? await del(CHANNEL, mediaTry.result?.message_id) : "");
+  record("r1_rich_20000_chars_channel", rl, rl.ok ? await del(CHANNEL, rl.result?.message_id) : "");
 }
 
-// 3+8. Showcase in the admin chat, LEFT IN PLACE for human inspection.
+// ── round 2: the media shape ────────────────────────────────────────────────
+// InputRichMessageMedia = { id, media } where `media` is an InputMediaPhoto and
+// `id` is referenced from markup as tg://photo?id=<id>.
+if (CHANNEL) {
+  // V1: attach:// upload + tg://photo reference — the shape the publisher wants.
+  const v1 = await callRichMultipart(
+    CHANNEL,
+    {
+      html: '<p>Media probe</p><img src="tg://photo?id=cover"/>',
+      media: [{ id: "cover", media: { type: "photo", media: "attach://cover.png" } }],
+    },
+    PNG_FILE,
+  );
+  record("r2_media_attach_tgref_channel", v1, v1.ok ? await del(CHANNEL, v1.result?.message_id) : "");
+
+  // V2: same media entry, but the markup does NOT reference it — isolates
+  // whether a failure is in the media entry or in the reference syntax.
+  const v2 = await callRichMultipart(
+    CHANNEL,
+    {
+      html: "<p>Media probe, unreferenced</p>",
+      media: [{ id: "cover", media: { type: "photo", media: "attach://cover.png" } }],
+    },
+    PNG_FILE,
+  );
+  record("r2_media_attach_noref_channel", v2, v2.ok ? await del(CHANNEL, v2.result?.message_id) : "");
+
+  // V3: plain <img src="https://..."> with no media array — does a remote image
+  // render without going through InputRichMessageMedia at all?
+  const v3 = await callJson("sendRichMessage", {
+    chat_id: CHANNEL,
+    rich_message: {
+      html: '<p>URL media probe</p><img src="https://telegram.org/img/t_logo.png"/>',
+    },
+  });
+  record("r2_media_url_img_tag_channel", v3, v3.ok ? await del(CHANNEL, v3.result?.message_id) : "");
+}
+
+// ── showcase: leave ONE message in the admin chat for human inspection ──────
 const showcaseMarkdown = [
   "# Rich message probe",
   "",
-  "Bu Telegram'ning yangi **rich message** formati. Agar shu xabar sarlavha,",
-  "ro'yxat va iqtibos bilan chiroyli ko'rinsa — format ishlaydi.",
+  "Bu Telegram'ning yangi **rich message** formati. Agar sarlavha, ro'yxat va",
+  "iqtibos chiroyli ko'rinsa — format ishlaydi.",
   "",
   "## Ro'yxat",
   "",
@@ -229,22 +240,29 @@ const showcase = await callJson("sendRichMessage", {
   chat_id: ADMIN,
   rich_message: { markdown: showcaseMarkdown },
 });
-record("rich_markdown_showcase_admin", showcase, showcase.ok ? "LEFT IN PLACE (review it)" : "");
+record("showcase_markdown_admin", showcase, showcase.ok ? "LEFT IN PLACE (review it)" : "");
 
-if (!showcase.ok) {
-  // Fall back to the html form so we still learn which one works.
-  const alt = await callJson("sendRichMessage", {
-    chat_id: ADMIN,
-    rich_message: { html: "<h1>Rich probe</h1><p>html form</p><ul><li>one</li></ul>" },
-  });
-  record("rich_html_showcase_admin", alt, alt.ok ? "LEFT IN PLACE (review it)" : "");
-}
+// The money shot: cover image INSIDE the rich message, with formatting.
+const showcaseMedia = await callRichMultipart(
+  ADMIN,
+  {
+    html:
+      "<h1>Media + formatting probe</h1>" +
+      '<img src="tg://photo?id=cover"/>' +
+      "<p>Rasm <b>rich message ichida</b> — alohida xabar emas.</p>" +
+      "<ul><li>birinchi</li><li>ikkinchi</li></ul>" +
+      "<blockquote>Iqtibos</blockquote>",
+    media: [{ id: "cover", media: { type: "photo", media: "attach://cover.png" } }],
+  },
+  PNG_FILE,
+);
+record("showcase_media_admin", showcaseMedia, showcaseMedia.ok ? "LEFT IN PLACE (review it)" : "");
 
 // ── report ─────────────────────────────────────────────────────────────────
 console.log("\n=== RESULTS ===");
 for (const r of results) {
   console.log(
-    `${r.ok ? "OK  " : "FAIL"} | ${r.name.padEnd(34)} | http=${String(r.http).padEnd(3)} | ${r.description}` +
+    `${r.ok ? "OK  " : "FAIL"} | ${r.name.padEnd(32)} | http=${String(r.http).padEnd(3)} | ${r.description}` +
       (r.note ? ` | ${r.note}` : ""),
   );
 }
