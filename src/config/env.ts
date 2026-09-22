@@ -295,6 +295,16 @@ export const env = {
    */
   TELEGRAM_BOT_INBOUND: process.env.TELEGRAM_BOT_INBOUND !== "false",
   /**
+   * Deliver channel posts as ONE rich message (cover image embedded as a block)
+   * instead of a photo caption + continuation messages.
+   *
+   * Default true. `sendRichMessage` is Bot API 10.1+ (June 2026), so this is also
+   * the kill switch: set TELEGRAM_RICH_MESSAGES=false to force the older
+   * caption layout. The publisher falls back on its own anyway whenever the API
+   * rejects a rich message, so this only exists to skip the attempt entirely.
+   */
+  TELEGRAM_RICH_MESSAGES: process.env.TELEGRAM_RICH_MESSAGES !== "false",
+  /**
    * Comma-separated Telegram user IDs allowed to post via the bot.
    * Get your id: message @userinfobot or /whoami after bot starts.
    * Empty = no one can publish (safe default).

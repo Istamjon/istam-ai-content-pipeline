@@ -1,0 +1,90 @@
+# Telegram ops: probe the live API, or clean stray messages out of the channel.
+#
+# Both tasks run INSIDE the pipeline container, where TELEGRAM_BOT_TOKEN lives.
+# The token is never printed — only API responses.
+#
+#   gh workflow run tg-ops.yml -f task=probe
+#   gh workflow run tg-ops.yml -f task=cleanup -f match="Media probe" -f scan=8
+#
+# cleanup is content-verified: it forwards each candidate to the admin chat and
+# deletes from the channel ONLY when the text matches, so a shift in the id space
+# cannot silently delete a real post.
+name: TG Ops
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "probe = what the API accepts | cleanup = delete stray messages"
+        required: true
+        default: "probe"
+      match:
+        description: "cleanup: substring to match before deleting"
+        required: false
+        default: "Media probe"
+      scan:
+        description: "cleanup: how many message ids back to scan"
+        required: false
+        default: "8"
+
+jobs:
+  ops:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check secrets
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_USER: ${{ secrets.VDS_USER }}
+          VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+        run: |
+          [ -n "$VDS_HOST" ] && [ -n "$VDS_USER" ] && [ -n "$VDS_SSH_KEY" ] || {
+            echo "::error::Missing VDS_* secrets"
+            exit 1
+          }
+
+      - name: Run over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+          TASK: ${{ github.event.inputs.task }}
+          MATCH: ${{ github.event.inputs.match }}
+          SCAN: ${{ github.event.inputs.scan }}
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 8m
+          script_stop: false
+          envs: REMOTE_APP_DIR,TASK,MATCH,SCAN
+          script: |
+            set -e
+            APP_DIR="${REMOTE_APP_DIR:-}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d "$HOME/istam-ai-content-pipeline" ] && APP_DIR="$HOME/istam-ai-content-pipeline"
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /root/istam-ai-content-pipeline ] && APP_DIR=/root/istam-ai-content-pipeline
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /opt/istam-ai-content-pipeline ] && APP_DIR=/opt/istam-ai-content-pipeline
+            fi
+            echo "APP_DIR=$APP_DIR"
+            test -n "$APP_DIR" && test -d "$APP_DIR"
+            cd "$APP_DIR"
+            export TZ="${TZ:-Asia/Tashkent}"
+            echo "=== GIT HEAD ==="
+            echo "local=$(git rev-parse --short HEAD 2>/dev/null || echo none)"
+            echo "task=${TASK:-probe}"
+            if [ "$TASK" = "cleanup" ]; then
+              echo "=== CLEANUP (match='${MATCH}' scan=${SCAN}) ==="
+              docker compose exec -T pipeline node scripts/tg-channel-cleanup.mjs \
+                --match "${MATCH:-Media probe}" --scan "${SCAN:-8}" 2>&1 \
+                || echo "(cleanup exited non-zero)"
+            else
+              echo "=== RICH PROBE ==="
+              docker compose exec -T pipeline node scripts/tg-rich-probe.mjs 2>&1 \
+                || echo "(probe exited non-zero)"
+            fi
+            echo "=== DONE ==="

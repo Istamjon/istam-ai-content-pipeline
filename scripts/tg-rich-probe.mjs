@@ -37,7 +37,9 @@ if (!TOKEN) {
   process.exit(0);
 }
 if (!CHANNEL && ADMINS.length === 0) {
-  console.log("Neither TELEGRAM_CHANNEL nor TELEGRAM_ADMIN_IDS set — no target");
+  console.log(
+    "Neither TELEGRAM_CHANNEL nor TELEGRAM_ADMIN_IDS set — no target",
+  );
   process.exit(0);
 }
 
@@ -102,9 +104,18 @@ async function parse(res) {
   const text = await res.text();
   try {
     const j = JSON.parse(text);
-    return { http: res.status, ok: Boolean(j.ok), description: j.description, result: j.result };
+    return {
+      http: res.status,
+      ok: Boolean(j.ok),
+      description: j.description,
+      result: j.result,
+    };
   } catch {
-    return { http: res.status, ok: false, description: `non-JSON: ${text.slice(0, 160)}` };
+    return {
+      http: res.status,
+      ok: false,
+      description: `non-JSON: ${text.slice(0, 160)}`,
+    };
   }
 }
 
@@ -124,7 +135,10 @@ async function callJson(method, body) {
 
 async function del(chatId, messageId) {
   if (!messageId) return "no message_id";
-  const r = await callJson("deleteMessage", { chat_id: chatId, message_id: messageId });
+  const r = await callJson("deleteMessage", {
+    chat_id: chatId,
+    message_id: messageId,
+  });
   return r.ok ? "deleted" : `delete FAILED: ${r.description}`;
 }
 
@@ -146,7 +160,10 @@ async function callRichMultipart(chatId, richMessage, file) {
     form.append("chat_id", String(chatId));
     form.append("rich_message", JSON.stringify(richMessage));
     if (file) {
-      form.append(file.partName, new File([file.buf], file.partName, { type: file.type }));
+      form.append(
+        file.partName,
+        new File([file.buf], file.partName, { type: file.type }),
+      );
     }
     const res = await fetch(api("sendRichMessage"), {
       method: "POST",
@@ -163,7 +180,9 @@ const PNG_FILE = { buf: PNG, partName: "cover.png", type: "image/png" };
 
 // ── probes ─────────────────────────────────────────────────────────────────
 console.log("=== TARGETS ===");
-console.log(`channel=${CHANNEL ? "set" : "(none)"} admin=${ADMINS.length ? "set" : "(none)"}`);
+console.log(
+  `channel=${CHANNEL ? "set" : "(none)"} admin=${ADMINS.length ? "set" : "(none)"}`,
+);
 
 // ── round 1: regression check that the basics still hold ────────────────────
 if (CHANNEL) {
@@ -171,14 +190,22 @@ if (CHANNEL) {
     chat_id: CHANNEL,
     rich_message: { html: "<b>probe</b> — rich message support check" },
   });
-  record("r1_rich_html_channel", r, r.ok ? await del(CHANNEL, r.result?.message_id) : "");
+  record(
+    "r1_rich_html_channel",
+    r,
+    r.ok ? await del(CHANNEL, r.result?.message_id) : "",
+  );
 
   const long20k = `<b>LONG20K</b>\n` + "a".repeat(19_990);
   const rl = await callJson("sendRichMessage", {
     chat_id: CHANNEL,
     rich_message: { html: long20k },
   });
-  record("r1_rich_20000_chars_channel", rl, rl.ok ? await del(CHANNEL, rl.result?.message_id) : "");
+  record(
+    "r1_rich_20000_chars_channel",
+    rl,
+    rl.ok ? await del(CHANNEL, rl.result?.message_id) : "",
+  );
 }
 
 // ── round 2: the media shape ────────────────────────────────────────────────
@@ -190,11 +217,17 @@ if (CHANNEL) {
     CHANNEL,
     {
       html: '<p>Media probe</p><img src="tg://photo?id=cover"/>',
-      media: [{ id: "cover", media: { type: "photo", media: "attach://cover.png" } }],
+      media: [
+        { id: "cover", media: { type: "photo", media: "attach://cover.png" } },
+      ],
     },
     PNG_FILE,
   );
-  record("r2_media_attach_tgref_channel", v1, v1.ok ? await del(CHANNEL, v1.result?.message_id) : "");
+  record(
+    "r2_media_attach_tgref_channel",
+    v1,
+    v1.ok ? await del(CHANNEL, v1.result?.message_id) : "",
+  );
 
   // V2: same media entry, but the markup does NOT reference it — isolates
   // whether a failure is in the media entry or in the reference syntax.
@@ -202,11 +235,17 @@ if (CHANNEL) {
     CHANNEL,
     {
       html: "<p>Media probe, unreferenced</p>",
-      media: [{ id: "cover", media: { type: "photo", media: "attach://cover.png" } }],
+      media: [
+        { id: "cover", media: { type: "photo", media: "attach://cover.png" } },
+      ],
     },
     PNG_FILE,
   );
-  record("r2_media_attach_noref_channel", v2, v2.ok ? await del(CHANNEL, v2.result?.message_id) : "");
+  record(
+    "r2_media_attach_noref_channel",
+    v2,
+    v2.ok ? await del(CHANNEL, v2.result?.message_id) : "",
+  );
 
   // V3: plain <img src="https://..."> with no media array — does a remote image
   // render without going through InputRichMessageMedia at all?
@@ -216,7 +255,11 @@ if (CHANNEL) {
       html: '<p>URL media probe</p><img src="https://telegram.org/img/t_logo.png"/>',
     },
   });
-  record("r2_media_url_img_tag_channel", v3, v3.ok ? await del(CHANNEL, v3.result?.message_id) : "");
+  record(
+    "r2_media_url_img_tag_channel",
+    v3,
+    v3.ok ? await del(CHANNEL, v3.result?.message_id) : "",
+  );
 }
 
 // ── showcase: leave ONE message in the admin chat for human inspection ──────
@@ -240,7 +283,11 @@ const showcase = await callJson("sendRichMessage", {
   chat_id: ADMIN,
   rich_message: { markdown: showcaseMarkdown },
 });
-record("showcase_markdown_admin", showcase, showcase.ok ? "LEFT IN PLACE (review it)" : "");
+record(
+  "showcase_markdown_admin",
+  showcase,
+  showcase.ok ? "LEFT IN PLACE (review it)" : "",
+);
 
 // The money shot: cover image INSIDE the rich message, with formatting.
 const showcaseMedia = await callRichMultipart(
@@ -252,11 +299,17 @@ const showcaseMedia = await callRichMultipart(
       "<p>Rasm <b>rich message ichida</b> — alohida xabar emas.</p>" +
       "<ul><li>birinchi</li><li>ikkinchi</li></ul>" +
       "<blockquote>Iqtibos</blockquote>",
-    media: [{ id: "cover", media: { type: "photo", media: "attach://cover.png" } }],
+    media: [
+      { id: "cover", media: { type: "photo", media: "attach://cover.png" } },
+    ],
   },
   PNG_FILE,
 );
-record("showcase_media_admin", showcaseMedia, showcaseMedia.ok ? "LEFT IN PLACE (review it)" : "");
+record(
+  "showcase_media_admin",
+  showcaseMedia,
+  showcaseMedia.ok ? "LEFT IN PLACE (review it)" : "",
+);
 
 // ── report ─────────────────────────────────────────────────────────────────
 console.log("\n=== RESULTS ===");

@@ -13,6 +13,15 @@ export type PlatformTextPolicy = {
   platform: Platform;
   /** Max chars for the primary text surface sent to the API */
   apiHardLimit: number;
+  /**
+   * Max chars for a single RICH message, when the platform supports one.
+   *
+   * Telegram only: `sendRichMessage` (Bot API 10.1+, June 2026) raises the
+   * per-message ceiling for bots from 4096 to 32768 and allows a photo to be a
+   * block inside the message. Verified live against the channel — 20 000 chars
+   * accepted, 40 000 rejected with RICH_MESSAGE_TEXT_TOO_LONG.
+   */
+  richHardLimit?: number;
   /** Media caption hard limit (Telegram photo/video) */
   captionHardLimit?: number;
   strategy: TextStrategy;
@@ -28,17 +37,28 @@ export type PlatformTextPolicy = {
 export const PLATFORM_TEXT_POLICIES: Record<Platform, PlatformTextPolicy> = {
   telegram: {
     platform: "telegram",
+    // Fallback layout only: photo caption (1024) + continuation messages (4096).
     apiHardLimit: 4096,
     captionHardLimit: 1024,
+    // Preferred layout: ONE rich message, cover image embedded as a block.
+    richHardLimit: 32768,
     strategy: "telegram_native",
     maxHashtags: 5,
     footerMode: "compact",
-    // Full article stays inside Telegram: photo caption + continuation
-    // message(s). Kept under one extra message so a post is never a flood.
+    // Full article stays inside Telegram. Text length is deliberately unchanged
+    // by the move to rich messages — this change is about delivering the post as
+    // ONE message with the cover embedded, not about making posts longer.
     softBodyTarget: 3500,
     audienceNotes: "Uzbek tech learners — full article read inside Telegram",
     styleNotes: "Clear practical Uzbek; HTML bold/links OK",
-    formatFeatures: ["html", "photo_caption", "multi_message", "linebreaks"],
+    formatFeatures: [
+      "html",
+      "rich_message",
+      "embedded_media",
+      "photo_caption",
+      "multi_message",
+      "linebreaks",
+    ],
   },
   linkedin: {
     platform: "linkedin",

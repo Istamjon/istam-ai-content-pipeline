@@ -38,6 +38,34 @@ describe("platformTextLimits", () => {
     expect(platformLimits.threads).toBe(500);
     expect(platformLimits.x).toBe(280);
   });
+
+  it("telegram advertises the rich-message limit separately from the fallback", () => {
+    const tg = getPlatformTextPolicy("telegram");
+    const rich = tg.richHardLimit ?? 0;
+    const soft = tg.softBodyTarget ?? 0;
+    // The rich ceiling is what makes a ONE-message post possible...
+    expect(rich).toBe(32768);
+    // ...while the legacy limits stay in place for the fallback layout, because
+    // sendPhoto captions are still capped at 1024.
+    expect(tg.apiHardLimit).toBe(4096);
+    expect(tg.captionHardLimit).toBe(1024);
+    expect(rich).toBeGreaterThan(tg.apiHardLimit);
+    expect(rich).toBeGreaterThan(soft);
+    expect(tg.formatFeatures).toContain("rich_message");
+    expect(tg.formatFeatures).toContain("embedded_media");
+  });
+
+  it("only telegram declares a rich-message limit", () => {
+    for (const platform of [
+      "linkedin",
+      "facebook",
+      "instagram",
+      "threads",
+      "x",
+    ] as const) {
+      expect(getPlatformTextPolicy(platform).richHardLimit).toBeUndefined();
+    }
+  });
 });
 
 /** Names of elements left open in an HTML fragment (Telegram would reject it). */
