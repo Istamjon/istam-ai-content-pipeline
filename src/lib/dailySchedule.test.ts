@@ -4,6 +4,7 @@ import {
   generateRandomTimes,
   localDateKey,
   pickDailySlotCount,
+  publishedOrBackfill,
   type DailySchedule,
 } from "./dailySchedule.js";
 
@@ -301,5 +302,45 @@ describe("applySlotOutcome", () => {
     expect(s.published).toEqual(["14:50"]);
     // The day counter must report 1, not 3.
     expect(s.published.length).toBe(1);
+  });
+});
+
+describe("publishedOrBackfill (schema migration)", () => {
+  it("uses the real `published` list when the field is present", () => {
+    expect(
+      publishedOrBackfill({ fired: ["09:17", "14:50"], published: ["14:50"] }),
+    ).toEqual(["14:50"]);
+  });
+
+  it("honours a present-but-empty `published` list without backfilling", () => {
+    // A day where nothing has published yet is NOT a pre-upgrade file.
+    expect(publishedOrBackfill({ fired: ["09:17"], published: [] })).toEqual(
+      [],
+    );
+  });
+
+  it("backfills from `fired` when the field is absent (pre-upgrade file)", () => {
+    expect(publishedOrBackfill({ fired: ["09:17", "14:50"] })).toEqual([
+      "09:17",
+      "14:50",
+    ]);
+  });
+
+  it("treats a missing `fired` list as empty rather than throwing", () => {
+    expect(publishedOrBackfill({})).toEqual([]);
+  });
+
+  it("does not resurrect the bug: an absent field backfills once, then the real list governs", () => {
+    // Simulate the upgrade day: 3 fired, only 1 actually posted.
+    const preUpgrade = { fired: ["09:17", "14:50", "20:06"] };
+    const backfilled = publishedOrBackfill(preUpgrade);
+    expect(backfilled).toHaveLength(3); // conservative on upgrade day only
+
+    // After the migration is persisted, a failing slot no longer inflates it.
+    const migrated = {
+      fired: ["09:17", "14:50", "20:06"],
+      published: ["09:17"],
+    };
+    expect(publishedOrBackfill(migrated)).toEqual(["09:17"]);
   });
 });

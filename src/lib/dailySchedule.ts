@@ -188,6 +188,27 @@ export function adaptiveMinGap(
   return gap;
 }
 
+/**
+ * `published` as far as we can know it for a persisted schedule.
+ *
+ * The field is new, so a schedule written by an older build has no way to say
+ * which of its `fired` slots actually published. For the single day that
+ * straddles the upgrade we keep the old build's interpretation — assume a fired
+ * slot published — instead of assuming every fired slot failed. Guessing "all
+ * failed" would make `armDay` see 0 publishes, so it would fire catch-up runs
+ * for slots that had in fact already posted, over-posting on upgrade day.
+ * From the next local midnight the field is always written for real.
+ *
+ * Typed against the raw persisted shape on purpose: a file written by an older
+ * build genuinely has no `published` key, whatever the current type says.
+ */
+export function publishedOrBackfill(s: {
+  fired?: string[];
+  published?: string[];
+}): string[] {
+  return Array.isArray(s.published) ? s.published : s.fired || [];
+}
+
 /** Load today's schedule or create a new random one for the local day. */
 export function getOrCreateTodaySchedule(): DailySchedule {
   const today = localDateKey();
@@ -199,12 +220,25 @@ export function getOrCreateTodaySchedule(): DailySchedule {
     const n = existing.times.length;
     // Keep stable day plan unless policy range changed (e.g. 3–6 after old fixed 4)
     if (n >= minS && n <= maxS) {
-      return {
+      const fired = existing.fired || [];
+      const published = publishedOrBackfill(existing);
+      const normalized: DailySchedule = {
         date: existing.date,
         times: existing.times,
-        fired: existing.fired || [],
-        published: existing.published || [],
+        fired,
+        published,
       };
+      // Persist the backfill once so every later read — including the scheduler
+      // in a different process after a restart — sees the migrated shape.
+      if (!Array.isArray(existing.published)) {
+        save(normalized);
+        console.log(
+          `[schedule] Migrated ${existing.date} to the \`published\` field — ` +
+            `backfilled ${fired.length} fired slot(s) as published (the old format ` +
+            `did not record which fired slots actually posted). One-time.`,
+        );
+      }
+      return normalized;
     }
     console.log(
       `[schedule] Regenerating day plan — ${n} slots outside ${minS}–${maxS}`,
@@ -232,7 +266,7 @@ export function getOrCreateTodaySchedule(): DailySchedule {
     ? (existing.fired || []).filter((t) => times.includes(t))
     : [];
   const prevPublished = sameDay
-    ? (existing.published || []).filter((t) => times.includes(t))
+    ? publishedOrBackfill(existing).filter((t) => times.includes(t))
     : [];
   const schedule: DailySchedule = {
     date: today,
