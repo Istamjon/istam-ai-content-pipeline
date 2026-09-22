@@ -115,13 +115,26 @@ console.log(rich);
 // Readability/structure signals for the editor, computed on the text as the
 // reader sees it (markup stripped). Deliberately crude and local — this is a
 // prompt for a human, not a quality gate.
+//
+// Block ends must become BLANK LINES before the tags go away. Simply deleting
+// every tag glued the output together: `</p>\n<p>` collapsed to one newline, so
+// every paragraph counted as a single paragraph, and `</li><li>` collapsed to
+// nothing, so a list's items ran into one another and produced a bogus
+// 78-word "sentence". Both numbers were pure artifacts of the extraction.
 const plain = rich
   .replace(/<img[^>]*>/g, " ")
-  .replace(/<hr\/>/g, "\n")
+  .replace(/<hr\s*\/?>/g, "\n\n")
+  .replace(/<\/(p|h[1-6]|blockquote|aside|footer|ul|ol|details)>/g, "\n\n")
+  .replace(/<\/li>/g, "\n")
+  .replace(/<li>/g, "• ")
+  .replace(/<br\s*\/?>/g, "\n")
   .replace(/<[^>]+>/g, "")
   .replace(/&amp;/g, "&")
   .replace(/&lt;/g, "<")
   .replace(/&gt;/g, ">")
+  .replace(/&quot;/g, '"')
+  .replace(/[ \t]+\n/g, "\n")
+  .replace(/\n{3,}/g, "\n\n")
   .trim();
 
 const paras = plain
