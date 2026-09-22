@@ -15,7 +15,7 @@ on:
   workflow_dispatch:
     inputs:
       task:
-        description: "probe = what the API accepts | shape = does the cover actually land | cleanup = delete stray messages"
+        description: "probe = what the API accepts | shape = does the cover land | preview = render the newest real post | cleanup = delete stray messages"
         required: true
         default: "probe"
       match:
@@ -86,6 +86,10 @@ jobs:
               echo "=== RICH SHAPE PROBE (does the cover land?) ==="
               docker compose exec -T pipeline node scripts/tg-rich-shape-probe.mjs 2>&1 \
                 || echo "(shape probe exited non-zero)"
+            elif [ "$TASK" = "preview" ]; then
+              echo "=== RICH PREVIEW (newest real post, admin chat only) ==="
+              docker compose exec -T pipeline node scripts/tg-rich-preview.mjs 2>&1 \
+                || echo "(preview exited non-zero)"
             else
               echo "=== RICH PROBE ==="
               docker compose exec -T pipeline node scripts/tg-rich-probe.mjs 2>&1 \
