@@ -13,13 +13,19 @@ import {
   platformLimits,
 } from "../config/platformTextLimits.js";
 import { env } from "../config/env.js";
-import { cleanPostBody } from "../lib/contentClean.js";
+import { cleanPostBody, cleanPostBodyRich } from "../lib/contentClean.js";
+import { markdownToRichHtml } from "./markdownToRichHtml.js";
 import type { CanonicalContent } from "./types.js";
 
 export { platformLimits, smartTruncate, splitIntoThreadParts };
 
-function stripNoise(text: string): string {
-  let t = cleanPostBody(text);
+/**
+ * Shared noise removal. `clean` decides whether markdown survives:
+ * `cleanPostBody` flattens it (plain-text platforms), `cleanPostBodyRich`
+ * keeps it (Telegram rich messages render it).
+ */
+function stripNoiseWith(text: string, clean: (s: string) => string): string {
+  let t = clean(text);
   t = t
     .replace(/\n+\s*(Manba|Source|URL)\s*:\s*.+$/gim, "")
     .replace(/\n+\s*Author\s*:\s*.+$/gim, "")
@@ -27,7 +33,16 @@ function stripNoise(text: string): string {
     .replace(/\n+———[\s\S]*$/gim, "")
     .replace(/\n+────────[\s\S]*$/gim, "")
     .trim();
-  return cleanPostBody(t);
+  return clean(t);
+}
+
+function stripNoise(text: string): string {
+  return stripNoiseWith(text, cleanPostBody);
+}
+
+/** Same noise removal, but markdown structure survives for the rich path. */
+function stripNoiseRich(text: string): string {
+  return stripNoiseWith(text, cleanPostBodyRich);
 }
 
 function escapeHtml(s: string): string {
@@ -56,26 +71,56 @@ function richFooterBlock(footer: string): string {
 }
 
 /**
+ * Source attribution for the rich post.
+ *
+ * `cleanPostBody` strips `Manba:`/`Source:` lines, so the plain-text platforms
+ * never carry a source link. A rich message CAN carry a real one, and for a
+ * case study the source is the most useful link in the post — so re-add it from
+ * the canonical URL rather than trusting a body line to survive.
+ */
+function richSourceLine(sourceUrl?: string): string {
+  const url = (sourceUrl || "").trim();
+  if (!/^https?:\/\//i.test(url)) return "";
+  const host = url
+    .replace(/^https?:\/\//i, "")
+    .split("/")[0]
+    .replace(/^www\./i, "");
+  const href = escapeHtml(url).replace(/"/g, "&quot;");
+  return `<p>Manba: <a href="${href}">${escapeHtml(host)}</a></p>`;
+}
+
+/**
  * Telegram rich-message HTML — same content as `text`, richer rendering.
  *
  * Only Telegram uses this, and only on the rich path. The tags introduced here
- * (`<hr/>`, `<footer>`) are rejected by the classic `parse_mode=HTML` parser
- * (live probe: `Unsupported start tag "p"`), so this must never be substituted
- * into `text`/`caption`, which the fallback layout also consumes.
+ * (`<p>`, `<hr/>`, `<footer>`, headings, lists) are rejected by the classic
+ * `parse_mode=HTML` parser (live probe: `Unsupported start tag "p"`), so this
+ * must never be substituted into `text`/`caption`, which the fallback layout
+ * also consumes.
+ *
+ * Unlike `text`, this keeps the body's markdown structure: headings become real
+ * headings, `- ` runs become real lists, and `[label](url)` becomes a real link.
+ *
+ * `richLimit` is the RICH ceiling (32768), NOT the plain-text `softBodyTarget`.
+ * Rich HTML is longer than the text it came from — every `<p>`, `<b>` and
+ * `href` adds characters — so packing it against the text target would make
+ * `packText` shed the hashtags, then the source link and footer, and finally
+ * `smartTruncate` the HTML mid-tag. Telegram rejects a half-written tag, so the
+ * rich send would fail and the post would silently degrade to the caption
+ * layout: the feature would disappear exactly on the long posts that need it.
  */
 function buildTelegramRichHtml(
-  clean: string,
+  markdownBody: string,
   footer: string,
   hashtags: string,
-  soft: number,
+  richLimit: number,
+  sourceUrl?: string,
 ): string {
-  return packText(
-    escapeHtml(clean),
-    richFooterBlock(footer),
-    hashtags,
-    soft,
-    false,
-  );
+  const body = markdownToRichHtml(markdownBody);
+  const attribution = [richSourceLine(sourceUrl), richFooterBlock(footer)]
+    .filter(Boolean)
+    .join("\n\n");
+  return packText(body, attribution, hashtags, richLimit, false);
 }
 
 function buildContentHashtags(
@@ -197,6 +242,7 @@ function formatOne(
   platform: Platform,
   body: string,
   hasImage: boolean,
+  sourceUrl?: string,
 ): FormattedPost {
   const policy = getPlatformTextPolicy(platform);
   const clean = stripNoise(body);
@@ -270,11 +316,17 @@ function formatOne(
       false,
     );
     const caption = truncateHtmlPrefix(fullPacked, capHard);
-    // Rich variant of the SAME post: identical text, but the ASCII rule becomes
-    // a real <hr/> and the brand block a <footer>. `text` above stays exactly as
-    // it was, because the caption/continuation fallback cannot parse rich-only
-    // tags.
-    const richHtml = buildTelegramRichHtml(clean, footer, hashtags, soft);
+    // Rich variant of the SAME post. `text` above stays exactly as it was — the
+    // caption/continuation fallback cannot parse rich-only tags — while the rich
+    // variant keeps the body's markdown structure, re-adds the source link, and
+    // is bounded by the rich ceiling rather than the plain-text soft target.
+    const richHtml = buildTelegramRichHtml(
+      stripNoiseRich(body),
+      footer,
+      hashtags,
+      policy.richHardLimit ?? hard,
+      sourceUrl,
+    );
     console.log(
       `[format] ${platform} strategy=native full=${fullPacked.length} caption=${caption.length}/${capHard} rich=${richHtml.length}`,
     );
@@ -365,7 +417,7 @@ export function formatAllFromCanonical(
     // THREADS and LINKEDIN posts are in English; all others are in Uzbek
     const isEnglishPlatform = platform === "linkedin" || platform === "threads";
     const platformBody = isEnglishPlatform ? doc.bodyEn || doc.body : doc.body;
-    out[platform] = formatOne(platform, platformBody, hasImage);
+    out[platform] = formatOne(platform, platformBody, hasImage, doc.sourceUrl);
   }
   return out;
 }

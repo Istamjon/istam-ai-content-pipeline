@@ -105,3 +105,99 @@ describe("telegram rich formatting", () => {
     expect(rich).toContain(probe);
   });
 });
+
+describe("telegram rich formatting — structure is kept for Telegram only", () => {
+  const MARKDOWN_BODY = [
+    "## Muammo",
+    "",
+    "Hujjatlar ko'pligi xaridorlarga katta xavf tug'diradi.",
+    "",
+    "## Bosqichlar",
+    "",
+    "- Parse qilinadi",
+    "- Indekslanadi",
+    "- Tekshiriladi",
+  ].join("\n");
+
+  it("renders markdown headings and lists in richHtml", () => {
+    const tg = telegramOf(MARKDOWN_BODY);
+    const rich = tg.richHtml || "";
+
+    expect(rich).toContain("<h2>Muammo</h2>");
+    expect(rich).toContain("<h2>Bosqichlar</h2>");
+    expect(rich).toContain("<ul><li>Parse qilinadi</li>");
+  });
+
+  it("flattens the same markdown away from the fallback text", () => {
+    const tg = telegramOf(MARKDOWN_BODY);
+
+    // LinkedIn/X/Threads show markers literally, so `text` must stay plain.
+    expect(tg.text).not.toContain("##");
+    expect(tg.text).not.toContain("<h2>");
+    expect(tg.text).not.toContain("<ul>");
+    expect(tg.text).not.toContain("<p>");
+    expect(tg.text).toContain("Muammo");
+  });
+
+  it("adds the source link to richHtml from the canonical URL", () => {
+    const tg = telegramOf(BODY);
+    const rich = tg.richHtml || "";
+
+    expect(rich).toContain('href="https://example.com/a"');
+    expect(rich).toContain("Manba:");
+    // The plain-text platforms never carried a source link; keep it that way.
+    expect(tg.text).not.toContain("Manba:");
+  });
+
+  it("omits the source line when there is no usable URL", () => {
+    const out = formatAllFromCanonical({ ...doc(BODY), sourceUrl: "" }, [
+      "telegram",
+    ]);
+    const rich = out.telegram?.richHtml || "";
+
+    expect(rich).not.toContain("Manba:");
+    // ...but the brand footer still renders.
+    expect(rich).toContain("<footer>");
+  });
+});
+
+describe("telegram rich formatting — bounded by the rich ceiling, not the text target", () => {
+  /**
+   * Longer than telegram's `softBodyTarget` (3500), so the plain-text variant
+   * gets truncated. The rich variant must still carry the whole article — it is
+   * the variant actually sent, and it has 32768 chars to work with.
+   *
+   * Regression guard: packing the rich HTML against the TEXT target made
+   * `packText` shed the hashtags, then the source link and footer, and finally
+   * cut the HTML mid-tag, which Telegram rejects — so the rich send failed and
+   * the post silently fell back to the caption layout on exactly the long
+   * articles that benefit most.
+   */
+  const LONG = `${"AI agentlar ishlab chiqarishda muhim rol o'ynaydi. ".repeat(120)}YAKUNIY_XULOSA_MARKER.`;
+
+  it("keeps the full article, footer and source link in richHtml", () => {
+    const tg = telegramOf(LONG);
+    const rich = tg.richHtml || "";
+
+    // The plain-text variant is genuinely truncated...
+    expect(tg.text.length).toBeLessThan(LONG.length);
+    // ...while the rich variant still reaches the end of the article.
+    expect(rich).toContain("YAKUNIY_XULOSA_MARKER");
+    expect(rich).toContain("<footer>");
+    expect(rich).toContain("Manba:");
+    expect(rich.length).toBeGreaterThan(tg.text.length);
+  });
+
+  it("never leaves an unterminated tag in the rich HTML", () => {
+    const rich = telegramOf(LONG).richHtml || "";
+
+    // `smartTruncate` would happily cut `<foo` in half, and Telegram rejects the
+    // whole payload when that happens. Every text run is escaped, so a trailing
+    // `<…` with no `>` after it can only come from a bad cut.
+    expect(rich).not.toMatch(/<[^>]*$/);
+    // The payload is complete: body tail, footer and hashtags all survive.
+    expect(rich).toContain("YAKUNIY_XULOSA_MARKER");
+    expect(rich).toContain("</footer>");
+    expect(rich).toContain("#IstamObidov");
+  });
+});

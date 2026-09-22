@@ -79,3 +79,19 @@ export function stripSourceIntros(text: string): string {
 export function cleanPostBody(text: string): string {
   return stripMarkdownNoise(stripSourceIntros((text || "").trim()));
 }
+
+/**
+ * Reader-facing clean that KEEPS markdown structure.
+ *
+ * `cleanPostBody` flattens markdown on purpose — LinkedIn/X/Threads render
+ * `##`, `**bold**` and `[label](url)` literally, so the markers must go. Telegram
+ * rich messages are the opposite: they render that structure, so flattening it
+ * there throws away formatting the client would have honoured.
+ *
+ * So this removes only the source-intro noise (the "Yangi X maqolasi:" prefixes
+ * and any stale `Manba:` line, which the rich path re-adds from the canonical
+ * sourceUrl) and leaves headings, lists and links intact for the converter.
+ */
+export function cleanPostBodyRich(text: string): string {
+  return stripSourceIntros((text || "").trim());
+}
