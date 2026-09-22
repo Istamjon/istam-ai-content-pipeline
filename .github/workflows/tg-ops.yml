@@ -26,6 +26,10 @@ on:
         description: "cleanup: how many message ids back to scan"
         required: false
         default: "8"
+      index:
+        description: "preview: which post to inspect (0 = newest)"
+        required: false
+        default: "0"
 
 jobs:
   ops:
@@ -50,6 +54,7 @@ jobs:
           TASK: ${{ github.event.inputs.task }}
           MATCH: ${{ github.event.inputs.match }}
           SCAN: ${{ github.event.inputs.scan }}
+          PREVIEW_INDEX: ${{ github.event.inputs.index }}
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
@@ -57,7 +62,7 @@ jobs:
           port: ${{ secrets.VDS_PORT || 22 }}
           command_timeout: 8m
           script_stop: false
-          envs: REMOTE_APP_DIR,TASK,MATCH,SCAN
+          envs: REMOTE_APP_DIR,TASK,MATCH,SCAN,PREVIEW_INDEX
           script: |
             set -e
             APP_DIR="${REMOTE_APP_DIR:-}"

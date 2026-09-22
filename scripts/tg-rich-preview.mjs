@@ -46,13 +46,19 @@ const { formatAllFromCanonical } =
 const fs = await import("node:fs");
 const path = await import("node:path");
 
-const list = listCanonical(1);
+const list = listCanonical(20);
 if (!list.length) {
   console.log("no canonical documents found — nothing to preview");
   process.exit(0);
 }
 
-const id = list[0].id;
+// PREVIEW_INDEX picks which post to inspect (0 = newest) so several posts can be
+// reviewed without redeploying.
+const idx = Math.max(
+  0,
+  Math.min(list.length - 1, Number(process.env.PREVIEW_INDEX || 0) || 0),
+);
+const id = list[idx].id;
 const doc = loadCanonical(id);
 if (!doc) {
   console.log(`canonical ${id} listed but could not be loaded`);
@@ -60,6 +66,7 @@ if (!doc) {
 }
 
 console.log(`=== CANONICAL ===`);
+console.log(`index=${idx} of ${list.length} available (0 = newest)`);
 console.log(`id=${doc.id} v${doc.version}`);
 console.log(`title=${doc.title}`);
 console.log(
@@ -101,10 +108,80 @@ for (const [name, ok] of checks) {
 }
 console.log(`failed=${failed}`);
 
-console.log(`\n=== richHtml HEAD (first 700 chars) ===`);
-console.log(rich.slice(0, 700));
-console.log(`\n=== richHtml TAIL (last 400 chars) ===`);
-console.log(rich.slice(-400));
+console.log(`\n=== richHtml (FULL) ===`);
+console.log(rich);
+
+// ── content diagnostics ─────────────────────────────────────────────────────
+// Readability/structure signals for the editor, computed on the text as the
+// reader sees it (markup stripped). Deliberately crude and local — this is a
+// prompt for a human, not a quality gate.
+const plain = rich
+  .replace(/<img[^>]*>/g, " ")
+  .replace(/<hr\/>/g, "\n")
+  .replace(/<[^>]+>/g, "")
+  .replace(/&amp;/g, "&")
+  .replace(/&lt;/g, "<")
+  .replace(/&gt;/g, ">")
+  .trim();
+
+const paras = plain
+  .split(/\n{2,}/)
+  .map((p) => p.trim())
+  .filter(Boolean);
+const sentences = plain
+  .split(/(?<=[.!?…])\s+/)
+  .map((s) => s.trim())
+  .filter((s) => s.length > 1);
+const words = plain.split(/\s+/).filter(Boolean);
+const wordsPerSentence = sentences.map(
+  (s) => s.split(/\s+/).filter(Boolean).length,
+);
+const sorted = [...wordsPerSentence].sort((a, b) => a - b);
+const median = sorted.length ? sorted[Math.floor(sorted.length / 2)] : 0;
+const avg = wordsPerSentence.length
+  ? Math.round(
+      wordsPerSentence.reduce((a, b) => a + b, 0) / wordsPerSentence.length,
+    )
+  : 0;
+
+const openers = sentences.map((s) => s.split(/\s+/)[0].toLowerCase());
+const openerCounts = {};
+for (const o of openers) openerCounts[o] = (openerCounts[o] || 0) + 1;
+const repeatedOpeners = Object.entries(openerCounts)
+  .filter(([, n]) => n > 1)
+  .sort((a, b) => b[1] - a[1]);
+
+const structure = {
+  "has headings (h1-h6)": /<h[1-6][\s>]/.test(rich),
+  "has bullet/numbered list": /<(ul|ol)[\s>]/.test(rich),
+  "has blockquote/pull quote": /<(blockquote|aside)[\s>]/.test(rich),
+  "has table": /<table[\s>]/.test(rich),
+  "has collapsible <details>": /<details[\s>]/.test(rich),
+  "has spoiler": /<tg-spoiler[\s>]/.test(rich),
+  "has inline link": /<a href/.test(rich),
+};
+
+console.log(`\n=== CONTENT DIAGNOSTICS ===`);
+console.log(
+  `paragraphs=${paras.length} sentences=${sentences.length} words=${words.length}`,
+);
+console.log(
+  `words/sentence: avg=${avg} median=${median} max=${Math.max(0, ...wordsPerSentence)}`,
+);
+console.log(
+  `longest paragraph=${Math.max(0, ...paras.map((p) => p.length))} chars`,
+);
+console.log(`reading time ~${Math.max(1, Math.round(words.length / 200))} min`);
+console.log(
+  `contains digits=${/\d/.test(plain)} questions=${(plain.match(/\?/g) || []).length} links=${(rich.match(/<a href/g) || []).length}`,
+);
+console.log(
+  `repeated sentence openers: ${repeatedOpeners.length ? repeatedOpeners.map(([w, n]) => `${w}×${n}`).join(", ") : "none"}`,
+);
+console.log(`-- structure --`);
+for (const [k, v] of Object.entries(structure)) {
+  console.log(`${v ? "YES" : "no "} | ${k}`);
+}
 
 // ── send to the ADMIN chat only (never the channel) ─────────────────────────
 if (!ADMIN) {
