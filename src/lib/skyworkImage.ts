@@ -207,11 +207,21 @@ function resolveResolution(): "1K" | "2K" | "4K" {
   return "1K";
 }
 
-function parseSseChunk(
+/**
+ * Parse SSE blocks into `{ event, data }`.
+ *
+ * Block separator is a blank line; `\r?\n` per line is already tolerated by the
+ * line split below, and callers normalise CRLF → LF before buffering (see
+ * readSseResponse) so `\n\n` detection works for both stream flavours.
+ *
+ * Exported for tests.
+ */
+export function parseSseChunk(
   text: string,
 ): Array<{ event: string; data: Record<string, unknown> }> {
   const out: Array<{ event: string; data: Record<string, unknown> }> = [];
-  const blocks = text.split(/\n\n+/);
+  // Two or more consecutive line breaks, in either LF or CRLF flavour.
+  const blocks = text.split(/(?:\r?\n){2,}/);
   for (const block of blocks) {
     if (!block.trim()) continue;
     let event = "message";
@@ -231,7 +241,12 @@ function parseSseChunk(
   return out;
 }
 
-async function readSseResponse(
+/**
+ * Read an SSE response and pull out `file_url`.
+ *
+ * Exported for tests.
+ */
+export async function readSseResponse(
   res: Response,
   label: string,
 ): Promise<{ fileUrl?: string; error?: string }> {
@@ -250,6 +265,15 @@ async function readSseResponse(
     const { done, value } = await reader.read();
     if (done) break;
     buf += decoder.decode(value, { stream: true });
+
+    // SSE allows LF or CRLF. Block detection below keys off a blank line
+    // ("\n\n"), which never appears in a CRLF stream ("\r\n\r\n"), so the
+    // stream would buffer to the end and then be parsed as ONE block — every
+    // `data:` payload concatenated into invalid JSON, losing `file_url` and
+    // failing with the misleading "no file_url in SSE success".
+    // Normalise the WHOLE buffer (not just the new chunk) so a CRLF pair split
+    // across two reads is still collapsed.
+    if (buf.includes("\r")) buf = buf.replace(/\r\n/g, "\n");
 
     const lastSep = buf.lastIndexOf("\n\n");
     if (lastSep === -1) continue;
@@ -323,12 +347,20 @@ function isRotatableFailure(msg: string): boolean {
 
 function isTransientFailure(msg: string): boolean {
   // Network / server errors (no key pause):
-  if (/timeout|ECONNRESET|ENOTFOUND|fetch failed|HTTP 5\d\d|network|aborted|UND_ERR|empty body|no file_url/i.test(msg)) {
+  if (
+    /timeout|ECONNRESET|ENOTFOUND|fetch failed|HTTP 5\d\d|network|aborted|UND_ERR|empty body|no file_url/i.test(
+      msg,
+    )
+  ) {
     return true;
   }
   // Skywork backend model failures (Gemini/Seedream unavailable) — server-side, not our key's fault.
   // SERVICE_ERROR means Skywork's own backend is down; key should not be paused.
-  if (/SERVICE_ERROR|Gemini API did not return an image|Seedream.*failed|Authorization validation failed|get host proxy config is null/i.test(msg)) {
+  if (
+    /SERVICE_ERROR|Gemini API did not return an image|Seedream.*failed|Authorization validation failed|get host proxy config is null/i.test(
+      msg,
+    )
+  ) {
     return true;
   }
   return false;
@@ -435,7 +467,13 @@ async function generateOnceWithKey(
 ): Promise<Buffer> {
   if (face?.base64) {
     try {
-      return await generateOnceWithKeyRaw(slot, prompt, aspect, resolution, face);
+      return await generateOnceWithKeyRaw(
+        slot,
+        prompt,
+        aspect,
+        resolution,
+        face,
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // The edit API (which is the ONLY path that can preserve identity) failed
@@ -450,7 +488,9 @@ async function generateOnceWithKey(
       // So we always surface the failure and let imagePipeline cascade to the
       // next identity provider (and finally to an xKiro diagram). Never return
       // a faceless image that the caller believes contains the brand face.
-      if (/Image editing failed|Gemini failed|Seedream|model failed/i.test(msg)) {
+      if (
+        /Image editing failed|Gemini failed|Seedream|model failed/i.test(msg)
+      ) {
         throw new Error(
           `Skywork: image edit (identity path) failed — no identity-preserving ` +
             `fallback exists in this provider, so refusing to invent a generic ` +
@@ -540,9 +580,7 @@ export async function skyworkImage(
     } catch (e) {
       lastErr = e;
       const msg = e instanceof Error ? e.message : String(e);
-      console.warn(
-        `[skywork] ${slot.label} failed: ${msg.slice(0, 220)}`,
-      );
+      console.warn(`[skywork] ${slot.label} failed: ${msg.slice(0, 220)}`);
       if (isRotatableFailure(msg)) {
         markKeyExhausted(slot, msg);
         console.log(`[skywork] ${slot.label} → next key (credits/quota/auth)`);
