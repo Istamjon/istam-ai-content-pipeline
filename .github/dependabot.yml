@@ -51,3 +51,16 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore(docker)"
+    ignore:
+      # A Node major must never be taken automatically. Dependabot proposed
+      # node:22 -> node:25, which is wrong twice over:
+      #   1. 25 is an odd-numbered "Current" release, never LTS, and its Docker
+      #      Hub tag has been frozen since 2026-05-20 — i.e. unpatched.
+      #   2. better-sqlite3 is compiled in the image (Dockerfile installs
+      #      python3/make/g++ for it). The pinned v11.10.0 ships prebuilds only
+      #      up to Node ABI 131, so any major past 23 falls back to node-gyp and
+      #      fails to build. v12 is the first line with Node 24 prebuilds.
+      # To move: open a PR targeting node:24-bookworm-slim (LTS) that upgrades
+      # better-sqlite3 to v12 in the same commit.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
