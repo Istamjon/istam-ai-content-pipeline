@@ -5,6 +5,7 @@ import { createEmptyState } from "./agent/state.js";
 import {
   getOrCreateTodaySchedule,
   markSlotFired,
+  markSlotPublished,
   isSlotFired,
   nowLocalHhmm,
   msUntilLocalHhmm,
@@ -219,7 +220,7 @@ function startGuaranteedDailyScheduler(
         return;
       }
       if (outcome.published) {
-        markSlotFired(t);
+        markSlotPublished(t);
         publishesToday += 1;
         console.log(
           `[Scheduler] slot ${t} published — marked fired (dayOk=${publishesToday}/${maxSlotsToday()})`,
@@ -321,8 +322,15 @@ function startGuaranteedDailyScheduler(
     clearTimers();
     slotRetries.clear();
     pendingQueue.length = 0;
-    // Fired slots ≈ completed attempts (publish or exhausted retries)
-    publishesToday = (schedule.fired || []).length;
+    // Seed from REAL publishes, never from `fired`.
+    //
+    // `fired` also counts slots whose retries were exhausted with no publish and
+    // slots the day cap skipped. Seeding from it meant that after a restart
+    // (every deploy restarts the container) a day where 3 slots fired and 0 posts
+    // went out read as "3 publishes done": `fireSlotDirect` then skipped every
+    // remaining slot via the day cap and `armDailyGuarantee` no-opped. That is
+    // how a day ends with no post at all.
+    publishesToday = (schedule.published || []).length;
     guaranteeArmed = false;
 
     const lo = Math.min(env.CRON_SLOTS_MIN, env.CRON_SLOTS_MAX);
@@ -334,7 +342,7 @@ function startGuaranteedDailyScheduler(
     console.log(
       `[Scheduler] Window ${env.CRON_WINDOW_START_HOUR}:00–${env.CRON_WINDOW_END_HOUR}:00 local, ` +
         `gap≥${env.CRON_MIN_GAP_MINUTES}m (adaptive), min publishes/day=${DAILY_MIN_PUBLISHES}, ` +
-        `alreadyFired=${publishesToday}`,
+        `publishedToday=${publishesToday} firedToday=${(schedule.fired || []).length}`,
     );
 
     let futureArmed = 0;

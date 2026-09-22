@@ -19,6 +19,18 @@ export type DailySchedule = {
   times: string[];
   /** HH:MM already executed today */
   fired: string[];
+  /**
+   * HH:MM slots that actually produced at least one successful publish.
+   *
+   * Deliberately kept separate from `fired`. A slot becomes `fired` when it
+   * published, when its retries are exhausted with NO publish, or when the day
+   * cap skips it — only the first of those is a publish. The scheduler used to
+   * seed its "publishes today" counter from `fired.length`, so after any restart
+   * a broken day (3 slots fired, 0 published) looked complete: the day cap then
+   * skipped every remaining slot and the daily guarantee no-opped because it
+   * believed the day was already covered. Net effect — a silent zero-post day.
+   */
+  published: string[];
 };
 
 /**
@@ -67,8 +79,31 @@ function save(schedule: DailySchedule): void {
 }
 
 /**
- * Pick N random minute-of-day values inside [startHour, endHour) with min gap.
- * Never schedules past endHour (previous code expanded window when gap×count was large).
+ * Pick N times spread EVENLY across the posting window, with bounded jitter.
+ *
+ * Even coverage is the point, not the jitter. The previous greedy version only
+ * ever enforced a MINIMUM gap, so it could emit plans like 09:17 / 17:46 / 20:27
+ * — an 8.5-hour dead zone followed by two posts 2.7 hours apart. To a reader
+ * that reads as "nothing was posted today", which is exactly the complaint.
+ *
+ * Slots are laid out at even spacing and each one is nudged by at most
+ * `jitterCap`, which is capped so that:
+ *
+ *   (a) order is preserved,
+ *   (b) the minimum gap still holds —
+ *       gap >= spacing - 2*jitterCap >= minGapMinutes,
+ *   (c) no gap can blow out into a dead zone —
+ *       max gap = spacing + 2*jitterCap <= 1.2 * spacing.
+ *
+ * The jitter fraction is 0.10 rather than a looser 0.15 on purpose. The real
+ * bad plan this replaces (09:17 / 17:46 / 20:27) had a largest gap of only
+ * 1.31x even spacing, so a 1.30 ceiling sat almost on top of it — the guarantee
+ * would have been technically true and practically useless. 1.2x leaves clear
+ * air between "evenly spread" and "a dead zone", while 10% of a multi-hour
+ * spacing is still tens of minutes of variation, which is all the natural
+ * cadence this needs.
+ *
+ * A small inward margin keeps no slot sitting exactly on the window edge.
  */
 export function generateRandomTimes(
   count: number,
@@ -81,66 +116,41 @@ export function generateRandomTimes(
   // endHour is exclusive upper bound of the posting window (e.g. 21 → last minute 20:59)
   const rawEnd = Math.max(start + 60, endHour * 60);
   const windowEnd = Math.min(24 * 60 - 1, rawEnd - 1);
-  const span = windowEnd - start + 1;
+  const span = windowEnd - start;
   if (span <= 0) return [];
 
-  // Fit gap so N slots always stay inside the window
-  const maxGapForCount =
-    count <= 1 ? minGapMinutes : Math.floor((windowEnd - start) / (count - 1));
-  const gap = Math.max(30, Math.min(minGapMinutes, Math.max(30, maxGapForCount)));
-
-  const maxAttempts = 1200;
-  let best: number[] = [];
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    const picks: number[] = [];
-    // Place first randomly, then place next with min gap (greedy)
-    let cursor = start + Math.floor(Math.random() * Math.max(1, Math.floor(span / 4)));
-    picks.push(cursor);
-    let failed = false;
-    for (let i = 1; i < count; i++) {
-      const minNext = picks[i - 1] + gap;
-      const remainingSlots = count - i;
-      const maxNext = windowEnd - gap * (remainingSlots - 1);
-      if (minNext > maxNext || minNext > windowEnd) {
-        failed = true;
-        break;
-      }
-      const room = Math.max(1, maxNext - minNext + 1);
-      const next = minNext + Math.floor(Math.random() * room);
-      picks.push(Math.min(windowEnd, next));
-    }
-    if (failed || picks.length < count) continue;
-    let ok = true;
-    for (let i = 1; i < picks.length; i++) {
-      if (picks[i] - picks[i - 1] < gap) {
-        ok = false;
-        break;
-      }
-    }
-    if (ok && picks[picks.length - 1] <= windowEnd && picks[0] >= start) {
-      best = picks;
-      break;
-    }
+  if (count === 1) {
+    return [minutesToHhmm(start + Math.floor(Math.random() * (span + 1)))];
   }
 
-  // Even spacing fallback (guaranteed min gap + inside window)
-  if (best.length !== count) {
-    best = [];
-    if (count === 1) {
-      best = [start + Math.floor((windowEnd - start) / 2)];
-    } else {
-      const step = Math.max(gap, Math.floor((windowEnd - start) / (count - 1)));
-      // If even step doesn't fit, use max fit spacing
-      const fitStep = Math.floor((windowEnd - start) / (count - 1));
-      const useStep = Math.max(1, Math.min(step, fitStep));
-      for (let i = 0; i < count; i++) {
-        best.push(Math.min(windowEnd, start + i * useStep));
-      }
-    }
+  // Keep the first/last slot off the exact boundary.
+  const margin = Math.min(30, Math.floor(span * 0.05));
+  const innerStart = start + margin;
+  const innerEnd = windowEnd - margin;
+  const spacing = (innerEnd - innerStart) / (count - 1);
+
+  // Room to move before neighbours could collide, and before a gap grows past
+  // 1.2x even spacing. Never negative.
+  const gapRoom = Math.max(0, (spacing - minGapMinutes) / 2 - 1);
+  const jitterCap = Math.max(0, Math.min(spacing * 0.1, gapRoom));
+
+  const picks: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const jitter = jitterCap > 0 ? (Math.random() * 2 - 1) * jitterCap : 0;
+    picks.push(Math.round(innerStart + i * spacing + jitter));
   }
 
-  return best.map(minutesToHhmm);
+  // Clamping only ever pulls a pick back toward the window interior: an early
+  // pick can be raised to `start`, a late one lowered to `windowEnd`. Raising the
+  // first pick shrinks the gap to its successor — the inward `margin` (30m) is
+  // what keeps that gap above minGapMinutes; lowering the last pick shrinks the
+  // final gap, which only helps the 1.2x bound. Both bounds are verified over
+  // thousands of generated plans in dailySchedule.test.ts rather than argued
+  // here. Sorting is belt-and-braces against rounding.
+  return picks
+    .map((m) => Math.max(start, Math.min(windowEnd, m)))
+    .sort((a, b) => a - b)
+    .map(minutesToHhmm);
 }
 
 /**
@@ -193,6 +203,7 @@ export function getOrCreateTodaySchedule(): DailySchedule {
         date: existing.date,
         times: existing.times,
         fired: existing.fired || [],
+        published: existing.published || [],
       };
     }
     console.log(
@@ -213,12 +224,22 @@ export function getOrCreateTodaySchedule(): DailySchedule {
     env.CRON_WINDOW_END_HOUR,
     gap,
   );
-  // Preserve already-fired times that still fall on the new plan day (rare regen mid-day)
-  const prevFired =
-    existing?.date === today
-      ? (existing.fired || []).filter((t) => times.includes(t))
-      : [];
-  const schedule: DailySchedule = { date: today, times, fired: prevFired };
+  // Preserve already-fired/published times that still fall on the new plan day
+  // (rare regen mid-day). Dropping `published` here would re-open the day cap and
+  // let the guarantee double-post, so it is carried over alongside `fired`.
+  const sameDay = existing?.date === today;
+  const prevFired = sameDay
+    ? (existing.fired || []).filter((t) => times.includes(t))
+    : [];
+  const prevPublished = sameDay
+    ? (existing.published || []).filter((t) => times.includes(t))
+    : [];
+  const schedule: DailySchedule = {
+    date: today,
+    times,
+    fired: prevFired,
+    published: prevPublished,
+  };
   save(schedule);
   console.log(
     `[schedule] New random day plan ${today}: ${times.join(", ")} ` +
@@ -227,12 +248,47 @@ export function getOrCreateTodaySchedule(): DailySchedule {
   return schedule;
 }
 
+/**
+ * Pure state transition for a slot outcome — no disk access, so it is directly
+ * unit-testable.
+ *
+ * `"published"` implies `"fired"` in the SAME transition on purpose: a published
+ * slot that was not also marked fired would be re-armed and double-post.
+ * `"fired"` (retries exhausted with no publish, or day-cap skip) must NOT touch
+ * `published` — that is the distinction the scheduler's day counter depends on.
+ */
+export function applySlotOutcome(
+  schedule: DailySchedule,
+  hhmm: string,
+  outcome: "published" | "fired",
+): DailySchedule {
+  const fired = schedule.fired.includes(hhmm)
+    ? schedule.fired
+    : [...schedule.fired, hhmm];
+  const published =
+    outcome === "published" && !schedule.published.includes(hhmm)
+      ? [...schedule.published, hhmm]
+      : schedule.published;
+  return { ...schedule, fired, published };
+}
+
+/** Mark a slot as consumed WITHOUT recording a publish. */
 export function markSlotFired(hhmm: string): void {
   const s = getOrCreateTodaySchedule();
-  if (!s.fired.includes(hhmm)) {
-    s.fired.push(hhmm);
-    save(s);
-  }
+  if (s.fired.includes(hhmm)) return;
+  save(applySlotOutcome(s, hhmm, "fired"));
+}
+
+/** Record a slot that produced a successful publish (also marks it fired). */
+export function markSlotPublished(hhmm: string): void {
+  const s = getOrCreateTodaySchedule();
+  if (s.fired.includes(hhmm) && s.published.includes(hhmm)) return;
+  save(applySlotOutcome(s, hhmm, "published"));
+}
+
+/** Successful publishes recorded for today's local day (durable across restarts). */
+export function getPublishedCount(): number {
+  return (getOrCreateTodaySchedule().published || []).length;
 }
 
 export function isSlotFired(hhmm: string): boolean {
