@@ -59,6 +59,45 @@ jobs:
             echo "=== SCHEDULE ==="
             cat data/daily-schedule.json 2>/dev/null || echo "no schedule yet"
 
+            echo "=== PUBLISH HISTORY (data/app.db) ==="
+            # Read-only. Answers "did anything publish today, and if not, why".
+            docker compose exec -T pipeline node -e "
+            import('better-sqlite3').then((m) => {
+              const Database = m.default;
+              const db = new Database('/app/data/app.db', { readonly: true });
+              const q = (sql) => { try { return db.prepare(sql).all(); } catch (e) { return [{ err: e.message }]; } };
+              console.log('-- posts: last 12 (newest first) --');
+              for (const r of q(\"SELECT id, platform, status, published_at, substr(coalesce(error,''),1,150) AS err FROM posts ORDER BY id DESC LIMIT 12\")) console.log(JSON.stringify(r));
+              console.log('-- posts touched today (Asia/Tashkent = UTC+5) --');
+              for (const r of q(\"SELECT id, platform, status, published_at, substr(coalesce(error,''),1,150) AS err FROM posts WHERE date(coalesce(published_at, scheduled_at), '+5 hours') = date('now', '+5 hours') ORDER BY id DESC LIMIT 20\")) console.log(JSON.stringify(r));
+              console.log('-- status counts today --');
+              for (const r of q(\"SELECT status, count(*) AS n FROM posts WHERE date(coalesce(published_at, scheduled_at), '+5 hours') = date('now', '+5 hours') GROUP BY status\")) console.log(JSON.stringify(r));
+              console.log('-- daily_counts (last 10) --');
+              for (const r of q('SELECT * FROM daily_counts ORDER BY date DESC LIMIT 10')) console.log(JSON.stringify(r));
+              console.log('-- image_provider_usage (last 40 rows) --');
+              for (const r of q('SELECT * FROM image_provider_usage ORDER BY date DESC, provider LIMIT 40')) console.log(JSON.stringify(r));
+              db.close();
+            }).catch((e) => console.log('db probe failed:', e.message));
+            " 2>&1 || echo "(db query failed)"
+
+            echo "=== DATA DIR ==="
+            ls -la data/ 2>/dev/null | head -30
+            echo "--- generated images (newest 12) ---"
+            ls -lt data/images/ 2>/dev/null | head -13 || echo "(no images dir)"
+
+            echo "=== TELEGRAM REACHABILITY (from inside container) ==="
+            docker compose exec -T pipeline node -e "
+            const t = process.env.TELEGRAM_BOT_TOKEN || '';
+            if (!t) { console.log('TELEGRAM_BOT_TOKEN not set in container'); process.exit(0); }
+            const t0 = Date.now();
+            fetch('https://api.telegram.org/bot' + t + '/getMe', { signal: AbortSignal.timeout(12000) })
+              .then(async (r) => { const j = await r.json(); console.log('getMe http=' + r.status + ' ms=' + (Date.now() - t0) + ' ok=' + j.ok + ' user=@' + (j.result && j.result.username)); })
+              .catch((e) => console.log('getMe FAILED ms=' + (Date.now() - t0) + ' err=' + e.message));
+            " 2>&1 || echo "(telegram probe failed)"
+
+            echo "=== OTHER CONTAINERS (previous runs keep their own logs) ==="
+            docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true
+
             echo "=== CONTAINER ==="
             docker compose ps -a || true
             STATUS=$(docker inspect -f '{{.State.Status}}' istam-ai-pipeline 2>/dev/null || echo missing)
