@@ -85,9 +85,44 @@ jobs:
             }).catch((e) => console.log('errText probe failed:', e.message));
             " 2>&1 || echo "(errText probe failed)"
 
+            echo "=== FALLBACK FOOTER BUDGET (from the DEPLOYED dist) ==="
+            # Read-only. `softBodyTarget` is a BODY budget, so the format layer
+            # must reserve room for the compact footer (241 chars) and the
+            # hashtags BEFORE packing. When it handed that value to packText as a
+            # TOTAL budget instead, packText shed the hashtags and then the whole
+            # footer on any body over ~3696 chars — the post shipped with no brand
+            # footer and no divider (canonical 8a5ec485806b5d05 v1: text=3816, no
+            # rule). This probe renders a deliberately long body from the
+            # DEPLOYED dist and fails if the footer is gone.
+            docker compose exec -T pipeline node -e "
+            Promise.all([
+              import('./dist/canonical/formatFromCanonical.js'),
+              import('./dist/config/platformTextLimits.js'),
+            ]).then(([f, p]) => {
+              const sentence = 'Ishlab chiqarishda ishonchlilik qatlami juda muhim hisoblanadi. ';
+              let body = '';
+              while (body.length < 4200) body += sentence;
+              const doc = {
+                id: 'probe', sourceUrl: 'https://example.com/a', title: 'Probe',
+                body: body, language: 'uz', version: 1,
+                createdAt: '2026-01-01T00:00:00.000Z',
+                updatedAt: '2026-01-01T00:00:00.000Z', contentHash: 'probe',
+              };
+              const tg = f.formatAllFromCanonical(doc, ['telegram']).telegram || {};
+              const text = tg.text || '';
+              const soft = p.getPlatformTextPolicy('telegram').softBodyTarget;
+              const rule = String.fromCharCode(0x2500).repeat(8);
+              const footerShown = text.indexOf(rule) !== -1;
+              const tagsShown = /(^|\s)#\w/.test(text);
+              const underBudget = text.length <= soft;
+              console.log('body=' + body.length + ' text=' + text.length + ' soft=' + soft);
+              console.log('footerShown=' + footerShown + ' tagsShown=' + tagsShown + ' underBudget=' + underBudget);
+              process.exit(footerShown && tagsShown && underBudget ? 0 : 1);
+            }).catch((e) => { console.log('footer probe failed:', e.message); process.exit(1); });
+            " 2>&1 || echo "::warning::FALLBACK FOOTER PROBE reported a problem — a long body is shedding the brand footer"
+
             echo "=== LIVE IMAGE PIPELINE PROBE ==="
             docker compose exec -T pipeline node -r dotenv/config -e "import('./dist/lib/imagePipeline.js').then(m => m.logAllImageBudgets())" 2>&1 || true
-
             echo "=== SCHEDULE ==="
             cat data/daily-schedule.json 2>/dev/null || echo "no schedule yet"
 
