@@ -77,6 +77,11 @@ describe("telegram rich formatting", () => {
 
     // The fallback layout is unchanged — it still opens the footer with the
     // box-drawing rule, exactly as before this change.
+    //
+    // NOTE: `BODY` here is only ~528 chars, well below the point where the
+    // fallback budget comes under pressure — so this test alone would NOT have
+    // caught the footer-shedding regression. The real guard, with deliberately
+    // long fixtures, is `telegramFallbackBudget.test.ts`.
     expect(tg.text).toContain("────────");
   });
 

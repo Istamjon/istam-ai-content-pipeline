@@ -308,13 +308,37 @@ function formatOne(
   // derives the continuation with a plain slice() (no duplicated opening).
   if (policy.strategy === "telegram_native") {
     const capHard = policy.captionHardLimit ?? 1024;
-    const fullPacked = packText(
-      escapeHtml(clean),
-      footer,
-      hashtags,
-      soft,
-      false,
+    // `softBodyTarget` is a BODY budget — the same meaning the `full` strategy
+    // gives it below — not a total one. The footer and hashtags are brand
+    // elements that must survive, so reserve their room (plus the two `\n\n`
+    // joiners) BEFORE packing.
+    //
+    // Regression this prevents: handing `soft` to `packText` as a TOTAL budget
+    // made it shed the hashtags and then the entire 241-char compact footer on
+    // any body over `soft − 241 − 59 − 4 ≈ 3696` chars, and finally hard-shrink
+    // the body — so the post shipped with no brand footer and no divider.
+    // Live: canonical 8a5ec485806b5d05 v1 (11:31:45Z) shipped text=3816 with no
+    // `────────`. The old unit test only passed because its fixture is ~528
+    // chars, far below the pressure point.
+    const softTarget = Math.min(soft, hard);
+    const bodyBudget = Math.max(
+      80,
+      softTarget -
+        (footer ? footer.length + 2 : 0) -
+        (hashtags ? hashtags.length + 2 : 0),
     );
+    const escaped = escapeHtml(clean);
+    // `truncateHtmlPrefix` cuts at a sentence boundary and rewinds past a
+    // dangling entity or an unclosed tag, so the trimmed body stays a valid
+    // `parse_mode=HTML` fragment (a bare `&am` would be rejected outright).
+    const bodyCore =
+      escaped.length > bodyBudget
+        ? truncateHtmlPrefix(escaped, bodyBudget)
+        : escaped;
+    // Packed against the REAL hard limit: the body is already inside the soft
+    // target, so this only accounts for the `\n\n` joiners. `packText`'s
+    // shedding order stays as a backstop and should never trigger here.
+    const fullPacked = packText(bodyCore, footer, hashtags, hard, false);
     const caption = truncateHtmlPrefix(fullPacked, capHard);
     // Rich variant of the SAME post. `text` above stays exactly as it was — the
     // caption/continuation fallback cannot parse rich-only tags — while the rich
@@ -328,7 +352,7 @@ function formatOne(
       sourceUrl,
     );
     console.log(
-      `[format] ${platform} strategy=native full=${fullPacked.length} caption=${caption.length}/${capHard} rich=${richHtml.length}`,
+      `[format] ${platform} strategy=native body=${bodyCore.length}/${bodyBudget} full=${fullPacked.length}/${hard} caption=${caption.length}/${capHard} footer=${footer ? footer.length : 0} tags=${hashtags.length} rich=${richHtml.length}`,
     );
     return {
       text: fullPacked,

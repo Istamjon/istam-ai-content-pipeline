@@ -45,11 +45,13 @@ export const PLATFORM_TEXT_POLICIES: Record<Platform, PlatformTextPolicy> = {
     strategy: "telegram_native",
     maxHashtags: 5,
     footerMode: "compact",
-    // Budget for the FALLBACK layout only: `text` is a caption prefix plus
-    // continuation message(s), all ≤ `apiHardLimit` (4096). The rich path
-    // ignores this value entirely and packs against `richHardLimit` instead, so
-    // this number never limits the rich post. Held just under the hard limit,
-    // leaving room for the footer and hashtags that `packText` appends.
+    // BODY budget for the FALLBACK layout only — NOT a total budget. `text` is
+    // a caption prefix plus continuation message(s), each ≤ `apiHardLimit`
+    // (4096); `sendMessage` chunks the remainder, so `text` may exceed 4096.
+    // The format layer reserves room for the compact footer (241 chars) and the
+    // hashtags BEFORE packing the body, so `body + footer + hashtags ≤ 4000` and
+    // the brand footer can never be shed. The rich path ignores this value
+    // entirely and packs against `richHardLimit`, so it never limits the rich post.
     softBodyTarget: 4000,
     audienceNotes: "Uzbek tech learners — full article read inside Telegram",
     styleNotes: "Clear practical Uzbek; HTML bold/links OK",
