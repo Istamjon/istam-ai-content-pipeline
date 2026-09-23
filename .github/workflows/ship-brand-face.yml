@@ -62,7 +62,7 @@ jobs:
           esac
 
       - name: SCP brand face to VDS
-        uses: appleboy/scp-action@v0.1.7
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.VDS_HOST }}
           username: ${{ secrets.VDS_USER }}
