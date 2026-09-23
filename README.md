@@ -174,6 +174,35 @@ finish before ~2500** (where Nano Banana truncates). Only the thumbnail
 self-check sits in the tail. See
 [`src/config/imagePrompt.ts`](./src/config/imagePrompt.ts).
 
+#### Why a provider shows `0` in the ledger
+
+`image_provider_usage` counts **successes only** — `incrementProviderImageUsage()`
+runs immediately before a provider returns its buffer. A provider that is
+attempted and fails every time therefore looks identical in the ledger to one
+that was never called: both read `0`. A real run showed `UNOROUTER 0/15` and
+`NANOBANANA 0/12` while Skywork — which was demonstrably attempted — also read
+`0/20`. So the ledger must never be read as proof that a provider was skipped.
+
+The chain emits **one line** naming every decision, on every exit path:
+
+```
+[imagePipeline] chain: unorouter=failed nanobanana=failed skywork=failed xkiro=diagram → xkiro
+```
+
+Each entry is one of `=ok`, `=ok(unverified)`, `=verify-failed`, `=failed`,
+`=budget <used>/<limit>`, `=not-configured` or `=diagram`; the value after `→` is
+the provider that actually produced the cover (`none` when the chain dies). It is
+a single line on purpose: the ops workflow printed only the last 15 lines of the
+container log, and a multi-line trail would have been the first thing to scroll
+away.
+
+To ask whether a key is *alive* without spending image quota, run
+`scripts/image-provider-probe.cjs` (wired into the `VDS Health` workflow). It hits
+each provider's own model-list endpoint — never an image endpoint — so a dead key
+becomes a fact instead of a hypothesis. A green result means the key is valid and
+can see the model; it does **not** prove remaining quota, which is only consumed
+at `generateContent`.
+
 ### Brand face (`data/brand/face.jpg`)
 
 Identity-preserving covers need the real photo bytes on a multimodal provider.

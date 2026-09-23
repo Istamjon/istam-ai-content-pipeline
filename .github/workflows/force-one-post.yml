@@ -211,9 +211,16 @@ jobs:
             ok=0
             for i in $(seq 1 75); do
               sleep 20
-              logs=$(docker compose logs --tail=120 2>&1 || true)
+              logs=$(docker compose logs --tail=400 2>&1 || true)
               echo "--- poll $i ---"
-              echo "$logs" | tail -n 15
+              # Print the whole window we already fetched. This used to be
+              # `tail -n 15`, which threw away 105 of 120 lines and made the run
+              # undiagnosable after the fact: the container is recreated a few
+              # seconds after this loop ends, so what is printed here is the ONLY
+              # surviving copy. An image-chain failure scrolled out of the
+              # 15-line window, and we could no longer tell a provider that was
+              # attempted-and-failed from one that was never called.
+              echo "$logs" | tail -n 60
               if echo "$logs" | grep -qE '"published": true|status.: .success|publish succeeded|OK provider='; then
                 if echo "$logs" | grep -qE 'publish succeeded|"published": true|status.: .success'; then
                   echo "FOUND publish signal"
@@ -227,9 +234,21 @@ jobs:
               fi
             done
 
+            # ── Image chain, from the FULL log, before the container is recreated ──
+            # The per-poll window above is size-limited, so a provider line can
+            # still scroll out between two polls. This greps the complete log of
+            # the run instead of a window, and must run BEFORE `docker compose up
+            # -d` below wipes it. Answers: which provider produced the cover, and
+            # why each identity provider was skipped or failed.
+            echo "=== IMAGE CHAIN (full log of this run) ==="
+            docker compose logs 2>&1 \
+              | grep -E '\[imagePipeline\]|\[unorouter\]|\[nanobanana\]|\[skywork\]|\[xkiro\]|\[gemini\] model=.*image|OK provider=|brand face' \
+              || echo "(no image-chain lines found)"
+            echo "=== IMAGE CHAIN END ==="
+
             upsert CRON_RUN_ON_START false
             docker compose up -d || true
-            docker compose logs --tail=80 2>&1 || true
+            docker compose logs --tail=200 2>&1 || true
             if [ "$ok" != "1" ]; then
               echo "::warning::No confirmed publish within poll window — check container logs / next slot"
               # do not fail hard: scheduler still running for daily 3–6 slots

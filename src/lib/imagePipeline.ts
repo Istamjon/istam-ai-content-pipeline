@@ -105,6 +105,22 @@ export async function generateImageBuffer(
   options?: GenerateImageBufferOptions,
 ): Promise<{ buffer: Buffer; provider: ImageProviderUsed }> {
   const errors: string[] = [];
+  /**
+   * One entry per provider decision, in chain order.
+   *
+   * `image_provider_usage` counts SUCCESSES only (`incrementProviderImageUsage`
+   * runs immediately before a provider returns its buffer), so a provider that
+   * fails every single time is indistinguishable in the ledger from one that was
+   * never called — both read `0`. A real run showed `UNOROUTER 0/15` and
+   * `NANOBANANA 0/12` while Skywork, which was demonstrably attempted, also read
+   * `0/20`; the ledger could not tell them apart and the surrounding log had
+   * already scrolled past the evidence.
+   *
+   * So the decision trail is emitted as ONE line on every exit path. A single
+   * line survives even a 15-line log tail, which is what the ops workflow used
+   * to print.
+   */
+  const decisions: string[] = [];
   const face = await loadBrandFace();
   const requireIdentity = Boolean(face) && env.REQUIRE_BRAND_FACE;
   const schematicPrompt = options?.schematicPrompt;
@@ -131,6 +147,13 @@ export async function generateImageBuffer(
   // exists AND REQUIRE_BRAND_FACE is on. xKiro is excluded by design (diagram).
   const verifyEnabled = requireIdentity && env.FACE_VERIFY;
 
+  /** Emit the one-line decision trail. Must run on every exit path. */
+  const logChain = (provider: ImageProviderUsed | "none"): void => {
+    console.log(
+      `[imagePipeline] chain: ${decisions.join(" ")} → ${provider}`,
+    );
+  };
+
   /**
    * Accept a provider's output only if it passes the vision check.
    * Throwing here is deliberate: the surrounding try/catch turns it into a
@@ -140,21 +163,30 @@ export async function generateImageBuffer(
     buffer: Buffer,
     provider: ImageProviderUsed,
   ): Promise<{ buffer: Buffer; provider: ImageProviderUsed }> => {
-    if (!verifyEnabled || !face) return { buffer, provider };
+    if (!verifyEnabled || !face) {
+      decisions.push(`${provider}=ok`);
+      logChain(provider);
+      return { buffer, provider };
+    }
 
     const v = await verifyBrandFace({ generated: buffer, face });
     if (v.skipped) {
+      decisions.push(`${provider}=ok(unverified)`);
       console.warn(
         `[imagePipeline] ${provider}: face verification SKIPPED (${v.reason}) — accepting unverified`,
       );
+      logChain(provider);
       return { buffer, provider };
     }
     if (v.ok) {
+      decisions.push(`${provider}=ok`);
       console.log(
         `[imagePipeline] ✅ ${provider}: brand face verified (confidence=${v.confidence.toFixed(2)})`,
       );
+      logChain(provider);
       return { buffer, provider };
     }
+    decisions.push(`${provider}=verify-failed`);
     throw new Error(
       `brand face verification FAILED on ${provider} ` +
         `(same_person=${v.samePerson}, confidence=${v.confidence.toFixed(2)} < ` +
@@ -186,6 +218,7 @@ export async function generateImageBuffer(
     } catch (e) {
       const msg = describeError(e);
       errors.push(`unorouter: ${msg}`);
+      decisions.push("unorouter=failed");
       console.warn(
         `[imagePipeline] UnoRouter FAILED → 2) Nano Banana | ${msg.slice(0, 200)}`,
       );
@@ -193,10 +226,12 @@ export async function generateImageBuffer(
   } else if (isUnorouterConfigured()) {
     const b = canUseUnorouterToday();
     errors.push(`unorouter: budget ${b.used}/${b.limit}`);
+    decisions.push(`unorouter=budget ${b.used}/${b.limit}`);
     console.warn(
       `[imagePipeline] UnoRouter budget exhausted (${b.used}/${b.limit} rem=${b.remaining}) → 2) Nano Banana`,
     );
   } else {
+    decisions.push("unorouter=not-configured");
     console.warn("[imagePipeline] UnoRouter not configured → 2) Nano Banana");
   }
 
@@ -216,6 +251,7 @@ export async function generateImageBuffer(
     } catch (e) {
       const msg = describeError(e);
       errors.push(`nanobanana: ${msg}`);
+      decisions.push("nanobanana=failed");
       console.warn(
         `[imagePipeline] Nano Banana FAILED → 3) Skywork | ${msg.slice(0, 200)}`,
       );
@@ -223,10 +259,12 @@ export async function generateImageBuffer(
   } else if (isNanoBananaConfigured()) {
     const b = canUseNanoBananaToday();
     errors.push(`nanobanana: budget ${b.used}/${b.limit}`);
+    decisions.push(`nanobanana=budget ${b.used}/${b.limit}`);
     console.warn(
       `[imagePipeline] Nano Banana budget exhausted (${b.used}/${b.limit} rem=${b.remaining}) → 3) Skywork`,
     );
   } else {
+    decisions.push("nanobanana=not-configured");
     console.warn("[imagePipeline] Nano Banana not configured → 3) Skywork");
   }
 
@@ -246,6 +284,7 @@ export async function generateImageBuffer(
     } catch (e) {
       const msg = describeError(e);
       errors.push(`skywork: ${msg}`);
+      decisions.push("skywork=failed");
       console.warn(
         `[imagePipeline] Skywork FAILED → 4) xKiro LAST RESORT (workflow only) | ${msg.slice(0, 200)}`,
       );
@@ -253,10 +292,12 @@ export async function generateImageBuffer(
   } else if (isSkyworkConfigured()) {
     const b = canUseSkyworkToday();
     errors.push(`skywork: budget ${b.used}/${b.limit}`);
+    decisions.push(`skywork=budget ${b.used}/${b.limit}`);
     console.warn(
       `[imagePipeline] Skywork budget exhausted (${b.used}/${b.limit} rem=${b.remaining}) → 4) xKiro last resort`,
     );
   } else {
+    decisions.push("skywork=not-configured");
     console.warn("[imagePipeline] Skywork not configured → 4) xKiro last resort");
   }
 
@@ -281,6 +322,8 @@ export async function generateImageBuffer(
       });
       // Deliberately NOT face-verified: xKiro never receives face.jpg, so the
       // output is a topic diagram, not a portrait. The post still publishes.
+      decisions.push("xkiro=diagram");
+      logChain("xkiro");
       console.warn(
         "[imagePipeline] xKiro produced a DIAGRAM cover (no brand face by design) — " +
           "post will publish with a diagram instead of a portrait.",
@@ -289,6 +332,7 @@ export async function generateImageBuffer(
     } catch (e) {
       const msg = describeError(e);
       errors.push(`xkiro: ${msg}`);
+      decisions.push("xkiro=failed");
       console.warn(
         `[imagePipeline] xKiro FAILED — ALL providers exhausted: ${msg.slice(0, 200)}`,
       );
@@ -296,10 +340,12 @@ export async function generateImageBuffer(
   } else if (isXkiroConfigured()) {
     const b = canUseXkiroToday();
     errors.push(`xkiro: budget ${b.used}/${b.limit}`);
+    decisions.push(`xkiro=budget ${b.used}/${b.limit}`);
     console.warn(
       `[imagePipeline] xKiro budget exhausted (${b.used}/${b.limit}) — ALL providers exhausted`,
     );
   } else {
+    decisions.push("xkiro=not-configured");
     console.warn("[imagePipeline] xKiro not configured (XKIRO_API_KEY) — ALL providers exhausted");
   }
 
@@ -307,6 +353,7 @@ export async function generateImageBuffer(
   const nb = isNanoBananaConfigured() ? canUseNanoBananaToday() : null;
   const sw = isSkyworkConfigured() ? canUseSkyworkToday() : null;
   const xk = isXkiroConfigured() ? canUseXkiroToday() : null;
+  logChain("none");
   throw new Error(
     `All image providers failed/exhausted${requireIdentity ? " (REQUIRE_BRAND_FACE=true)" : ""}.\n` +
       `Budgets: unorouter=${ur ? `${ur.used}/${ur.limit} rem=${ur.remaining}` : "off"} ` +

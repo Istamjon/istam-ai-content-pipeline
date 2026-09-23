@@ -123,6 +123,23 @@ jobs:
 
             echo "=== LIVE IMAGE PIPELINE PROBE ==="
             docker compose exec -T pipeline node -r dotenv/config -e "import('./dist/lib/imagePipeline.js').then(m => m.logAllImageBudgets())" 2>&1 || true
+
+            echo "=== IDENTITY PROVIDER KEY PROBE (read-only, no image quota) ==="
+            # The budget ledger counts SUCCESSES only, so "0/15" cannot tell a
+            # provider that fails every time from one that was never called —
+            # and a failed Skywork attempt also reads "0/20". This asks each
+            # provider's own model list whether the key is alive, so a dead key
+            # becomes a fact instead of a hypothesis. No image endpoint is hit.
+            # Pulled from origin/main so it runs before the next deploy lands.
+            if git show origin/main:scripts/image-provider-probe.cjs > /tmp/image-provider-probe.cjs 2>/dev/null; then
+              docker compose cp /tmp/image-provider-probe.cjs pipeline:/tmp/image-provider-probe.cjs >/dev/null 2>&1 \
+                || docker cp /tmp/image-provider-probe.cjs istam-ai-pipeline:/tmp/image-provider-probe.cjs >/dev/null 2>&1 \
+                || echo "(could not copy probe into the container)"
+              docker compose exec -T pipeline node /tmp/image-provider-probe.cjs 2>&1 || echo "(identity provider probe failed)"
+            else
+              echo "(scripts/image-provider-probe.cjs not in origin/main yet)"
+            fi
+
             echo "=== SCHEDULE ==="
             cat data/daily-schedule.json 2>/dev/null || echo "no schedule yet"
 
