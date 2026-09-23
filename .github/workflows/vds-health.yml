@@ -67,6 +67,24 @@ jobs:
             }).catch((e) => console.log('budget probe failed:', e.message));
             " 2>&1 || echo "(budget probe failed)"
 
+            echo "=== ERROR-CAUSE PROBE (from the DEPLOYED dist) ==="
+            # Read-only. Proves describeError actually shipped, and that an error
+            # with no cause still renders byte-identically to String(error).
+            # Before this, a whole class of failures reported only
+            # "TypeError: fetch failed" — no host, no reason.
+            docker compose exec -T pipeline node -e "
+            import('./dist/lib/errText.js').then((m) => {
+              const cause = new Error('getaddrinfo ENOTFOUND graph.facebook.com');
+              cause.code = 'ENOTFOUND'; cause.syscall = 'getaddrinfo'; cause.hostname = 'graph.facebook.com';
+              const err = new TypeError('fetch failed');
+              err.cause = cause;
+              const shown = m.describeError(err);
+              const plain = m.describeError(new TypeError('fetch failed'));
+              console.log('causeShown=' + /ENOTFOUND/.test(shown) + ' hostShown=' + /hostname=graph\.facebook\.com/.test(shown) + ' plainUnchanged=' + (plain === 'TypeError: fetch failed'));
+              console.log('sample=' + shown);
+            }).catch((e) => console.log('errText probe failed:', e.message));
+            " 2>&1 || echo "(errText probe failed)"
+
             echo "=== LIVE IMAGE PIPELINE PROBE ==="
             docker compose exec -T pipeline node -r dotenv/config -e "import('./dist/lib/imagePipeline.js').then(m => m.logAllImageBudgets())" 2>&1 || true
 
