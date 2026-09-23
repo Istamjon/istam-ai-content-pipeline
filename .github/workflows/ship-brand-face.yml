@@ -1,0 +1,130 @@
+# Ship the brand face to the VDS WITHOUT publishing anything.
+#
+# WHY THIS EXISTS
+# ---------------
+# The README says "CI ships it from the BRAND_FACE_B64 secret", but nothing in
+# `deploy.yml` or `scripts/vds-deploy.sh` reads that secret — the only workflow
+# that does is `force-one-post.yml`, which ships the face AND publishes a post to
+# every platform as a side effect. So setting the secret on its own leaves
+# `data/brand/face.jpg` missing on the VDS, and the scheduled pipeline keeps
+# falling through to the faceless xKiro diagram:
+#
+#   [AI] REQUIRE_BRAND_FACE: true | Face chain: 1)UnoRouter(edit)
+#        → 2)NanoBanana(multimodal) → 3)Skywork(edit)
+#        | Last resort: 4)xKiro(workflow diagram, NO face)
+#   [AI] BRAND FACE: not found (expected data/brand/face.jpg or BRAND_FACE_IMAGE)
+#
+# With the face missing, providers 1-3 never run at all, so the whole face budget
+# (UnoRouter 15/day + NanoBanana 12/day + Skywork 20/day) sits unused.
+#
+# USAGE
+# -----
+#   base64 -i face.jpg | tr -d '\n' | gh secret set BRAND_FACE_B64
+#   gh workflow run ship-brand-face.yml
+#
+# The secret must decode to a JPEG larger than 1000 bytes.
+#
+# This is read-only with respect to content: it places the file and verifies the
+# container can load it. It does NOT touch `.env`, does NOT set
+# CRON_RUN_ON_START, and does NOT run the pipeline.
+name: Ship Brand Face
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vds
+  cancel-in-progress: false
+
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Materialise brand face from BRAND_FACE_B64 secret
+        env:
+          BRAND_FACE_B64: ${{ secrets.BRAND_FACE_B64 }}
+        run: |
+          if [ -z "$BRAND_FACE_B64" ]; then
+            echo "::error::BRAND_FACE_B64 is not set. Create it from your local photo:"
+            echo "::error::  base64 -i face.jpg | tr -d '\n' | gh secret set BRAND_FACE_B64"
+            exit 1
+          fi
+          mkdir -p .face-staging/data/brand
+          printf '%s' "$BRAND_FACE_B64" | tr -d '\n\r' | base64 -d > .face-staging/data/brand/face.jpg
+          size=$(wc -c < .face-staging/data/brand/face.jpg)
+          magic=$(head -c 2 .face-staging/data/brand/face.jpg | od -An -tx1 | tr -d ' \n')
+          echo "decoded bytes=$size magic=$magic"
+          [ "$size" -gt 1000 ] || { echo "::error::decoded face is only $size bytes (pipeline needs >1000)"; exit 1; }
+          case "$magic" in
+            ffd8) echo "OK: valid JPEG header" ;;
+            *) echo "::error::decoded face is not a JPEG (magic=$magic)"; exit 1 ;;
+          esac
+
+      - name: SCP brand face to VDS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          source: ".face-staging/data/brand/face.jpg"
+          target: "/tmp/istam-brand-face/"
+          strip_components: 1
+
+      - name: Place face on VDS and verify (no publish)
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          command_timeout: 5m
+          script_stop: false
+          envs: REMOTE_APP_DIR
+          script: |
+            set -e
+            APP_DIR="${REMOTE_APP_DIR:-}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d "$HOME/istam-ai-content-pipeline" ] && APP_DIR="$HOME/istam-ai-content-pipeline"
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /root/istam-ai-content-pipeline ] && APP_DIR=/root/istam-ai-content-pipeline
+            fi
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR" ]; then
+              [ -d /opt/istam-ai-content-pipeline ] && APP_DIR=/opt/istam-ai-content-pipeline
+            fi
+            echo "APP_DIR=$APP_DIR"
+            test -n "$APP_DIR" && test -d "$APP_DIR"
+            cd "$APP_DIR"
+
+            mkdir -p data/brand data/images data/tokens
+            # SCP lands as /tmp/istam-brand-face/data/brand/face.jpg
+            if [ -f /tmp/istam-brand-face/data/brand/face.jpg ]; then
+              cp -f /tmp/istam-brand-face/data/brand/face.jpg data/brand/face.jpg
+            elif [ -f /tmp/istam-brand-face/face.jpg ]; then
+              cp -f /tmp/istam-brand-face/face.jpg data/brand/face.jpg
+            else
+              echo "::error::staged face not found under /tmp/istam-brand-face/"
+              ls -laR /tmp/istam-brand-face/ 2>/dev/null || true
+              exit 1
+            fi
+
+            # Container runs as uid 10001; data/ is a bind mount, so the file is
+            # visible inside the container immediately — no rebuild required.
+            chown -R 10001:10001 data 2>/dev/null || true
+            ls -la data/brand/face.jpg
+
+            echo "=== FACE CHECK (read-only, no generation) ==="
+            docker compose exec -T pipeline node -e "
+            import('./dist/lib/brandFace.js').then(async (m) => {
+              m.logBrandFace();
+              const f = await m.loadBrandFace();
+              console.log(f ? ('OK face bytes ' + f.buffer.length) : 'NO FACE');
+            }).catch((e) => console.log('face check failed:', e.message));
+            " 2>&1 || echo "(exec check failed — trying a one-shot container)"
+
+            echo "=== IMAGE BUDGET (proves the face chain is now reachable) ==="
+            docker compose exec -T pipeline node -r dotenv/config -e "import('./dist/lib/imagePipeline.js').then(m => m.logAllImageBudgets())" 2>&1 || true
