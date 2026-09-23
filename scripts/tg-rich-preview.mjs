@@ -43,6 +43,8 @@ const { listCanonical, loadCanonical } =
   await import("../dist/canonical/store.js");
 const { formatAllFromCanonical } =
   await import("../dist/canonical/formatFromCanonical.js");
+const { getPlatformTextPolicy } =
+  await import("../dist/config/platformTextLimits.js");
 const fs = await import("node:fs");
 const path = await import("node:path");
 
@@ -81,8 +83,19 @@ if (!tg) {
 }
 
 const rich = tg.richHtml || "";
+// `softBodyTarget` is a BODY budget: the format layer reserves room for the
+// compact footer and the hashtags before packing, so `text` must land under it
+// WITH the footer present. Before that fix, a body over ~3696 chars made
+// `packText` shed the hashtags and then the whole 241-char footer, and the post
+// shipped with no brand footer and no divider (canonical 8a5ec485806b5d05 v1).
+const tgPolicy = getPlatformTextPolicy("telegram");
+const soft = tgPolicy.softBodyTarget ?? tgPolicy.apiHardLimit;
+
 console.log(`\n=== FORMATTED ===`);
 console.log(`text=${tg.text.length} caption=${(tg.caption || "").length}`);
+console.log(
+  `text budget: soft=${soft} apiHard=${tgPolicy.apiHardLimit} richHard=${tgPolicy.richHardLimit ?? "(none)"}`,
+);
 console.log(`richHtml=${rich.length} (${tg.richHtml ? "present" : "ABSENT"})`);
 
 const checks = [
@@ -93,6 +106,8 @@ const checks = [
   ],
   ["richHtml dropped the ASCII rule", !rich.includes("────────")],
   ["text keeps the ASCII rule", tg.text.includes("────────")],
+  ["text keeps the hashtags", /(^|\s)#\w/.test(tg.text)],
+  ["text <= softBodyTarget", tg.text.length <= soft],
   ["text has NO <hr/>", !tg.text.includes("<hr/>")],
   ["text has NO <footer>", !tg.text.includes("<footer>")],
   ["caption has NO <hr/>", !(tg.caption || "").includes("<hr/>")],

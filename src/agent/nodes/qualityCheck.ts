@@ -8,6 +8,8 @@ import {
   looksComplete,
   repairTruncation,
   stripUnsupportedNumbers,
+  normalizeParagraphs,
+  longestParagraph,
   MAX_BODY_CHARS,
 } from "../../lib/draftRepair.js";
 import { describeError } from "../../lib/errText.js";
@@ -29,6 +31,18 @@ export async function qualityCheck(
     let text = repairTruncation(current.rewritten);
     text = stripUnsupportedNumbers(text, sourcePool);
     text = repairTruncation(text);
+    // Rhythm repair: the writer prompt asks for 1–3 sentences per paragraph
+    // (≤~350 chars) but nothing enforced it, so long articles shipped 900+ char
+    // walls of text. Deterministic and word-preserving — it only inserts breaks
+    // at existing sentence boundaries, and leaves any block it cannot prove safe
+    // (links, abbreviations, headings, lists) exactly as written.
+    const beforeRhythm = text;
+    text = normalizeParagraphs(text);
+    if (text !== beforeRhythm) {
+      console.log(
+        `[qualityCheck] paragraph normalise: ${beforeRhythm.split(/\n{2,}/).length}→${text.split(/\n{2,}/).length} blocks, longest ${longestParagraph(beforeRhythm)}→${longestParagraph(text)} chars`,
+      );
+    }
     const draftChanged = text !== current.rewritten;
     if (draftChanged) {
       console.log(

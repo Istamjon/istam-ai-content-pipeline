@@ -167,3 +167,134 @@ export function looksComplete(text: string): boolean {
   }
   return false;
 }
+
+/**
+ * Rhythm cap for one paragraph, in characters.
+ *
+ * The writer prompt already asks for "Paragraphs of 1–3 sentences, never over
+ * ~350 characters" (prompts.ts) — but nothing enforced it, so the model ignored
+ * it on long articles and shipped walls of text. Live measurement of canonical
+ * `8a5ec485806b5d05` v1 ("The Reliability Layer for Healthcare AI"): the longest
+ * paragraph was 913 chars, i.e. ~2.6x the cap, and worse than the 714-char
+ * baseline it was supposed to improve on.
+ *
+ * Deliberately a SOFT cap enforced by `normalizeParagraphs` at sentence
+ * boundaries — NOT a `qualityCheck` gate. A length gate in the quality step
+ * blocks publishing outright, which is how the old 3500-char "Too long" gate
+ * made the rich-message feature unusable on exactly the long articles it was
+ * built for (see MAX_BODY_CHARS above).
+ */
+export const PARAGRAPH_SOFT_CAP = 350;
+
+/** Sentence-ish splitter, matching the one used by splitIntoThreadParts. */
+const SENTENCE_RE = /[^.!?…]+[.!?…]+(?:\s+|$)|[^.!?…]+$/g;
+const URL_RE = /https?:\/\/[^\s)»\]]+/g;
+const ABBREV_RE = /\b(?:e\.g|i\.e|va h\.k|h\.k|vs|Dr|Mr|Mrs|Ms)\./gi;
+
+/** Collapse every whitespace run to one space, for word-sequence comparison. */
+function collapse(s: string): string {
+  return (s || "").replace(/\s+/g, " ").trim();
+}
+
+/** True when the block carries markdown structure that must not be re-flowed. */
+function isStructuralBlock(block: string): boolean {
+  return block.split("\n").some((line) => {
+    const t = line.trim();
+    if (!t) return false;
+    return (
+      /^#{1,6}\s/.test(t) || // heading
+      /^[•\-*+]\s/.test(t) || // bullet
+      /^\d+[.)]\s/.test(t) || // numbered list
+      /^>/.test(t) || // quote
+      /^\|/.test(t) || // table
+      /^(manba|source|asosiy faktlar)\s*:?/i.test(t) // attribution / facts
+    );
+  });
+}
+
+/**
+ * Re-flow one prose block into paragraphs of ≤ `maxChars`, cutting ONLY at
+ * sentence boundaries.
+ *
+ * Returns `null` — meaning "leave this block exactly as written" — whenever the
+ * split cannot be proven safe: fewer than two sentences, or a round-trip check
+ * showing the whitespace-normalised word sequence changed. That check is what
+ * makes this safe to run on every draft: a link (`https://…`) or an
+ * abbreviation (`e.g.`) that the splitter would otherwise cut through makes the
+ * comparison fail and the block is left untouched.
+ */
+function splitProseBlock(block: string, maxChars: number): string | null {
+  const tokens: string[] = [];
+  const mask = (s: string) =>
+    s
+      .replace(URL_RE, (m) => {
+        tokens.push(m);
+        return `\uE000${tokens.length - 1}\uE001`;
+      })
+      .replace(ABBREV_RE, (m) => {
+        tokens.push(m);
+        return `\uE000${tokens.length - 1}\uE001`;
+      });
+  const restore = (s: string) =>
+    s.replace(/\uE000(\d+)\uE001/g, (_, d) => tokens[Number(d)] ?? "");
+
+  const sentences = (mask(block).match(SENTENCE_RE) || [])
+    .map((s) => restore(s.trim()))
+    .filter(Boolean);
+  if (sentences.length < 2) return null;
+
+  // Safety net: the split must not add, drop or reorder a single word.
+  if (collapse(sentences.join(" ")) !== collapse(block)) return null;
+
+  const paras: string[] = [];
+  let cur = "";
+  for (const s of sentences) {
+    const next = cur ? `${cur} ${s}` : s;
+    if (cur && next.length > maxChars) {
+      paras.push(cur);
+      cur = s;
+    } else {
+      cur = next;
+    }
+  }
+  if (cur) paras.push(cur);
+
+  // A single sentence longer than the cap cannot be split without rewriting it,
+  // so it is left intact rather than mangled.
+  if (paras.length < 2) return null;
+  return paras.join("\n\n");
+}
+
+/**
+ * Break over-long prose paragraphs at sentence boundaries.
+ *
+ * Word-preserving and idempotent: it only ever inserts paragraph breaks at
+ * boundaries that already exist, never touches headings / lists / tables /
+ * attribution, and returns the input unchanged when nothing is over the cap.
+ */
+export function normalizeParagraphs(
+  text: string,
+  maxChars: number = PARAGRAPH_SOFT_CAP,
+): string {
+  const t = (text || "").replace(/\r\n/g, "\n").trim();
+  if (!t || maxChars < 80) return t;
+
+  const out: string[] = [];
+  for (const block of t.split(/\n{2,}/)) {
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+    if (trimmed.length <= maxChars || isStructuralBlock(trimmed)) {
+      out.push(trimmed);
+      continue;
+    }
+    out.push(splitProseBlock(trimmed, maxChars) ?? trimmed);
+  }
+  return out.join("\n\n");
+}
+
+/** Longest paragraph length, in characters. Used for logging and ops probes. */
+export function longestParagraph(text: string): number {
+  return (text || "")
+    .split(/\n{2,}/)
+    .reduce((max, block) => Math.max(max, block.trim().length), 0);
+}
