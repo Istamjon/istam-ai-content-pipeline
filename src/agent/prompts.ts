@@ -106,7 +106,11 @@ ${GLOBAL_RULES}
 BRAND CONTEXT:
 ${BRAND}
 
-OUTPUT LANGUAGE: Uzbek (Latin script) for SUMMARY/NOTES; FACTS lines may keep English tech terms.`,
+OUTPUT LANGUAGE: Uzbek (Latin script) for SUMMARY, NOTES and FACTS.
+FACTS lines are appended to the published post, so write each one as a complete
+UZBEK sentence. Keep only proper nouns and standard technical terms
+(LlamaIndex, LangSmith, MCP, API) in English — never put a whole English
+sentence in FACTS.`,
 
   translator: `You are the Technical Translator for personal brand "${brand.name}".
 You translate AI Engineering content into clear, natural Uzbek (Latin script) for developers.
@@ -308,6 +312,12 @@ POST REQUIREMENTS:
    - Each bullet MUST be a short, concrete claim from ALLOWED FACTS or SOURCE only.
    - Do not invent bullets. If fewer than 3 solid facts exist, write only those that are solid.
    - Prefer numbers, product names, constraints, steps that appear in the source.
+   - Write the bullets in Uzbek, like the rest of the post — only proper nouns
+     and standard technical terms stay in English.
+   - Any concrete figure in ALLOWED FACTS (price, latency, multiplier, version,
+     benchmark) MUST ALSO appear in the body prose above. The bullets are a
+     recap, not the only home for the numbers: a number the reader meets for the
+     first time in the recap has done no persuading.
 6) No Manba/Source/URL footer
 7) No hashtags in body
 8) No clickbait; no crypto; no pure promotion
