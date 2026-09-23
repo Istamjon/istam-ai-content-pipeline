@@ -125,6 +125,70 @@ G. SELF-CHECK before returning (silently):
    - Would an engineer who reads this learn something they can use?
 `.trim();
 
+/**
+ * Dual-audience contract.
+ *
+ * The audience is genuinely mixed — `brand.targetAudience` declares a primary
+ * tier (beginners, juniors, students, IT entrepreneurs) and a secondary one
+ * (middle+ engineers, AI engineers, founders), and they read the SAME post. So
+ * "keep it simple" and "give me the real detail" are not a trade-off to pick
+ * between: the post has to do both, in that order, in different layers.
+ *
+ * The tiers are interpolated from `brand.targetAudience` below rather than
+ * restated, so this contract cannot drift from the brand it serves. (The list in
+ * this comment is illustrative — the declaration is the source of truth.)
+ *
+ * Written as an explicit contract because the failure mode is quiet. A post that
+ * only serves beginners reads as filler to a senior engineer and never earns a
+ * follow; a post that only serves seniors loses the far larger beginner audience
+ * the brand is built on. Neither shows up as an error anywhere.
+ */
+const AUDIENCE_CONTRACT = `
+DUAL-AUDIENCE CONTRACT — every post must satisfy BOTH readers at once:
+
+Readers are mixed:
+- primary (the larger audience, must not be lost): ${brand.targetAudience.primary.join(", ")}
+- secondary (the one that decides whether the post is respected): ${brand.targetAudience.secondary.join(", ")}
+
+- LAYER 1 — THE PLAIN SENTENCE. For the beginner: what this is and why it
+  matters, in words a junior understands, in at most two sentences. Use a
+  concrete analogy ONLY where the source supports the mechanism.
+- LAYER 2 — THE PRACTITIONER DETAIL. For the senior: the actual mechanism, the
+  specific constraint, the number, the failure mode, and when NOT to reach for
+  this. This is where the post earns respect — never drop it to stay "simple".
+- DO NOT explain what the reader can look up (what an LLM is, what an API is).
+  Translate the CONSEQUENCE instead: what changes for them, what it costs, what
+  breaks, what they would have to maintain.
+- Precision is what makes it useful to both: every claim a senior would
+  challenge must either come from the source or be marked as the source's claim.
+- INTEREST comes from tension the source already contains: a concrete problem, a
+  counter-intuitive detail, or a cost the reader is paying without knowing.
+  Never manufacture drama — the source's own specifics are the hook.
+- Close with something actionable today, and make the benefit visible at both
+  levels: the junior can try it, the senior can evaluate it.
+`.trim();
+
+/**
+ * Same contract, condensed for buildRewriteUserPrompt — that prompt already
+ * carries up to 10k characters of source text, so the long form would be paid
+ * for on every rewrite to say the same thing.
+ *
+ * The rule sentences are copied from the long form VERBATIM rather than
+ * paraphrased, so there is one canonical wording per rule. A paraphrase is a
+ * second copy of the rule, which is how the two drift apart.
+ */
+const AUDIENCE_CONTRACT_SHORT = `
+- Beginner: what this is and why it matters, in at most 2 plain sentences.
+- Senior: the real mechanism, the specific constraint, the number, and when NOT
+  to reach for this. Never drop this layer in order to stay "simple".
+- DO NOT explain what the reader can look up. Translate the CONSEQUENCE instead:
+  what changes for them, what it costs, what breaks, what they would have to
+  maintain.
+- Never manufacture drama — the source's own specifics are the hook.
+- Close with something actionable today: the junior can try it, the senior can
+  evaluate it.
+`.trim();
+
 // ─── Roles (system prompts) ───────────────────────────────────────────────
 
 export const roles = {
@@ -174,6 +238,8 @@ ${GLOBAL_RULES}
 
 ${COPY_CRAFT}
 
+${AUDIENCE_CONTRACT}
+
 ${VOICE_RULES}
 
 BRAND CONTEXT:
@@ -220,6 +286,8 @@ FACT DISCIPLINE (highest priority):
 ${GLOBAL_RULES}
 
 ${COPY_CRAFT}
+
+${AUDIENCE_CONTRACT}
 
 ${VOICE_RULES}
 
@@ -384,6 +452,9 @@ POST REQUIREMENTS:
    - "According to [site]"
    - Any "Blog X writes that…" attribution intro
    Start directly with the idea / hook — not the publisher name.
+12) DUAL AUDIENCE — the same post is read by a junior and by a senior engineer,
+    and both must get something:
+${AUDIENCE_CONTRACT_SHORT}
 ${feedbackBlock}
 EDITORIAL BRIEF (may include FIT/TYPE/SUMMARY/FACTS/NOTES):
 ${input.summary || "—"}
