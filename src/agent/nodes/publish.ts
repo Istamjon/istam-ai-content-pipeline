@@ -19,6 +19,8 @@ import {
 } from "../../lib/imageHost.js";
 import { refreshAllExpiringTokens } from "../../oauth/tokenRefresh.js";
 import { notifyPublishReport } from "../../lib/publishReport.js";
+import { platformRetryDelays } from "../../lib/retryBackoff.js";
+import { describeError } from "../../lib/errText.js";
 import { createHash } from "crypto";
 import fs from "fs";
 import path from "path";
@@ -89,6 +91,11 @@ async function publishOne(
     /** Telegram rich-message HTML (rich path only; never the caption fallback). */
     richHtml?: string;
     dryRun: boolean;
+    /**
+     * Post-row id already created for each result index, so a retry updates the
+     * existing row instead of inserting another one.
+     */
+    postIds?: Map<number, number>;
   },
 ): Promise<boolean> {
   const result = results[i];
@@ -109,22 +116,26 @@ async function publishOne(
     return true;
   }
 
-  let postId = 0;
-  try {
-    postId = insertPost(
-      opts.url,
-      platform,
-      opts.text,
-      opts.imagePath,
-      "pending",
-    );
-  } catch {
-    results[i] = {
-      ...results[i],
-      status: "failed",
-      error: "DB insert failed",
-    };
-    return false;
+  // Reuse the row a previous attempt created, so retries do not each add a row.
+  let postId = opts.postIds?.get(i) ?? 0;
+  if (!postId) {
+    try {
+      postId = insertPost(
+        opts.url,
+        platform,
+        opts.text,
+        opts.imagePath,
+        "pending",
+      );
+      opts.postIds?.set(i, postId);
+    } catch {
+      results[i] = {
+        ...results[i],
+        status: "failed",
+        error: "DB insert failed",
+      };
+      return false;
+    }
   }
 
   console.log(
@@ -233,6 +244,8 @@ export async function publish(
     }));
     const dryRun = env.DRY_RUN;
     let anySuccess = false;
+    // One post row per platform per attempt-chain, reused across retry rounds.
+    const postIds = new Map<number, number>();
 
     // Prefer non-Meta file upload platforms first, then IG/Threads (need public URL)
     const order = (p: Platform): number => {
@@ -272,33 +285,39 @@ export async function publish(
         caption: formatted.caption,
         richHtml: formatted.richHtml,
         dryRun,
+        postIds,
       });
       if (ok) anySuccess = true;
     }
 
-    // Second pass: retry failed Meta / transient errors (image still on disk)
+    // Retry pass: a transient blip (DNS, a Meta edge, a dropped connection)
+    // should not cost a platform its post. Back off across several rounds so a
+    // failure lasting a minute or two still recovers, then give up loudly.
     if (!dryRun) {
-      const retryIdx = results
-        .map((r, i) => i)
-        .filter(
-          (i) =>
-            results[i].status === "failed" &&
-            isRetriablePlatformFail(results[i].platform, results[i].error),
-        );
-      if (retryIdx.length > 0) {
+      const delays = platformRetryDelays();
+      for (let round = 0; round < delays.length; round++) {
+        const retryIdx = results
+          .map((r, i) => i)
+          .filter(
+            (i) =>
+              results[i].status === "failed" &&
+              isRetriablePlatformFail(results[i].platform, results[i].error),
+          );
+        if (retryIdx.length === 0) break;
+
         console.warn(
-          `[publish] retry pass for: ${retryIdx.map((i) => results[i].platform).join(", ")}`,
+          `[publish] retry ${round + 1}/${delays.length} in ${delays[round] / 1000}s for: ` +
+            retryIdx.map((i) => results[i].platform).join(", ") +
+            ` — last error: ${retryIdx
+              .map((i) => `${results[i].platform}=${results[i].error}`)
+              .join(" | ")}`,
         );
-        await sleep(4000);
+        await sleep(delays[round]);
+
         for (const i of retryIdx) {
           const formatted = state.formatted[results[i].platform];
           if (!formatted?.text) continue;
-          // mark pending again inside publishOne
-          results[i] = {
-            ...results[i],
-            status: "failed",
-            error: results[i].error,
-          };
+          // publishOne resets failed → pending itself.
           const ok = await publishOne(results, i, {
             url: current.url,
             title: current.title,
@@ -308,9 +327,18 @@ export async function publish(
             caption: formatted.caption,
             richHtml: formatted.richHtml,
             dryRun: false,
+            postIds,
           });
           if (ok) anySuccess = true;
         }
+      }
+
+      const abandoned = results.filter((r) => r.status === "failed");
+      if (abandoned.length > 0) {
+        console.warn(
+          `[publish] giving up after ${delays.length} retry rounds: ` +
+            abandoned.map((r) => `${r.platform}(${r.error})`).join(" | "),
+        );
       }
     }
 
@@ -344,7 +372,7 @@ export async function publish(
   } catch (error) {
     freeLocalImages(localImagePath);
     return {
-      errors: [`publish error: ${String(error)}`],
+      errors: [`publish error: ${describeError(error)}`],
     };
   }
 }

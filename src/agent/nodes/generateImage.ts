@@ -5,6 +5,7 @@ import { markArticleSeen } from "../../db.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
+import { describeError } from "../../lib/errText.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -79,7 +80,7 @@ export async function generateImage(
       }
     }
     return {
-      errors: [`generateImage error: ${String(error)}`],
+      errors: [`generateImage error: ${describeError(error)}`],
       current: current
         ? { ...current, imagePath: undefined }
         : current,

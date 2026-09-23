@@ -23,6 +23,7 @@ import {
   publishManualPost,
   type ManualMediaKind,
 } from "./manualPublish.js";
+import { describeError } from "../lib/errText.js";
 
 const API = (token: string) => `https://api.telegram.org/bot${token}`;
 
@@ -142,7 +143,7 @@ async function tgCall<T = unknown>(
   try {
     return await tgCallOnce<T>(method, body);
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
+    const msg = describeError(e);
     if (/fetch failed|ECONNRESET|EPIPE|socket hang up|EAI_AGAIN/i.test(msg)) {
       await sleep(1_000);
       return tgCallOnce<T>(method, body);
@@ -457,7 +458,7 @@ async function handleMessage(msg: TgMessage): Promise<void> {
         chatId,
       });
     } catch (e) {
-      await sendText(chatId, `Rasm yuklash xato: ${escapeHtml(String(e))}`);
+      await sendText(chatId, `Rasm yuklash xato: ${escapeHtml(describeError(e))}`);
     }
     return;
   }
@@ -499,7 +500,7 @@ async function handleMessage(msg: TgMessage): Promise<void> {
         chatId,
       });
     } catch (e) {
-      await sendText(chatId, `Video yuklash xato: ${escapeHtml(String(e))}`);
+      await sendText(chatId, `Video yuklash xato: ${escapeHtml(describeError(e))}`);
     }
     return;
   }
@@ -549,7 +550,7 @@ async function handleMessage(msg: TgMessage): Promise<void> {
         chatId,
       });
     } catch (e) {
-      await sendText(chatId, `Yuklash xato: ${escapeHtml(String(e))}`);
+      await sendText(chatId, `Yuklash xato: ${escapeHtml(describeError(e))}`);
     }
     return;
   }
@@ -643,7 +644,7 @@ async function handleCallback(cq: TgCallbackQuery): Promise<void> {
       }
     }
     drafts.delete(chatId);
-    await sendText(chatId, `❌ Publish xato: ${escapeHtml(String(e))}`);
+    await sendText(chatId, `❌ Publish xato: ${escapeHtml(describeError(e))}`);
   } finally {
     busyChats.delete(chatId);
   }
@@ -721,7 +722,7 @@ async function pollLoop(): Promise<void> {
         await processUpdate(u);
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       // Timeout on long-poll is normal if AbortSignal fires; network blips retry
       if (!/aborted|timeout/i.test(msg)) {
         consecutiveFails += 1;

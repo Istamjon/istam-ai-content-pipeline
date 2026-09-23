@@ -14,6 +14,7 @@ import {
   formatRotationOrder,
   orderSlotsForDailyRotation,
 } from "./keyRotation.js";
+import { describeError } from "./errText.js";
 
 const DEFAULT_GATEWAY = "https://api-tools.skywork.ai/theme-gateway";
 
@@ -475,7 +476,7 @@ async function generateOnceWithKey(
         face,
       );
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       // The edit API (which is the ONLY path that can preserve identity) failed
       // on Skywork's side (Gemini/Seedream backend). There is no honest fallback
       // inside this provider:
@@ -579,7 +580,7 @@ export async function skyworkImage(
       return buffer;
     } catch (e) {
       lastErr = e;
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       console.warn(`[skywork] ${slot.label} failed: ${msg.slice(0, 220)}`);
       if (isRotatableFailure(msg)) {
         markKeyExhausted(slot, msg);

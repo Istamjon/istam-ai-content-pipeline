@@ -21,6 +21,7 @@ import {
 } from "../db.js";
 import { likenessClause, antiPoseClause } from "../config/brandIdentity.js";
 import type { BrandFaceRef } from "./brandFace.js";
+import { describeError } from "./errText.js";
 
 const DEFAULT_MODELS = [
   "gpt-image-2:free",
@@ -199,7 +200,7 @@ async function tryEditGeneration(
   } catch (e) {
     console.warn(
       `[unorouter] edit API exception model="${model}": ${
-        e instanceof Error ? e.message.slice(0, 120) : String(e)
+        describeError(e).slice(0, 120)
       }`,
     );
   }
@@ -415,7 +416,7 @@ export async function unorouterImage(
       }
 
       lastErr = e;
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       console.warn(`[unorouter] model "${model}" failed: ${msg.slice(0, 200)}`);
 
       // Account-level rate limit (1 req/min per account) -> pause all models and fail fast

@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { env } from "../config/env.js";
 import { loadTokens } from "../oauth/tokenStore.js";
+import { describeError } from "./errText.js";
 
 /** Litterbox allowed expiry windows (auto-delete on their servers). */
 export type TempImageHours = 1 | 12 | 24 | 72;
@@ -80,7 +81,7 @@ export async function ensurePublicImageUrl(
         host: "facebook",
       };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       errors.push(`facebook: ${msg.slice(0, 160)}`);
       console.warn(`[imageHost] facebook CDN failed:`, msg.slice(0, 200));
     }
@@ -141,7 +142,7 @@ export async function ensurePublicImageUrl(
       console.log(`[imageHost] OK host=${host.name} url=${url.slice(0, 80)}`);
       return { url, temporary: host.temporary, host: host.name };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       errors.push(`${host.name}: ${msg.slice(0, 160)}`);
       console.warn(`[imageHost] ${host.name} failed:`, msg.slice(0, 200));
     }

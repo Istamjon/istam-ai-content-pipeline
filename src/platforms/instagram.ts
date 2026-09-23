@@ -7,6 +7,7 @@ import {
   ensurePublicMediaUrl,
 } from "../lib/imageHost.js";
 import { loadTokens } from "../oauth/tokenStore.js";
+import { describeError } from "../lib/errText.js";
 
 const GRAPH = "https://graph.facebook.com/v19.0";
 
@@ -78,7 +79,7 @@ async function ensureJpegForInstagram(imagePath: string): Promise<{
     };
   } catch (e) {
     console.warn(
-      `[instagram] JPEG convert skipped: ${e instanceof Error ? e.message : String(e)}`,
+      `[instagram] JPEG convert skipped: ${describeError(e)}`,
     );
     return { path: imagePath };
   }
@@ -132,7 +133,7 @@ async function waitForContainerReady(
       }
     } catch (e) {
       console.warn(
-        `[instagram] status poll failed: ${e instanceof Error ? e.message : String(e)}`,
+        `[instagram] status poll failed: ${describeError(e)}`,
       );
     }
   }
@@ -379,7 +380,7 @@ export async function publishToInstagram(
 
     return { success: false, error: lastError };
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: describeError(error) };
   } finally {
     jpegCleanup?.();
   }

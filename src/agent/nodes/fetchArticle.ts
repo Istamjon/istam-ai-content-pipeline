@@ -1,6 +1,7 @@
 import { StateAnnotation, Article, GraphUpdate, articleLoopReset } from "../state.js";
 import { fetchArticleContent } from "../../lib/scraper.js";
 import { markArticleSeen } from "../../db.js";
+import { describeError } from "../../lib/errText.js";
 
 function skipArticle(url: string, title: string, reason: string): void {
   try {
@@ -57,7 +58,7 @@ export async function fetchArticle(
     };
   } catch (error) {
     const article = state.newArticles[state.articleIndex];
-    const msg = String(error);
+    const msg = describeError(error);
     // Network / bot-block / timeout: do NOT mark seen — next cron can retry
     // (previous behavior burned OpenAI/etc. articles forever as fetch-error).
     console.warn(

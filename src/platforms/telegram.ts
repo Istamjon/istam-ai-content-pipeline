@@ -34,6 +34,7 @@ import { env } from "../config/env.js";
 import fs from "fs";
 import path from "path";
 import { truncateHtmlPrefix } from "../config/platformTextLimits.js";
+import { describeError } from "../lib/errText.js";
 
 type TgResult = { success: boolean; error?: string };
 
@@ -336,7 +337,7 @@ export async function sendTelegramAlert(
     }
     return await sendMessage(token, channel, text, false);
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: describeError(error) };
   }
 }
 
@@ -444,6 +445,6 @@ export async function publishToTelegram(
 
     return { success: true };
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: describeError(error) };
   }
 }

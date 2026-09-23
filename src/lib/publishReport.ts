@@ -5,6 +5,7 @@
 import { env } from "../config/env.js";
 import type { PublishResult } from "../agent/state.js";
 import { sendTelegramAlert } from "../platforms/telegram.js";
+import { describeError } from "./errText.js";
 
 function escapeHtml(s: string): string {
   return s
@@ -111,7 +112,7 @@ export async function notifyPublishReport(opts: {
       }
     } catch (e) {
       console.warn(
-        `[publishReport] send error ${chat}: ${e instanceof Error ? e.message : String(e)}`,
+        `[publishReport] send error ${chat}: ${describeError(e)}`,
       );
     }
   }

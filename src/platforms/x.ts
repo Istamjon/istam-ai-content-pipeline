@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { env } from "../config/env.js";
 import { buildOAuth1Header, OAuth1Credentials } from "../lib/oauth1.js";
+import { describeError } from "../lib/errText.js";
 
 type XResult = { success: boolean; error?: string };
 
@@ -56,7 +57,7 @@ export async function publishToX(
         "X credentials required: set X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET (OAuth 1.0a) or X_BEARER_TOKEN",
     };
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: describeError(error) };
   }
 }
 
@@ -154,7 +155,7 @@ async function uploadMediaOAuth1(
 
     return { mediaId };
   } catch (error) {
-    return { error: String(error) };
+    return { error: describeError(error) };
   }
 }
 

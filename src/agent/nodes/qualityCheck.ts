@@ -10,6 +10,7 @@ import {
   stripUnsupportedNumbers,
   MAX_BODY_CHARS,
 } from "../../lib/draftRepair.js";
+import { describeError } from "../../lib/errText.js";
 
 export async function qualityCheck(
   state: typeof StateAnnotation.State,
@@ -174,12 +175,12 @@ export async function qualityCheck(
         if (state.retryCount >= 3) {
           console.warn(
             `[qualityCheck] LLM gate error on final retry — local pass: ${
-              e instanceof Error ? e.message.slice(0, 100) : String(e)
+              describeError(e).slice(0, 100)
             }`,
           );
         } else {
           issues.push(
-            `Quality LLM gate error: ${e instanceof Error ? e.message.slice(0, 100) : String(e)}`,
+            `Quality LLM gate error: ${describeError(e).slice(0, 100)}`,
           );
         }
       }
@@ -248,8 +249,8 @@ export async function qualityCheck(
     };
   } catch (error) {
     return {
-      quality: { ok: false, issues: [`Quality check failed: ${String(error)}`] },
-      errors: [`qualityCheck error: ${String(error)}`],
+      quality: { ok: false, issues: [`Quality check failed: ${describeError(error)}`] },
+      errors: [`qualityCheck error: ${describeError(error)}`],
     };
   }
 }

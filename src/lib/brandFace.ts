@@ -8,6 +8,7 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { describeError } from "./errText.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_REL = path.join("data", "brand", "face.jpg");
@@ -100,7 +101,7 @@ async function prepareFaceBuffer(
   } catch (e) {
     console.warn(
       `[brandFace] prepare failed, using original: ${
-        e instanceof Error ? e.message : String(e)
+        describeError(e)
       }`,
     );
     return { buffer: raw, mimeType: rawMime, prepared: false };
@@ -136,7 +137,7 @@ export async function loadBrandFace(): Promise<BrandFaceRef | null> {
     };
   } catch (e) {
     console.warn(
-      `[brandFace] load failed: ${e instanceof Error ? e.message : String(e)}`,
+      `[brandFace] load failed: ${describeError(e)}`,
     );
     return null;
   }
@@ -165,7 +166,7 @@ export function loadBrandFaceSync(): BrandFaceRef | null {
     };
   } catch (e) {
     console.warn(
-      `[brandFace] load failed: ${e instanceof Error ? e.message : String(e)}`,
+      `[brandFace] load failed: ${describeError(e)}`,
     );
     return null;
   }

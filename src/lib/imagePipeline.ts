@@ -79,6 +79,7 @@ import {
   verifyBrandFace,
   logFaceVerifyBudget,
 } from "./faceVerify.js";
+import { describeError } from "./errText.js";
 
 export type ImageProviderUsed = "unorouter" | "nanobanana" | "skywork" | "xkiro";
 
@@ -183,7 +184,7 @@ export async function generateImageBuffer(
       // Reject (and cascade) if the face did not actually survive generation.
       return await acceptIdentity(buffer, "unorouter");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       errors.push(`unorouter: ${msg}`);
       console.warn(
         `[imagePipeline] UnoRouter FAILED → 2) Nano Banana | ${msg.slice(0, 200)}`,
@@ -213,7 +214,7 @@ export async function generateImageBuffer(
       // Reject (and cascade) if the face did not actually survive generation.
       return await acceptIdentity(buffer, "nanobanana");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       errors.push(`nanobanana: ${msg}`);
       console.warn(
         `[imagePipeline] Nano Banana FAILED → 3) Skywork | ${msg.slice(0, 200)}`,
@@ -243,7 +244,7 @@ export async function generateImageBuffer(
       // Reject (and cascade) if the face did not actually survive generation.
       return await acceptIdentity(buffer, "skywork");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       errors.push(`skywork: ${msg}`);
       console.warn(
         `[imagePipeline] Skywork FAILED → 4) xKiro LAST RESORT (workflow only) | ${msg.slice(0, 200)}`,
@@ -286,7 +287,7 @@ export async function generateImageBuffer(
       );
       return { buffer, provider: "xkiro" };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       errors.push(`xkiro: ${msg}`);
       console.warn(
         `[imagePipeline] xKiro FAILED — ALL providers exhausted: ${msg.slice(0, 200)}`,

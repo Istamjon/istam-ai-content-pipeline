@@ -22,6 +22,7 @@ import {
   utcToday,
   type ImageProviderName,
 } from "../db.js";
+import { describeError } from "./errText.js";
 
 const XKIRO_BASE = "https://api.xkiro.com/v1";
 
@@ -393,7 +394,7 @@ export async function xkiroImage(
         return buffer;
       } catch (e) {
         lastErr = e;
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = describeError(e);
         console.warn(`[xkiro] ✗ ${slot.label}/${modelShort}: ${msg.slice(0, 180)}`);
 
         if (isRotatableKeyFailure(msg)) {

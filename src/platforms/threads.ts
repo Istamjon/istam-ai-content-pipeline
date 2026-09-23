@@ -1,6 +1,7 @@
 import { env } from "../config/env.js";
 import { ensurePublicImageUrl, ensurePublicMediaUrl } from "../lib/imageHost.js";
 import { threadsProvider } from "../oauth/providers/threads.js";
+import { describeError } from "../lib/errText.js";
 import { loadTokens } from "../oauth/tokenStore.js";
 
 /** Prefer hosts Meta Graph can fetch reliably (same as Instagram). */
@@ -268,6 +269,6 @@ export async function publishToThreads(
 
     return { success: true };
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: describeError(error) };
   }
 }

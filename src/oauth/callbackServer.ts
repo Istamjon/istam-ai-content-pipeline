@@ -20,6 +20,7 @@ import path from "path";
 import { URL } from "url";
 import { getProvider, listProviders } from "./registry.js";
 import type { OAuthPlatform } from "./types.js";
+import { describeError } from "../lib/errText.js";
 
 const PORT = Number(process.env.OAUTH_PORT || 3000);
 
@@ -251,7 +252,7 @@ query: ${esc(JSON.stringify(qs, null, 2))}</pre>
 
       await exchangeAndRespond(res, provider.id, code, state);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       console.error("[oauth] failed:", msg);
       res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
       res.end(htmlPage("Token exchange failed", `<pre>${esc(msg)}</pre>`));

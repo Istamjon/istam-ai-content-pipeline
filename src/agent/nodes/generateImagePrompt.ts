@@ -8,6 +8,7 @@ import {
 } from "../../config/imagePrompt.js";
 import { isBrandFaceConfigured } from "../../lib/brandFace.js";
 import { generateCatchyCoverHeading } from "../../lib/coverHeading.js";
+import { describeError } from "../../lib/errText.js";
 
 /**
  * Builds premium scroll-stopping social-cover image prompt.
@@ -95,7 +96,7 @@ export async function generateImagePrompt(
     };
   } catch (error) {
     return {
-      errors: [`generateImagePrompt error: ${String(error)}`],
+      errors: [`generateImagePrompt error: ${describeError(error)}`],
     };
   }
 }

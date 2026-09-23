@@ -8,6 +8,7 @@ import {
   repairTruncation,
   stripUnsupportedNumbers,
 } from "../../lib/draftRepair.js";
+import { describeError } from "../../lib/errText.js";
 
 export async function rewrite(
   state: typeof StateAnnotation.State,
@@ -81,7 +82,7 @@ export async function rewrite(
     };
   } catch (error) {
     return {
-      errors: [`rewrite error: ${String(error)}`],
+      errors: [`rewrite error: ${describeError(error)}`],
       retryCount: state.retryCount + 1,
     };
   }

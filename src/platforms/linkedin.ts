@@ -8,6 +8,7 @@ import {
   refreshLinkedInAccessToken,
 } from "../oauth/providers/linkedin.js";
 import { loadTokens, saveTokens } from "../oauth/tokenStore.js";
+import { describeError } from "../lib/errText.js";
 
 export type LinkedInTargetResult = {
   target: "person" | "organization";
@@ -217,7 +218,7 @@ export async function publishToLinkedIn(
     persistLastPost(summary, orgId);
     return summary;
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: describeError(error) };
   }
 }
 
@@ -452,7 +453,7 @@ async function uploadLinkedInImage(
     await new Promise((r) => setTimeout(r, 2000));
     return { assetUrn };
   } catch (error) {
-    return { error: String(error) };
+    return { error: describeError(error) };
   }
 }
 

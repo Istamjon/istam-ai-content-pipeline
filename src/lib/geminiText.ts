@@ -20,6 +20,7 @@ import {
   formatRotationOrder,
   type RotatableSlot,
 } from "./keyRotation.js";
+import { describeError } from "./errText.js";
 
 type GeminiSlot = RotatableSlot;
 
@@ -196,7 +197,7 @@ export async function generateText(
       return text;
     } catch (e) {
       lastErr = e;
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       console.warn(
         `[text] ${slot.label} failed → next key: ${msg.slice(0, 180)}`,
       );

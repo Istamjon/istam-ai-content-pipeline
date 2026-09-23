@@ -1,6 +1,7 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
 import { generateText } from "../../lib/geminiText.js";
 import { roles, buildTranslateUserPrompt } from "../prompts.js";
+import { describeError } from "../../lib/errText.js";
 
 export async function translate(
   state: typeof StateAnnotation.State,
@@ -22,7 +23,7 @@ export async function translate(
     };
   } catch (error) {
     return {
-      errors: [`translate error: ${String(error)}`],
+      errors: [`translate error: ${describeError(error)}`],
     };
   }
 }

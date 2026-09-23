@@ -4,6 +4,7 @@ import { formatAllFromCanonical } from "../../canonical/formatFromCanonical.js";
 import { generateText } from "../../lib/geminiText.js";
 import { roles, buildEnglishPostUserPrompt } from "../prompts.js";
 import { cleanPostBody } from "../../lib/contentClean.js";
+import { describeError } from "../../lib/errText.js";
 
 export async function formatPosts(
   state: typeof StateAnnotation.State,
@@ -77,7 +78,7 @@ export async function formatPosts(
     };
   } catch (error) {
     return {
-      errors: [`formatPosts/canonical error: ${String(error)}`],
+      errors: [`formatPosts/canonical error: ${describeError(error)}`],
     };
   }
 }

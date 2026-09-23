@@ -44,6 +44,7 @@ import {
   incrementProviderImageUsage,
 } from "../db.js";
 import type { BrandFaceRef } from "./brandFace.js";
+import { describeError } from "./errText.js";
 
 /** Separate soft-budget bucket so verification never eats the text quota. */
 const VERIFY_BUCKET = "faceverify";
@@ -300,7 +301,7 @@ export async function verifyBrandFace(params: {
         skipped: false,
       };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = describeError(e);
       console.warn(
         `[faceVerify] key …${apiKey.slice(-6)} failed → next key: ${msg.slice(0, 160)}`,
       );

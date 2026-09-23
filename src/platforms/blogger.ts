@@ -1,4 +1,5 @@
 import { bloggerProvider } from "../oauth/providers/blogger.js";
+import { describeError } from "../lib/errText.js";
 import {
   resolveBloggerBlogId,
   getKnownBloggerBlogId,
@@ -117,6 +118,6 @@ export async function publishToBlogger(
 
     return { success: true };
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: describeError(error) };
   }
 }

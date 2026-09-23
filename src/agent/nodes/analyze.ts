@@ -6,6 +6,7 @@ import {
   parseAnalystFit,
   scoreBrandFit,
 } from "../../lib/brandFit.js";
+import { describeError } from "../../lib/errText.js";
 
 export async function analyze(
   state: typeof StateAnnotation.State,
@@ -81,7 +82,7 @@ export async function analyze(
     };
   } catch (error) {
     return {
-      errors: [`analyze error: ${String(error)}`],
+      errors: [`analyze error: ${describeError(error)}`],
     };
   }
 }

@@ -2,6 +2,7 @@ import { StateAnnotation, Platform, PublishResult, GraphUpdate } from "../state.
 import { getDailyCount, getDailyLimit } from "../../db.js";
 import { env } from "../../config/env.js";
 import { isPlatformReady } from "../../oauth/registry.js";
+import { describeError } from "../../lib/errText.js";
 
 function missingCredentials(platform: Platform): string | null {
   if (platform === "telegram") {
@@ -94,7 +95,7 @@ export async function schedule(
     return { publishResults: results };
   } catch (error) {
     return {
-      errors: [`schedule error: ${String(error)}`],
+      errors: [`schedule error: ${describeError(error)}`],
     };
   }
 }

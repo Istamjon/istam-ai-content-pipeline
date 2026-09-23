@@ -14,6 +14,7 @@ import {
   formatRotationOrder,
   orderSlotsForDailyRotation,
 } from "./keyRotation.js";
+import { describeError } from "./errText.js";
 
 const PROVIDER_BASE = "nanobanana" as const;
 
@@ -370,7 +371,7 @@ export async function nanoBananaImage(
         return buf;
       } catch (e) {
         lastErr = e;
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = describeError(e);
         console.warn(
           `[nanobanana] ${slot.label} model=${model} failed: ${msg.slice(0, 200)}`,
         );

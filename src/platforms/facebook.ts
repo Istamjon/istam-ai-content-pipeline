@@ -2,6 +2,7 @@ import { env } from "../config/env.js";
 import fs from "fs";
 import path from "path";
 import { facebookProvider } from "../oauth/providers/facebook.js";
+import { describeError } from "../lib/errText.js";
 
 export type FacebookMediaKind = "image" | "video";
 
@@ -145,6 +146,6 @@ export async function publishToFacebook(
     }
     return { success: true };
   } catch (error) {
-    return { success: false, error: String(error) };
+    return { success: false, error: describeError(error) };
   }
 }

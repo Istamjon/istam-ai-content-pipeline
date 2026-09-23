@@ -4,6 +4,7 @@ import { discoverSources, shuffleInPlace } from "../../lib/scraper.js";
 import { isArticleSeen, markArticleSeen } from "../../db.js";
 import { env } from "../../config/env.js";
 import { scoreBrandFit } from "../../lib/brandFit.js";
+import { describeError } from "../../lib/errText.js";
 
 type ScoredArticle = { article: Article; score: number; reason: string };
 
@@ -150,7 +151,7 @@ export async function fetchSources(
     };
   } catch (error) {
     return {
-      errors: [`fetchSources error: ${String(error)}`],
+      errors: [`fetchSources error: ${describeError(error)}`],
       newArticles: [],
     };
   }
