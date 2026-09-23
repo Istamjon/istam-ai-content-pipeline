@@ -1,4 +1,4 @@
-# Force one pipeline run on VDS (with optional brand face from secret).
+# Force one pipeline run on VDS (with the brand face when it is available).
 #
 # The brand face is NOT stored in git (it is a personal photo). It is shipped
 # from the BRAND_FACE_B64 repository secret:
@@ -7,6 +7,16 @@
 #   gh workflow run force-one-post.yml
 #
 # The secret must decode to a JPEG larger than 1000 bytes.
+#
+# FACELESS MODE
+# -------------
+# BRAND_FACE_B64 is OPTIONAL. Without it the pipeline still runs and publishes,
+# using the xKiro humanless workflow diagram for the cover — the documented
+# fallback. This used to be a hard `exit 1`, which made the whole workflow
+# unusable on a repo where the secret was never set, even though the pipeline
+# itself handles a missing face by design. A manual "publish one post" is also
+# the only way to exercise the diagram path, so requiring the face here made
+# that path untestable.
 
 name: Force One Post VDS
 
@@ -19,9 +29,13 @@ concurrency:
 
 jobs:
   run-once:
-    name: One publish with brand face
+    name: One publish (brand face when available)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      # Secrets cannot be referenced directly in a step-level `if`, so it is
+      # resolved once here.
+      HAS_FACE: ${{ secrets.BRAND_FACE_B64 != '' }}
     steps:
       - name: Check secrets
         env:
@@ -37,16 +51,15 @@ jobs:
           if [ -z "$UNOROUTER_API_KEY" ]; then
             echo "::warning::UNOROUTER_API_KEY secret is not set — the existing VDS .env value will be kept. Add it in Settings → Secrets and variables → Actions."
           fi
+          if [ "$HAS_FACE" != "true" ]; then
+            echo "::notice::BRAND_FACE_B64 is not set — running in FACELESS mode. The cover will come from the xKiro humanless workflow diagram. Set the secret to enable the identity-preserving providers (UnoRouter → Nano Banana → Skywork)."
+          fi
 
       - name: Materialise brand face from BRAND_FACE_B64 secret
+        if: env.HAS_FACE == 'true'
         env:
           BRAND_FACE_B64: ${{ secrets.BRAND_FACE_B64 }}
         run: |
-          if [ -z "$BRAND_FACE_B64" ]; then
-            echo "::error::BRAND_FACE_B64 is not set. Create it from your local photo:"
-            echo "::error::  base64 -i face.jpg | tr -d '\n' | gh secret set BRAND_FACE_B64"
-            exit 1
-          fi
           mkdir -p .face-staging/data/brand
           printf '%s' "$BRAND_FACE_B64" | tr -d '\n\r' | base64 -d > .face-staging/data/brand/face.jpg
           size=$(wc -c < .face-staging/data/brand/face.jpg)
@@ -59,6 +72,7 @@ jobs:
           esac
 
       - name: SCP brand face to VDS
+        if: env.HAS_FACE == 'true'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VDS_HOST }}
@@ -131,13 +145,22 @@ jobs:
             upsert DAILY_UNOROUTER_LIMIT 15
 
             mkdir -p data/brand data/images data/tokens
-            # SCP lands as /tmp/istam-brand-face/data/brand/face.jpg
+            # SCP lands as /tmp/istam-brand-face/data/brand/face.jpg. A face
+            # already on the box is left alone when this run is faceless.
             if [ -f /tmp/istam-brand-face/data/brand/face.jpg ]; then
               cp -f /tmp/istam-brand-face/data/brand/face.jpg data/brand/face.jpg
             elif [ -f /tmp/istam-brand-face/face.jpg ]; then
               cp -f /tmp/istam-brand-face/face.jpg data/brand/face.jpg
             fi
-            ls -la data/brand/face.jpg
+            # This must NOT be a bare `ls`: the script runs under `set -e`, so a
+            # missing face.jpg aborted the entire run before the pipeline ever
+            # started. Faceless is a supported mode, not an error.
+            if [ -f data/brand/face.jpg ]; then
+              ls -la data/brand/face.jpg
+              echo "MODE: identity — UnoRouter → Nano Banana → Skywork"
+            else
+              echo "MODE: faceless — xKiro humanless workflow diagram will be used"
+            fi
             chown -R 10001:10001 data 2>/dev/null || true
 
             # Pull latest code if deploy not finished yet
