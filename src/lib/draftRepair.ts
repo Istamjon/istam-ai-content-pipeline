@@ -5,6 +5,62 @@
  *  - invented percentages / stats not present in the source
  */
 
+/**
+ * Ceiling for one writer draft, in characters.
+ *
+ * This is a RUNAWAY GUARD, not a content limit. Length is the writer prompt's
+ * job (it asks for 2400–4400 chars ≈ 400–700 Uzbek words), and every platform
+ * is truncated to its own API limit downstream in `formatOne` —
+ * `smartTruncate` / `packText` / `splitIntoThreadParts`. A long draft is
+ * therefore harmless: Telegram's rich message alone accepts 32768 characters.
+ *
+ * It used to be 2000 — BELOW the prompt's own 2600-char hard max — so ~600
+ * characters of every draft were deleted before the quality gate ever saw them.
+ * The cut lands on a sentence boundary, so the result still passed
+ * `looksComplete()` and the loss stayed invisible: the only symptom was that the
+ * rich message used 2903 of its 32768 characters.
+ */
+export const MAX_DRAFT_CHARS = 5000;
+
+/**
+ * Absolute ceiling for a publishable body — also a runaway guard.
+ *
+ * Deliberately far above both the draft target and Telegram's plain-text soft
+ * target: a canonical body longer than any single surface is normal now, because
+ * each surface takes what it can. This exists only to catch a model that ignores
+ * the prompt entirely, not to cap useful content.
+ */
+export const MAX_BODY_CHARS = 12000;
+
+/**
+ * Trim a runaway draft to `maxChars` at a sentence / paragraph boundary.
+ *
+ * Returns the text unchanged when it already fits, so a compliant draft is never
+ * touched. When it must cut, it prefers the last sentence end inside the budget
+ * and only falls back to a hard cut when the nearest boundary would throw away
+ * most of the allowance — `repairTruncation` tidies that tail.
+ */
+export function capDraftLength(
+  text: string,
+  maxChars: number = MAX_DRAFT_CHARS,
+): string {
+  const t = (text || "").trim();
+  if (t.length <= maxChars) return t;
+
+  // Leave room for the terminator a boundary cut may append.
+  const window = t.slice(0, Math.max(1, maxChars - 100));
+  const lastStop = Math.max(
+    window.lastIndexOf("."),
+    window.lastIndexOf("!"),
+    window.lastIndexOf("?"),
+    window.lastIndexOf("…"),
+    window.lastIndexOf("\n"),
+  );
+  const keep =
+    lastStop > window.length * 0.6 ? window.slice(0, lastStop + 1) : window;
+  return keep.trim();
+}
+
 /** Drop incomplete last sentence / mid-word tail. */
 export function repairTruncation(text: string): string {
   let t = (text || "").trim();

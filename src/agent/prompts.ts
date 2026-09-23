@@ -283,9 +283,13 @@ FACT GROUNDING (critical — violations = fail):
 7) Prefer qualitative claims over numbers when the source has no exact figures.
 
 LENGTH:
-- Target 1200–2200 characters. Density over length: every sentence must carry
-  information the reader did not already have. Do not pad to reach the target.
-- Hard max ~2600 characters. Complete every sentence. Never truncate mid-sentence or mid-word.
+- Target 2400–4400 characters (~400–700 words). Density over length: every
+  sentence must carry information the reader did not already have. Do not pad to
+  reach the target.
+- Hard max ~4800 characters. Complete every sentence. Never truncate mid-sentence or mid-word.
+- The post ships as ONE Telegram message that accepts far more than this, so
+  length is not the constraint — information density is. If you cannot fill the
+  target with source-grounded material, a shorter post is the correct answer.
 - End with a complete bullet under "Asosiy faktlar:" — never cut a word short.
 
 POST REQUIREMENTS:
@@ -356,7 +360,7 @@ TITLE: ${input.title}
 SOURCE URL (do not paste into post): ${input.sourceUrl}
 
 SOURCE MATERIAL (ideas + facts only — rewrite originally):
-${input.body.slice(0, 7000)}
+${input.body.slice(0, 10000)}
 `.trim();
 }
 
@@ -376,7 +380,7 @@ PASS (OK: yes) only if ALL are true:
 - No hype/drama; original enough (not verbatim dump)
 - Has practical takeaway
 - Complete sentences (not truncated mid-word)
-- Reasonable social length (prefer under ~2600 chars)
+- Reasonable social length (prefer under ~5600 chars)
 - FACT_OK: yes — every specific claim (product names, features, numbers, steps) is supported by SOURCE EXCERPT
 - No mixed/confused topics that are not together in the source
 - No invented tools or metrics
@@ -392,7 +396,7 @@ FAIL (OK: no) if:
 IMPORTANT: FACT_OK: no means the draft MUST fail (OK: no). Never soft-pass factual issues.
 
 DRAFT:
-${text.slice(0, 2800)}
+${text.slice(0, 6000)}
 
 SOURCE URL: ${sourceUrl || "n/a"}
 

@@ -163,7 +163,7 @@ describe("telegram rich formatting — structure is kept for Telegram only", () 
 
 describe("telegram rich formatting — bounded by the rich ceiling, not the text target", () => {
   /**
-   * Longer than telegram's `softBodyTarget` (3500), so the plain-text variant
+   * Longer than telegram's `softBodyTarget` (4000), so the plain-text variant
    * gets truncated. The rich variant must still carry the whole article — it is
    * the variant actually sent, and it has 32768 chars to work with.
    *

@@ -4,6 +4,7 @@ import { roles, buildRewriteUserPrompt } from "../prompts.js";
 import { stripSourceIntros } from "../../lib/contentClean.js";
 import { ensureFactsSection } from "../../lib/factsFromBrief.js";
 import {
+  capDraftLength,
   repairTruncation,
   stripUnsupportedNumbers,
 } from "../../lib/draftRepair.js";
@@ -35,23 +36,18 @@ export async function rewrite(
       }),
       roles.writer,
     );
-    // Soft-trim runaway generations; never append Manba/source footer
+    // Soft-trim only a runaway generation. The cap is a guard, NOT a target: it
+    // sits above the writer prompt's hard max, so a compliant draft is never
+    // touched. It used to be 2000 — below the prompt's own 2600-char hard max —
+    // which deleted ~600 characters of every draft before the quality gate saw
+    // them, and because the cut landed on a sentence boundary `looksComplete()`
+    // stayed true, so nothing ever reported the loss. See `MAX_DRAFT_CHARS`.
     let rewritten = result.trim();
     rewritten = rewritten
       .replace(/\n*\s*(Manba|Source|URL)\s*:\s*\S+/gi, "")
       .replace(/\n*https?:\/\/\S+\s*$/gi, "")
       .trim();
-    if (rewritten.length > 2000) {
-      const cut = rewritten.slice(0, 1900);
-      const lastStop = Math.max(
-        cut.lastIndexOf("."),
-        cut.lastIndexOf("!"),
-        cut.lastIndexOf("?"),
-        cut.lastIndexOf("…"),
-        cut.lastIndexOf("\n"),
-      );
-      rewritten = (lastStop > 600 ? cut.slice(0, lastStop + 1) : cut).trim();
-    }
+    rewritten = capDraftLength(rewritten);
     rewritten = rewritten
       .replace(/^(Here is|Quyida|Mana)\b[\s\S]*?:\s*/i, "")
       .trim();

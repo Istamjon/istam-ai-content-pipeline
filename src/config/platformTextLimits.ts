@@ -45,10 +45,12 @@ export const PLATFORM_TEXT_POLICIES: Record<Platform, PlatformTextPolicy> = {
     strategy: "telegram_native",
     maxHashtags: 5,
     footerMode: "compact",
-    // Full article stays inside Telegram. Text length is deliberately unchanged
-    // by the move to rich messages — this change is about delivering the post as
-    // ONE message with the cover embedded, not about making posts longer.
-    softBodyTarget: 3500,
+    // Budget for the FALLBACK layout only: `text` is a caption prefix plus
+    // continuation message(s), all ≤ `apiHardLimit` (4096). The rich path
+    // ignores this value entirely and packs against `richHardLimit` instead, so
+    // this number never limits the rich post. Held just under the hard limit,
+    // leaving room for the footer and hashtags that `packText` appends.
+    softBodyTarget: 4000,
     audienceNotes: "Uzbek tech learners — full article read inside Telegram",
     styleNotes: "Clear practical Uzbek; HTML bold/links OK",
     formatFeatures: [

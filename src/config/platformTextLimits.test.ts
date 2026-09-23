@@ -51,6 +51,10 @@ describe("platformTextLimits", () => {
     expect(tg.captionHardLimit).toBe(1024);
     expect(rich).toBeGreaterThan(tg.apiHardLimit);
     expect(rich).toBeGreaterThan(soft);
+    // The fallback budget must stay UNDER the per-message hard limit, otherwise
+    // packText would have to shed the footer/hashtags and hard-truncate the body
+    // instead of ending at a sentence boundary.
+    expect(soft).toBeLessThan(tg.apiHardLimit);
     expect(tg.formatFeatures).toContain("rich_message");
     expect(tg.formatFeatures).toContain("embedded_media");
   });

@@ -8,6 +8,7 @@ import {
   looksComplete,
   repairTruncation,
   stripUnsupportedNumbers,
+  MAX_BODY_CHARS,
 } from "../../lib/draftRepair.js";
 
 export async function qualityCheck(
@@ -40,8 +41,14 @@ export async function qualityCheck(
     if (text.length < 100) {
       issues.push("Too short (<100 chars)");
     }
-    if (text.length > 3500) {
-      issues.push("Too long for social post (>3500 chars) — condense");
+    // Runaway guard, NOT a content limit. This used to fail anything over 3500
+    // chars ("Too long for social post") — written when the body WAS the post.
+    // It is not any more: the canonical body is a master that every platform
+    // takes its own slice of, and Telegram's rich message alone accepts 32768.
+    // A 3500-char gate therefore made the whole rich-message feature unusable on
+    // exactly the long articles it was built for.
+    if (text.length > MAX_BODY_CHARS) {
+      issues.push(`Runaway draft (>${MAX_BODY_CHARS} chars) — condense`);
     }
 
     if (!looksComplete(text)) {
@@ -189,7 +196,7 @@ export async function qualityCheck(
       );
       const onlySoft = hard.length === 0;
       const softish = issues.every((i) =>
-        /fact check|truncated|hallucin|invent|statistic|number|unsupported-claim|draft text|incomplete/i.test(
+        /fact check|truncated|hallucin|invent|statistic|number|unsupported-claim|draft text|incomplete|runaway|too long/i.test(
           i,
         ),
       );
