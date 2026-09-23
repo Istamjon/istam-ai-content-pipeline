@@ -2,6 +2,26 @@
  * Istam Obidov — Personal Brand (AI Engineering)
  * Source of truth for voice, quality gates, visuals, and content rules.
  */
+import { getPlatformTextPolicy } from "./platformTextLimits.js";
+import type { Platform } from "../agent/state.js";
+
+/**
+ * The brand palette. Declared above `brand` so the visual-style prose below can
+ * be templated from the same values instead of restating the hexes — a literal
+ * "#036158" inside a principle string does not move when the palette does.
+ *
+ * `config/imagePrompt.ts` re-exports this as its own palette; nothing else
+ * should declare a brand hex.
+ */
+export const BRAND_COLORS = {
+  primary: "#036158",
+  secondary: "#1F2937",
+  accent: "#FFFFFF",
+  background: "#0A0A0A",
+  text: "#FFFFFF",
+  accentCyan: "#5EEAD4",
+  hotAmber: "#F59E0B",
+} as const;
 
 export const brand = {
   name: "Istam Obidov",
@@ -241,14 +261,15 @@ export const brand = {
   footerTitle: "Author: Istam Obidov",
   footerTagline: "AI Engineering | AI Agents | Product UX/UI",
 
-  /** Brand color system (image + UI) */
-  colors: {
-    primary: "#036158",
-    secondary: "#1F2937",
-    accent: "#FFFFFF",
-    background: "#0A0A0A",
-    text: "#FFFFFF",
-  },
+  /**
+   * Brand color system — the ONLY place a brand hex value is declared.
+   *
+   * `config/imagePrompt.ts` derives its palette from here rather than restating
+   * the hexes, because it used to declare its own copy: changing a colour here
+   * silently left every generated cover on the old palette. The cyan and amber
+   * were previously image-only values with no home in the brand config.
+   */
+  colors: BRAND_COLORS,
 
   /**
    * Visual system — config/imagePrompt.ts
@@ -281,7 +302,7 @@ export const brand = {
       "NO brand monogram logo badge on the cover",
       "Topic-true tech hologram shares the same 3D space as the person",
       "Thumb-stop: face + big title win the feed in 0.3s",
-      "Brand teal #036158 + cyan #5EEAD4 glows (colors only, not logo)",
+      `Brand teal ${BRAND_COLORS.primary} + cyan ${BRAND_COLORS.accentCyan} glows (colors only, not logo)`,
       "No third-party logos, no gibberish text, no watermarks",
       "Square 1:1 social crop-safe",
     ],
@@ -435,9 +456,38 @@ export const sources = [
   },
 ];
 
-/** Compact brand block injected into agent system prompts */
-export function brandContextBlock(): string {
-  return [
+export type BrandContextOptions = {
+  /**
+   * Reader-facing output language. Defaults to `brand.outputLanguage`.
+   *
+   * The English writer must override this. Before the override existed the
+   * English role prompt said "OUTPUT LANGUAGE: Professional English" three
+   * lines below a brand block that said "Output language for reader-facing
+   * text: Uzbek (Latin script)" — the model was handed a direct contradiction
+   * on every LinkedIn and Threads post.
+   */
+  language?: string;
+  /**
+   * Platform whose voice/audience notes to append, from `platformTextLimits`.
+   * Those two fields existed but nothing read them, so every platform received
+   * byte-identical instructions and "platform-native voice" was aspirational.
+   */
+  platform?: Platform;
+};
+
+/**
+ * Compact brand block injected into agent system prompts.
+ *
+ * Everything declared in `brand` that a writer could act on belongs here: this
+ * block is the ONLY channel from `brand.ts` into any prompt. A field that is
+ * not rendered below is invisible to the model no matter how carefully it was
+ * written — which is how `values`, `personality`, `competitiveAdvantage`,
+ * `successMetric`, `contentPhilosophy`, `publishingStrategy` and the secondary
+ * audience ended up being decorative.
+ */
+export function brandContextBlock(opts: BrandContextOptions = {}): string {
+  const language = opts.language ?? brand.outputLanguage;
+  const lines = [
     `Brand: ${brand.name} (${brand.identity.type}, ${brand.identity.industry})`,
     `Positioning: ${brand.positioning}`,
     `Mission: ${brand.mission}`,
@@ -446,15 +496,32 @@ export function brandContextBlock(): string {
     `Expertise: ${brand.identity.expertise.join(", ")}`,
     `Content pillars: ${brand.contentPillars.join(", ")}`,
     `Audience (primary): ${brand.targetAudience.primary.join(", ")}`,
+    `Audience (secondary): ${brand.targetAudience.secondary.join(", ")}`,
+    `Values: ${brand.values.join(", ")}`,
+    `Personality: ${brand.personality.join(", ")}`,
+    `What sets this voice apart: ${brand.competitiveAdvantage.join("; ")}`,
+    `Content philosophy: ${brand.contentPhilosophy.join("; ")}`,
     `Tone: ${brand.toneOfVoice.join(", ")}`,
     `Writing modes: ${brand.writingStyle.modes.join(" / ")} — ${brand.writingStyle.approach}`,
+    `Publishing strategy: news → ${brand.publishingStrategy.importantNews} Deep tech → ${brand.publishingStrategy.importantTechnologies}`,
     `Content rules: ${brand.contentRules.join("; ")}`,
     `Never publish: ${brand.neverPublish.join("; ")}`,
     `Reject if: ${brand.rejectionRules.join("; ")}`,
     `Quality bar: ${brand.qualityRules.join("; ")}`,
     `Voice: ${brand.voice}`,
-    `Output language for reader-facing text: ${brand.outputLanguage}`,
-  ].join("\n");
+    `Success metric: ${brand.successMetric}`,
+    `Output language for reader-facing text: ${language}`,
+  ];
+
+  if (opts.platform) {
+    const policy = getPlatformTextPolicy(opts.platform);
+    lines.push(
+      `This post is for ${policy.platform}. Reader: ${policy.audienceNotes}`,
+      `Platform voice for ${policy.platform}: ${policy.styleNotes}`,
+    );
+  }
+
+  return lines.join("\n");
 }
 
 function escapeHtml(s: string): string {

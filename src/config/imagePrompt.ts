@@ -6,7 +6,7 @@
  *  2) HEADING — readable on-image title text
  *  3) topic-true tech visual (diagram / system metaphor)
  *
- * Brand colors: #036158 teal + #5EEAD4 cyan.
+ * Brand colors: see `BRAND_COLORS` in config/brand.ts — teal + cyan.
  * Length target: ≤ 2800 chars (Nano Banana truncates ~2500; identity must survive lead).
  * Provider pipeline: UnoRouter → Nano Banana → Skywork → xKiro (diagram only).
  */
@@ -15,14 +15,24 @@ import {
   antiPoseClause,
   facialHairAvoidTerms,
 } from "./brandIdentity.js";
+import { BRAND_COLORS } from "./brand.js";
 
+/**
+ * Image palette, derived from the brand's single declared palette.
+ *
+ * This used to be a second, independent copy of the same hexes. Nothing read
+ * either one — the values only ever reached a prompt as literals inside the
+ * prose below — so a change to `brand.colors` would have left every generated
+ * cover on the old palette with no error and no test failure. Deriving them
+ * keeps the prose honest.
+ */
 export const brandImageColors = {
-  primary: "#036158",
-  secondaryWhite: "#FFFFFF",
-  darkGray: "#1F2937",
-  black: "#0A0A0A",
-  accentCyan: "#5EEAD4",
-  hotAmber: "#F59E0B",
+  primary: BRAND_COLORS.primary,
+  secondaryWhite: BRAND_COLORS.accent,
+  darkGray: BRAND_COLORS.secondary,
+  black: BRAND_COLORS.background,
+  accentCyan: BRAND_COLORS.accentCyan,
+  hotAmber: BRAND_COLORS.hotAmber,
 };
 
 /** Brand marks rendered ON the cover (not third-party logos). */
@@ -820,7 +830,7 @@ export function buildPremiumImagePrompt(
     must[2], // [TITLE TEXT] exact heading
     must[3], // [NO LOGO]
     // (No [POSE LOCK] block: personBlock above already carries the pose recipe.)
-    `[STYLE/COLORS]: brand teal #036158, cyan #5EEAD4, white title text, deep black field. Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
+    `[STYLE/COLORS]: brand teal ${brandImageColors.primary}, cyan ${brandImageColors.accentCyan}, white title text, deep black field. Apple keynote hero + Behance tech editorial — sharp, modern, NO frames, NO logos.`,
   ].filter(Boolean);
 
   // P1 — visual variety. This is what stops every cover looking identical, so it
@@ -890,7 +900,7 @@ export function buildPremiumImagePrompt(
  */
 const GLASS_STYLE = [
   `[STYLE — GLASSMORPHISM] Frosted-glass panels: translucent cards (65–80% opacity), 24–32px rounded corners, 1px translucent white borders, soft backdrop blur, faint top-edge highlight, soft diffuse shadows so panels float.`,
-  `Background: smooth #0A0A0A → #06302C gradient with 2–3 heavily blurred teal #036158 / cyan #5EEAD4 orbs BEHIND the glass (blurred light, never sharp shapes). Layered depth. Amber #F59E0B marks decision nodes.`,
+  `Background: smooth ${brandImageColors.black} → #06302C gradient with 2–3 heavily blurred teal ${brandImageColors.primary} / cyan ${brandImageColors.accentCyan} orbs BEHIND the glass (blurred light, never sharp shapes). Layered depth. Amber ${brandImageColors.hotAmber} marks decision nodes.`,
   `Clean premium UI — NOT cyberpunk. Labels stay pure white #FFFFFF ON the glass, never over a bright orb; blur must never soften letterforms. NO excessive glow, NO neon bloom, no lens flare, no particles, no swirls.`,
 ].join(" ");
 

@@ -8,8 +8,42 @@
  * - Quality gate checks factual alignment with source
  */
 import { brand, brandContextBlock } from "../config/brand.js";
+import { bannedPhraseBlock, glossaryBlock } from "../config/voiceRules.js";
 
 const BRAND = brandContextBlock();
+/**
+ * Master-body block: the canonical Uzbek post whose fullest read surface is
+ * Telegram, so it carries Telegram's declared voice and audience.
+ */
+const BRAND_MASTER = brandContextBlock({ platform: "telegram" });
+/**
+ * English-surface block for LinkedIn / Threads.
+ *
+ * The language override is load-bearing. Without it the brand block told the
+ * English writer "Output language for reader-facing text: Uzbek (Latin script)"
+ * while the role's own last line demanded "Professional English" — a direct
+ * contradiction in the same prompt, on every English post.
+ */
+const BRAND_EN = brandContextBlock({
+  language: "Professional English (LinkedIn and Threads)",
+  platform: "linkedin",
+});
+
+/**
+ * Voice rules, rendered from `config/voiceRules.ts`.
+ *
+ * This used to be prose hardcoded here (COPY_CRAFT section F), duplicated as a
+ * separate array inside `qualityCheck.ts`, and re-stated as intent in
+ * `brand.ts` — three copies that nothing kept in sync. The shared renderer is
+ * the fix: the writer is told exactly what the linter later checks.
+ */
+const VOICE_RULES = `
+VOICE RULES (deterministic — breaking one of these is a defect, not a style choice):
+
+${bannedPhraseBlock()}
+
+${glossaryBlock()}
+`.trim();
 
 /** Shared non-negotiables for all content agents */
 const GLOBAL_RULES = `
@@ -75,17 +109,14 @@ E. ADDRESS THE READER.
    - Uzbek: address the reader as "siz". Write to one person, not an audience.
    - Make the benefit and the next step explicit for that person.
 
-F. BANNED (instant rewrite if present):
-   - Generic openers: "Bugungi tez o'zgarayotgan dunyoda", "Sun'iy intellekt
-     hayotimizni o'zgartirmoqda", "In today's fast-paced world",
-     "AI is changing everything".
-   - Empty intensifiers: juda, nihoyatda, hayratlanarli, kuchli, inqilobiy,
-     shubhasiz, albatta, ma'lumki / powerful, revolutionary, game-changing,
-     groundbreaking, seamless.
-   - Rhetorical filler: "Tasavvur qiling…", "Imagine…", "Bilasizmi…".
-   - Restating the title as the first line.
-   - Summarising what you are about to say instead of saying it.
-   - Closing with vague inspiration ("Kelajak yorqin") instead of a next action.
+F. BANNED — the exact banned openers, attribution intros, empty intensifiers and
+   rhetorical filler are listed in the VOICE RULES block appended to this
+   prompt. That block is generated from the same source the automated linter
+   reads, so it is the authoritative list; do not rely on memory of it.
+   In addition, never:
+   - Restate the title as the first line.
+   - Summarise what you are about to say instead of saying it.
+   - Close with vague inspiration ("Kelajak yorqin") instead of a next action.
 
 G. SELF-CHECK before returning (silently):
    - Does the first line contain a specific, source-supported fact?
@@ -143,8 +174,10 @@ ${GLOBAL_RULES}
 
 ${COPY_CRAFT}
 
+${VOICE_RULES}
+
 BRAND CONTEXT:
-${BRAND}
+${BRAND_MASTER}
 
 OUTPUT LANGUAGE: Uzbek (Latin script). Output ONLY the post body. No meta commentary.`,
 
@@ -188,8 +221,10 @@ ${GLOBAL_RULES}
 
 ${COPY_CRAFT}
 
+${VOICE_RULES}
+
 BRAND CONTEXT:
-${BRAND}
+${BRAND_EN}
 
 OUTPUT LANGUAGE: Professional English. Output ONLY the post body. No meta commentary or preamble.`,
 } as const;
@@ -407,26 +442,6 @@ Respond EXACTLY in this format:
 OK: yes|no
 FACT_OK: yes|no
 ISSUES: <comma-separated short English issues; "none" if OK>
-`.trim();
-}
-
-export function buildImagePromptUserPrompt(input: {
-  title: string;
-  topicSnippet: string;
-}): string {
-  return `
-TASK: Create ONE English image-generation prompt for a premium editorial hero illustration
-about this AI Engineering topic. Tell a complete visual story of a real production AI system —
-not abstract shapes, not generic tech objects.
-
-Topic title: ${input.title}
-Topic context: ${input.topicSnippet.slice(0, 800)}
-
-Required visual DNA (include):
-${brand.visualStyle.imagePromptFragment}
-Photorealistic person + crisp heading text + brand logo, magazine-quality, brand #036158.
-
-Output only the prompt string.
 `.trim();
 }
 

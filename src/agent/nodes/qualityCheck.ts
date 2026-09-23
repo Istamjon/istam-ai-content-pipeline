@@ -1,7 +1,7 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
 import { generateText } from "../../lib/geminiText.js";
 import { markArticleSeen } from "../../db.js";
-import { brand } from "../../config/brand.js";
+import { NEVER_PUBLISH_CHECKS, isHardIssue } from "../../config/voiceRules.js";
 import { roles, buildQualityUserPrompt } from "../prompts.js";
 import { extractFactsFromBrief, hasFactsSection } from "../../lib/factsFromBrief.js";
 import {
@@ -73,26 +73,14 @@ export async function qualityCheck(
       issues.push("Repeated character spam detected");
     }
 
-    const neverPatterns: Array<{ re: RegExp; label: string }> = [
-      {
-        re: /\b(kripto|crypto|bitcoin|btc|nft|token\s*sot|airdrop)\b/i,
-        label: "Never-publish topic: cryptocurrency",
-      },
-      {
-        re: /\b(mish-mish|rumou?r|tasdiqlanmagan|clickbait)\b/i,
-        label: "Never-publish: unverified rumor / clickbait",
-      },
-    ];
-    for (const { re, label } of neverPatterns) {
-      if (re.test(text)) issues.push(label);
-    }
-
-    if (
-      !/\b(AI|LLM|agent|LangGraph|LangChain|MCP|model|API|kod|dastur|engineering|automation|pipeline)\b/i.test(
-        text,
-      )
-    ) {
-      issues.push("Off-brand: not clearly AI / engineering related");
+    // Brand never-publish rules, read from the shared source of truth so the
+    // declared list and the enforced list cannot drift apart again. This
+    // replaces a hardcoded 2-entry array (which silently covered only two of
+    // `brand.neverPublish`'s four rules) plus a no-op loop that read the array
+    // and discarded it, and an inline off-brand check that was the same
+    // predicate under a different label.
+    for (const check of NEVER_PUBLISH_CHECKS) {
+      if (check.hit(text)) issues.push(check.label);
     }
 
     if (
@@ -203,12 +191,7 @@ export async function qualityCheck(
     // Final-attempt soft pass: only "soft" fact noise (stats / truncated already repaired)
     // Brand never-publish and unsupported product tokens still hard-fail.
     if (issues.length > 0 && state.retryCount >= 3) {
-      const hard = issues.filter(
-        (i) =>
-          /never-publish|off-brand|unsupported tools|crypto|copyright|too short|forbidden phrase/i.test(
-            i,
-          ),
-      );
+      const hard = issues.filter(isHardIssue);
       const onlySoft = hard.length === 0;
       const softish = issues.every((i) =>
         /fact check|truncated|hallucin|invent|statistic|number|unsupported-claim|draft text|incomplete|runaway|too long/i.test(
@@ -226,10 +209,6 @@ export async function qualityCheck(
           issues.length = 0;
         }
       }
-    }
-
-    for (const topic of brand.neverPublish) {
-      void topic;
     }
 
     const ok = issues.length === 0;

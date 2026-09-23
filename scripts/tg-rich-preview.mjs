@@ -211,6 +211,19 @@ for (const [k, v] of Object.entries(structure)) {
   console.log(`${v ? "YES" : "no "} | ${k}`);
 }
 
+// ── voice lint ──────────────────────────────────────────────────────────────
+// Deterministic brand-voice check, from the same rules the writer prompt is
+// built from (`config/voiceRules.ts`). Measured on the canonical body, not on
+// the rendered HTML: the body is the writer's own prose and the only input the
+// rules were written against, and the footer/hashtag scaffolding around it is
+// machine-generated so linting it would only add noise.
+//
+// Reports; does not gate. A voice rule that hard-fails a draft would risk the
+// whole day's post, and a length gate here has already broken the pipeline once.
+const { voiceLint, formatVoiceLint } = await import("../dist/lib/voiceLint.js");
+console.log(`\n=== VOICE LINT (canonical body) ===`);
+console.log(formatVoiceLint(voiceLint(doc.body)));
+
 // ── send to the ADMIN chat only (never the channel) ─────────────────────────
 if (!ADMIN) {
   console.log("\nTELEGRAM_ADMIN_IDS not set — skipping the visual preview");
