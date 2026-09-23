@@ -104,6 +104,40 @@ Source of truth: [`src/config/brand.ts`](./src/config/brand.ts).
 | **Threads** | Graph API; public image/video URL when media |
 | X / Blogger | Supported in code; optional / often paid or unused |
 
+### Language per platform
+
+The pipeline is **bilingual by design**, and the split is not cosmetic:
+
+| Surface | Language | Source |
+|---------|----------|--------|
+| **LinkedIn**, **Threads** | **English** | `canonical.bodyEn` |
+| Telegram, Facebook, Instagram | **Uzbek** (Latin) | `canonical.body` |
+
+`bodyEn` is produced once per article by the `englishWriter` role
+(`src/agent/prompts.ts`), which carries an explicit
+`language: "Professional English (LinkedIn and Threads)"` override — without it
+the shared brand block told the English writer
+*"Output language for reader-facing text: Uzbek (Latin script)"*, a direct
+contradiction inside the same prompt.
+
+**A missing English body never falls back to the Uzbek master.** It used to
+(`doc.bodyEn || doc.body`), so one transient Gemini 503 was enough to publish
+Uzbek to LinkedIn — and nothing reported it, because the fallback was silent.
+Now:
+
+- `formatAllFromCanonical()` returns `null` for LinkedIn/Threads when there is no
+  usable `bodyEn`, so the publish layer marks the platform `skipped` with a
+  visible reason instead of posting the wrong language.
+- `formatPosts` retries the English generation (3 attempts, backoff) and treats
+  an empty result as a failure — an empty body is not a valid post.
+- The run summary records an explicit error when LinkedIn/Threads were skipped.
+- A changed article does **not** reuse the previous `bodyEn`: that English body
+  describes the old text, and reusing it would post a translation of different
+  content while the Uzbek master moved on.
+
+Manual posts via the Telegram bot are exempt — there the operator's own text is
+published as typed.
+
 ### Manual post via Telegram bot
 
 Bot the same `TELEGRAM_BOT_TOKEN` long-polls private messages from admins:

@@ -165,6 +165,11 @@ describe("formatAllFromCanonical", () => {
     "Birinchi gap AI agent haqida. " +
     "Ikkinchi gap production pipeline. ".repeat(40) +
     "Yakuniy xulosa: amaliy qadamlarni boshlang.";
+  /** English twin of `body`, for the English-only platforms. */
+  const bodyEn =
+    "First sentence about AI agents. " +
+    "Second sentence about the production pipeline. ".repeat(40) +
+    "Final takeaway: start with the practical steps.";
   const doc: CanonicalContent = {
     id: "test",
     version: 1,
@@ -179,7 +184,10 @@ describe("formatAllFromCanonical", () => {
   };
 
   it("keeps every platform under hard limit", () => {
-    const f = formatAllFromCanonical(doc, [
+    // LinkedIn and Threads render the English body, so the fixture must carry
+    // one — without it they are deliberately null (see the language tests
+    // below) and there would be no LinkedIn post left to measure.
+    const f = formatAllFromCanonical({ ...doc, bodyEn }, [
       "telegram",
       "linkedin",
       "instagram",
@@ -274,5 +282,66 @@ describe("formatAllFromCanonical", () => {
     expect(f.facebook!.text).toContain("O'zbekcha matn");
     expect(f.facebook!.text).not.toContain("English text");
     expect(f.facebook!.text).toContain("#OzbekistonTech");
+  });
+
+  it("never sends the Uzbek master to LinkedIn or Threads", () => {
+    // The defect this guards: `doc.bodyEn || doc.body` meant that when the
+    // English generation failed — a single transient Gemini 503 was enough —
+    // LinkedIn silently published the Uzbek master. The live run proved it: the
+    // "LinkedIn (English) preview" and the "Telegram (Uzbek) preview" were
+    // byte-identical Uzbek text.
+    const noEn: CanonicalContent = {
+      ...doc,
+      body: "O'zbekcha matn: sun'iy intellekt agentlari arxitekturasi.",
+    };
+    const f = formatAllFromCanonical(noEn, [
+      "telegram",
+      "linkedin",
+      "threads",
+      "facebook",
+    ]);
+
+    // No English body → no English-only post. Skipping beats posting the wrong
+    // language on the surface where it is most visible.
+    expect(f.linkedin).toBeNull();
+    expect(f.threads).toBeNull();
+    // ...and the Uzbek platforms are untouched.
+    expect(f.telegram!.text).toContain("O'zbekcha matn");
+    expect(f.facebook!.text).toContain("O'zbekcha matn");
+  });
+
+  it("treats a whitespace-only English body as missing", () => {
+    // An empty English body is a generation failure, not a valid post. Before
+    // this, `cleanPostBody` returning "" was assigned straight to `bodyEn`, and
+    // `||` then treated it as absent — silently.
+    const blank: CanonicalContent = { ...doc, bodyEn: "   \n\n  " };
+    const f = formatAllFromCanonical(blank, ["linkedin", "threads"]);
+
+    expect(f.linkedin).toBeNull();
+    expect(f.threads).toBeNull();
+  });
+
+  it("keeps English off every Uzbek platform", () => {
+    const both: CanonicalContent = {
+      ...doc,
+      body: "O'zbekcha matn: arxitektura.",
+      bodyEn: "English text: the architecture.",
+    };
+    const f = formatAllFromCanonical(both, [
+      "telegram",
+      "facebook",
+      "instagram",
+      "linkedin",
+      "threads",
+    ]);
+
+    for (const platform of ["telegram", "facebook", "instagram"] as const) {
+      expect(f[platform]!.text).toContain("O'zbekcha matn");
+      expect(f[platform]!.text).not.toContain("English text");
+    }
+    for (const platform of ["linkedin", "threads"] as const) {
+      expect(f[platform]!.text).toContain("English text");
+      expect(f[platform]!.text).not.toContain("O'zbekcha matn");
+    }
   });
 });

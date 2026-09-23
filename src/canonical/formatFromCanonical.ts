@@ -438,10 +438,23 @@ export function formatAllFromCanonical(
       out[platform] = null;
       continue;
     }
-    // THREADS and LINKEDIN posts are in English; all others are in Uzbek
-    const isEnglishPlatform = platform === "linkedin" || platform === "threads";
-    const platformBody = isEnglishPlatform ? doc.bodyEn || doc.body : doc.body;
-    out[platform] = formatOne(platform, platformBody, hasImage, doc.sourceUrl);
+    // LinkedIn and Threads are English-only surfaces; every other platform is
+    // Uzbek. The two are NOT interchangeable, so a missing English body must
+    // never fall back to the Uzbek master.
+    //
+    // This used to read `doc.bodyEn || doc.body`. When the English generation
+    // failed — one transient Gemini 503 was enough — the LinkedIn preview came
+    // out byte-identical to the Telegram one, and nothing reported a problem,
+    // because the fallback was silent. Returning null instead lets the publish
+    // layer mark the platform `skipped` with a visible reason.
+    if (platform === "linkedin" || platform === "threads") {
+      const en = doc.bodyEn?.trim();
+      out[platform] = en
+        ? formatOne(platform, en, hasImage, doc.sourceUrl)
+        : null;
+      continue;
+    }
+    out[platform] = formatOne(platform, doc.body, hasImage, doc.sourceUrl);
   }
   return out;
 }

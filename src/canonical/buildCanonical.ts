@@ -66,7 +66,12 @@ export function buildAndSaveCanonical(
       ...existing,
       title: article.title || existing.title,
       body,
-      bodyEn: bodyEn || existing.bodyEn,
+      // Content changed, so the previous English body describes the OLD text.
+      // Reusing it (the old `bodyEn || existing.bodyEn`) published a translation
+      // of different content to LinkedIn/Threads while the Uzbek master moved
+      // on — a mismatch worse than having no English body at all, because the
+      // platform is then silently skipped instead of quietly wrong.
+      bodyEn,
       summary: meta?.summary || existing.summary,
       contentType: meta?.contentType || existing.contentType,
       imagePath: article.imagePath || existing.imagePath,
