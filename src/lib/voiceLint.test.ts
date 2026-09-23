@@ -77,11 +77,41 @@ describe("voiceLint — the real defect", () => {
     }
   });
 
-  it("catches the abstract hook", () => {
-    expect(rules(REAL_POST)).toContain("abstract-hook");
+  it("reports the hook as a metric but never as an issue", () => {
+    // The live post opened by naming exactly what goes wrong — navigation
+    // menus, stylesheets, JavaScript bundles, tracking scripts — and an earlier
+    // version of this lint called that "abstract" because it contained neither
+    // a digit nor a glossary term. Telling the reader a good hook is bad is
+    // worse than no signal, so the signal is surfaced for a human to judge and
+    // kept out of the issue count.
+    const result = voiceLint(REAL_POST);
+    expect(result.metrics.hookHasConcreteDetail).toBe(false);
+    expect(result.issues.map((i) => i.rule)).not.toContain("abstract-hook");
   });
-  it("catches the over-long paragraph", () => {
+
+  it("catches the over-long PROSE paragraph", () => {
+    // 448 chars of real prose in the live post — genuinely over the cap.
     expect(rules(REAL_POST)).toContain("paragraph-too-long");
+  });
+
+  it("does NOT count a bullet list as an over-long paragraph", () => {
+    // The false positive that this rule shipped with: the live post's 899-char
+    // four-item list was reported as a 913-char "paragraph" while its longest
+    // real paragraph was 448. A list cannot be split, and the cap is a prose
+    // readability rule, so lists must not be measured at all.
+    const post = [
+      "## Sarlavha",
+      "",
+      "Siz bugun shu ishni qilasiz.",
+      "",
+      "- " + "birinchi qadam va buning tafsiloti yetarlicha uzun ".repeat(6),
+      "- " + "ikkinchi qadam va buning tafsiloti yetarlicha uzun ".repeat(6),
+      "- " + "uchinchi qadam va buning tafsiloti yetarlicha uzun ".repeat(6),
+      "- " + "to'rtinchi qadam va buning tafsiloti yetarlicha uzun ".repeat(6),
+    ].join("\n");
+
+    expect(voiceLint(post).metrics.longestParagraph).toBeLessThan(350);
+    expect(rules(post)).not.toContain("paragraph-too-long");
   });
 
   it("does NOT invent problems the post does not have", () => {

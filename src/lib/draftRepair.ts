@@ -196,8 +196,16 @@ function collapse(s: string): string {
   return (s || "").replace(/\s+/g, " ").trim();
 }
 
-/** True when the block carries markdown structure that must not be re-flowed. */
-function isStructuralBlock(block: string): boolean {
+/**
+ * True when the block carries markdown structure that must not be re-flowed.
+ *
+ * Exported because the *metric* has to agree with the *repair*: if
+ * `normalizeParagraphs` refuses to touch a block, then `longestParagraph` must
+ * not report that same block as an over-long paragraph. When the two disagreed,
+ * a 832-char bullet list was reported as a 861-char paragraph — on a post whose
+ * longest real prose paragraph was 290 chars.
+ */
+export function isStructuralBlock(block: string): boolean {
   return block.split("\n").some((line) => {
     const t = line.trim();
     if (!t) return false;
@@ -292,9 +300,19 @@ export function normalizeParagraphs(
   return out.join("\n\n");
 }
 
-/** Longest paragraph length, in characters. Used for logging and ops probes. */
+/**
+ * Longest PROSE paragraph length, in characters. Used for logging and ops probes.
+ *
+ * Structural blocks (headings, bullet lists, tables, quotes) are skipped, for
+ * the same reason `normalizeParagraphs` skips them: the ~350-char cap is a
+ * readability rule about prose. A bullet list is not a paragraph, and it cannot
+ * be split anyway. Counting it produced a false "paragraph too long" report on
+ * a post whose longest real paragraph was 290 chars — the 861 chars were a
+ * four-item `<ul>`.
+ */
 export function longestParagraph(text: string): number {
   return (text || "")
     .split(/\n{2,}/)
+    .filter((block) => !isStructuralBlock(block.trim()))
     .reduce((max, block) => Math.max(max, block.trim().length), 0);
 }

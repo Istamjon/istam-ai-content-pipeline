@@ -20,7 +20,7 @@ import {
   GLOSSARY,
   type BannedPhrase,
 } from "../config/voiceRules.js";
-import { longestParagraph, PARAGRAPH_SOFT_CAP } from "./draftRepair.js";
+import { longestParagraph, PARAGRAPH_SOFT_CAP, isStructuralBlock } from "./draftRepair.js";
 
 export type VoiceIssue = {
   /** Stable rule id. */
@@ -170,7 +170,10 @@ export function voiceLint(
   }
 
   // ── 5. Rhythm ──
-  const longest = longestParagraph(plain);
+  // Measured on the RAW text, because that is exactly what `normalizeParagraphs`
+  // sees. `longestParagraph` skips structural blocks, so this agrees with the
+  // repair instead of reporting blocks the repair deliberately leaves alone.
+  const longest = longestParagraph(text);
   if (longest > maxParagraph) {
     issues.push({
       rule: "paragraph-too-long",
@@ -183,6 +186,19 @@ export function voiceLint(
     (text || "").split("\n").find((l) => l.trim()) || "",
   );
   const hook = firstProseSentence(text);
+  /**
+   * Reported as a METRIC, never as an issue.
+   *
+   * The rule would be "the hook must carry a number or a named technology", but
+   * that is not something this lint can decide. The live post opened with a hook
+   * naming exactly what goes wrong — navigation menus, stylesheets, JavaScript
+   * bundles, tracking scripts — and was flagged, because it contained neither a
+   * digit nor a glossary term. A false positive that tells the reader a good
+   * hook is bad is worse than no signal at all.
+   *
+   * Vague openers are already caught reliably, by name, in `BANNED_OPENERS`.
+   * So `concreteHook` is surfaced for a human to judge and kept out of the count.
+   */
   const hookHasConcreteDetail =
     /\d/.test(hook) ||
     GLOSSARY.keepEnglish.some((t) =>
@@ -190,12 +206,6 @@ export function voiceLint(
         hook,
       ),
     );
-  if (!hookHasConcreteDetail) {
-    issues.push({
-      rule: "abstract-hook",
-      detail: `first sentence carries no number and no named technology: "${hook.slice(0, 120)}"`,
-    });
-  }
 
   // ── 7. Reader address ──
   const addressesReader = /(^|[^\p{L}])siz([^\p{L}]|$)/iu.test(plain);
@@ -212,7 +222,12 @@ export function voiceLint(
   return {
     issues,
     metrics: {
-      paragraphs: plain.split(/\n{2,}/).filter((b) => b.trim()).length,
+      // Prose paragraphs only, matching `longestParagraph` — a heading or a
+      // bullet list is a different thing and counting it here just made the
+      // report disagree with the rendered post (12 "paragraphs" vs 8 <p>).
+      paragraphs: (text || "")
+        .split(/\n{2,}/)
+        .filter((b) => b.trim() && !isStructuralBlock(b.trim())).length,
       longestParagraph: longest,
       sentences,
       words,

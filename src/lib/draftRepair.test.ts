@@ -183,6 +183,34 @@ describe("longestParagraph", () => {
     expect(longestParagraph("")).toBe(0);
   });
 
+  it("ignores structural blocks, because the repair ignores them too", () => {
+    // The bug this pins: the metric and the repair disagreed. A four-item
+    // bullet list was reported as an 861-char "paragraph" on a live post whose
+    // longest real paragraph was 290 chars — and the repair had correctly left
+    // the list alone, since inserting blank lines into a list corrupts it.
+    // Anything the repair refuses to touch, the metric must not count.
+    const item = "qadam va uning tafsiloti yetarlicha uzun";
+    const bullet = `- ${Array.from({ length: 6 }, () => item).join(" ")}`;
+    const t = [
+      "## Sarlavha",
+      "",
+      "Siz bugun shu ishni qilasiz.",
+      "",
+      bullet,
+      bullet,
+      bullet,
+      bullet,
+    ].join("\n");
+
+    // The list block alone is far past the cap...
+    expect(t.split(/\n{2,}/).some((b) => b.length > PARAGRAPH_SOFT_CAP)).toBe(true);
+    // ...but it is not prose, so the metric must not see it.
+    expect(longestParagraph(t)).toBeLessThan(PARAGRAPH_SOFT_CAP);
+    expect(longestParagraph(t)).toBe("Siz bugun shu ishni qilasiz.".length);
+    // And the repair leaves it alone, which is what makes the two consistent.
+    expect(normalizeParagraphs(t)).toBe(t);
+  });
+
   it("brings a live-sized paragraph under the cap", () => {
     // One paragraph the size of the 913-char one the shipped post carried
     // (canonical 8a5ec485806b5d05 v1).
