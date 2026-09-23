@@ -350,10 +350,12 @@ export function titleToCoverHeading(
     .replace(/\s+/g, " ")
     .trim();
 
-  // Drop blog fluff / weak openers (EN + UZ)
+  // Drop blog fluff / weak openers (EN + UZ).
+  // The leading verbs are here because a cover headline reads better as the
+  // subject than as the act: "Agent-friendly pages" beats "Making agent-friendly".
   t = t
     .replace(
-      /^(introducing|announcing|how to|how\s+|why\s+|what is|a playbook for|the complete guide to)\s+/i,
+      /^(introducing|announcing|making|building|creating|designing|writing|how to|how\s+|why\s+|what is|a playbook for|the complete guide to)\s+/i,
       "",
     )
     .replace(/^(yangi\s+maqola[:\s]+|maqola[:\s]+)/i, "")
@@ -362,37 +364,66 @@ export function titleToCoverHeading(
       "",
     )
     .replace(/\s+(qanday\s+ishlaydi|nima\s+uchun\s+muhim)\??$/i, "")
-    .replace(/[:;—–-].*$/, "") // keep power phrase before colon/dash
+    // Subtitle separators must be SPACED.
+    //
+    // A bare hyphen is almost always part of a compound — "agent-friendly",
+    // "GPU-Resident", "state-of-the-art". Treating it as a separator cut
+    // "Making agent-friendly pages with content negotiation" down to the
+    // on-image headline "Making Agent": a meaningless fragment printed in large
+    // type on the cover. Only a colon or a *spaced* dash introduces a subtitle.
+    .replace(/\s*[:;]\s+.*$/, "")
+    .replace(/\s+[—–]\s+.*$/, "")
+    .replace(/\s+-\s+.*$/, "")
     .trim();
 
   // Prefer first clause if sentence is long
   const clause = t.split(/[.!?]/)[0]?.trim() || t;
   t = clause;
 
-  // Tokenize and keep strongest words first (drop glue words if over budget)
-  let words = t
+  const words = t
     .split(/\s+/)
     .map((w) => w.replace(/^[^A-Za-z0-9oʻgʻOʻGʻ']+|[^A-Za-z0-9oʻgʻOʻGʻ']+$/gi, ""))
     .filter(Boolean);
 
-  if (words.length > COVER_HEADING_MAX_WORDS) {
-    const core = words.filter((w) => !HEADING_STOP.has(w.toLowerCase()));
-    words =
-      core.length >= 2
-        ? core.slice(0, COVER_HEADING_MAX_WORDS)
-        : words.slice(0, COVER_HEADING_MAX_WORDS);
+  if (!words.length) return "AI Engineering";
+
+  // Greedy fit over the ORIGINAL word order, so the phrase stays grammatical.
+  //
+  // The previous version filtered the glue words out and then concatenated what
+  // was left, which silently rewrote the phrase: "…pages with content" became
+  // "…pages content". Keeping order and stopping at the budget reads correctly.
+  const kept: string[] = [];
+  for (const w of words) {
+    if (kept.length >= COVER_HEADING_MAX_WORDS) break;
+    const next = [...kept, w].join(" ");
+    if (next.length > maxLen && kept.length) break;
+    kept.push(w);
+  }
+  // Never end on a glue word — "…pages with" is not a headline.
+  while (
+    kept.length > 1 &&
+    HEADING_STOP.has(kept[kept.length - 1].toLowerCase())
+  ) {
+    kept.pop();
   }
 
-  t = words.join(" ").trim();
+  // A cover headline is a label, not a sentence, so drop a leading determiner.
+  // On a long title the greedy fit stops mid-phrase, and "A production-grade
+  // retrieval" reads as a broken fragment where "Production-grade retrieval"
+  // reads as a subject. Same rule as the glue-word trim above, at the other end.
+  if (kept.length > 1 && /^(a|an|the)$/i.test(kept[0])) kept.shift();
+
+  t = kept.join(" ").trim();
   if (!t) t = "AI Engineering";
 
-  // Title Case light (keep short tech tokens)
+  // Sentence case. Premium editorial covers do not Title Case every word, and
+  // doing so produced mid-phrase capitals like "Pages With Content".
   t = t
     .split(" ")
-    .map((w) => {
+    .map((w, i) => {
       if (/^[A-Z0-9+.-]{2,}$/.test(w)) return w; // API, RAG, GPT-4
-      if (w.length <= 2) return w.toLowerCase();
-      return w.charAt(0).toUpperCase() + w.slice(1);
+      if (i === 0) return w.charAt(0).toUpperCase() + w.slice(1);
+      return w;
     })
     .join(" ");
 
@@ -893,15 +924,35 @@ export function buildPremiumImagePrompt(
  *   buildSchematicImagePrompt → providers 1–3 when no face is available
  *   buildWorkflowImagePrompt  → xKiro (absolute last resort)
  *
- * GLASSMORPHISM, deliberately. The previous wording pushed models toward heavy
- * neon/cyberpunk glow, which produced attractive but unreadable diagrams. Frosted
- * glass panels over a deep gradient read as premium, keep the node labels legible,
- * and stay consistent across every diagram the pipeline ever publishes.
+ * Flat and restrained, deliberately. The previous wording asked for "2–3 heavily
+ * blurred teal/cyan orbs", "layered depth" and "soft diffuse shadows so panels
+ * float", and then also banned excessive glow. That is a contradiction, and a
+ * model resolves it by over-serving the positive instructions — which is exactly
+ * the over-rendered, exaggerated look that shipped. Every positive line below is
+ * something a print designer would actually do; every effect is a named negative.
  */
 const GLASS_STYLE = [
-  `[STYLE — GLASSMORPHISM] Frosted-glass panels: translucent cards (65–80% opacity), 24–32px rounded corners, 1px translucent white borders, soft backdrop blur, faint top-edge highlight, soft diffuse shadows so panels float.`,
-  `Background: smooth ${brandImageColors.black} → #06302C gradient with 2–3 heavily blurred teal ${brandImageColors.primary} / cyan ${brandImageColors.accentCyan} orbs BEHIND the glass (blurred light, never sharp shapes). Layered depth. Amber ${brandImageColors.hotAmber} marks decision nodes.`,
-  `Clean premium UI — NOT cyberpunk. Labels stay pure white #FFFFFF ON the glass, never over a bright orb; blur must never soften letterforms. NO excessive glow, NO neon bloom, no lens flare, no particles, no swirls.`,
+  `[STYLE] Premium editorial infographic — matte, never glossy. Cards are solid panels a few percent lighter than the backdrop, 12–16px radius, one hairline border.`,
+  `Background: near-black ${brandImageColors.black} with at most ONE very soft teal ${brandImageColors.primary} wash in a corner at low opacity.`,
+  `Restraint IS the premium signal: generous empty space, no decoration, no filler icons; one accent colour — teal ${brandImageColors.primary}, cyan ${brandImageColors.accentCyan} only on the single highlighted path, amber ${brandImageColors.hotAmber} only on a decision node.`,
+  `[FORBIDDEN EFFECTS] No glow, no bloom, no neon, no lens flare, no light streaks, no bokeh, no particles, no sparkles, no swirls, no 3D perspective, no bevel, no emboss, no stacked drop shadows, no reflections, no gradient mesh, no motion blur, no cyberpunk styling.`,
+].join(" ");
+
+/**
+ * Legibility contract.
+ *
+ * The single biggest cause of a garbled diagram is text the model cannot fit:
+ * too many labels, set too small, sometimes rotated or drawn in perspective. A
+ * cover is read at thumbnail size in a feed, so the fix is fewer, larger, flatter
+ * labels — never more detail. The earlier prompts asked for up to eight nodes
+ * PLUS a legend PLUS zone captions in a 1:1 square, which cannot be rendered
+ * legibly and comes back as broken letterforms.
+ */
+const TYPOGRAPHY_RULES = [
+  `[TYPOGRAPHY — MANDATORY] Every label is horizontal, upright, flat, one clean sans-serif. Never rotate, skew, arc, curve or perspective-warp text.`,
+  `At most 5 node labels, each 1–2 words and at most ~14 characters, set LARGE. If a label would need to shrink to fit, use a shorter word; if it still cannot be set legibly, omit that node — never abbreviate into gibberish.`,
+  `The title is the largest element on the canvas; node labels at least a quarter of the title's height.`,
+  `No blur, glow or shadow behind any letter. Keep clear space around every label; never overlap a label with a line or an icon.`,
 ].join(" ");
 
 /**
@@ -915,15 +966,195 @@ const GLASS_STYLE = [
 const ACCURACY_RULES = [
   `[ACCURACY — MANDATORY] Draw EXACTLY the nodes below, in that order — never invent, merge, drop or duplicate one.`,
   `Every arrow follows real data/control flow and is labelled; no unreachable node, no orphan arrow; a backward arrow ONLY as a labelled retry loop.`,
-  `Node labels: 1–3 factual words, never invented code, numbers or API names.`,
-  `Rounded rectangle = step, diamond = decision, dashed = async; add a small legend. No gibberish.`,
+  `Rounded rectangle = step, diamond = decision, dashed = async. No legend, no key, no caption block: extra micro-text is unreadable at feed size.`,
 ].join(" ");
+
+/**
+ * Topic → diagram topology. ONE routing table for both diagram prompts.
+ *
+ * Two defects lived in the old routing. First, the two builders each carried a
+ * private copy, so they could disagree about the same article. Second, the match
+ * ran against a comma-joined keyword soup in an order that let a broad keyword
+ * win: "Making agent-friendly pages with content negotiation" contains "agent",
+ * so it was drawn as a **multi-agent orchestrator** — a diagram of something the
+ * article was not about. (The workflow builder did worse: it fell through to
+ * "Input → Processing → AI Model → Output → Feedback".)
+ *
+ * Matching runs on the raw title + hint, most specific term first, and each
+ * branch is capped at 5 nodes so every label can be set large.
+ */
+export type DiagramSubject = {
+  /** Ordered node chain. At most 5 labels — see TYPOGRAPHY_RULES. */
+  nodes: string;
+  /** One sentence describing the flow, for the model's understanding. */
+  detail: string;
+  /** Optional grouping, at most two short labels. */
+  zones?: string;
+};
+
+export function pickDiagramSubject(
+  title: string,
+  topicHint?: string,
+): DiagramSubject {
+  const raw = `${title} ${topicHint || ""}`.toLowerCase();
+
+  // 1. Content negotiation / machine-readable web. Before the generic "agent"
+  //    branch, because "content negotiation" is a precise term and "agent" is not.
+  if (/content\s*negotiat|agent.?friendly|agentic web|accept header|markdown endpoint/.test(raw)) {
+    return {
+      nodes: "Agent Request → Accept Header → Server Route → Markdown Response",
+      detail:
+        "Content negotiation: the agent asks for markdown through the Accept header and the server returns the same content in a cheaper, cleaner format",
+      zones: "Client (left): agent + Accept header; Server (right): router + renderer",
+    };
+  }
+
+  // 2. Retrieval. Keeps the re-ranker: dropping it is the classic wrong RAG diagram.
+  if (/rag|retriev|vector|embed|re-?rank|knowledge base|chunk/.test(raw)) {
+    return {
+      nodes: "Query → Embed → Vector Search → Re-rank → LLM Answer",
+      detail:
+        "Retrieval-augmented generation: embed the query, retrieve the top-k chunks, re-rank them, then answer from the assembled context",
+      zones: "Query (left) → Retrieval (center) → Answer (right)",
+    };
+  }
+
+  // 3. Multi-agent orchestration.
+  if (/multi.?agent|swarm|crew|orchestrat|supervisor/.test(raw)) {
+    return {
+      nodes: "Request → Orchestrator → Worker Agents → Aggregate → Answer",
+      detail:
+        "Multi-agent orchestration: a supervisor plans, delegates to specialist workers, then aggregates their results; shared memory is read and written by every worker (dashed two-way link)",
+      zones: "Supervisor (center) → Workers (ring) → Tools (outer)",
+    };
+  }
+
+  // 4. LangGraph / state machine. The retry is drawn as a loop, not a line to END.
+  if (/langgraph|state.?graph|state.?machine|conditional edge|checkpoint/.test(raw)) {
+    return {
+      nodes: "START → Agent Node → Tool Node → Router → END",
+      detail:
+        "LangGraph state machine: typed shared state, conditional edges, and a dashed retry loop from the router back to the agent node",
+      zones: "State (top-left); Graph (center); Checkpointer (bottom-right)",
+    };
+  }
+
+  // 5. MCP.
+  if (/mcp|model.?context|tool.?call|function.?call|json.?rpc/.test(raw)) {
+    return {
+      nodes: "Host LLM → MCP Client → MCP Server → Tool Result",
+      detail:
+        "Model Context Protocol: the host's client talks to a server that exposes tools, resources and prompts over JSON-RPC",
+      zones: "Host (left) → Bridge (center) → Servers (right)",
+    };
+  }
+
+  // 6. Evaluation / observability.
+  if (/eval|benchmark|llm.?judge|observab|tracing|trace|langsmith/.test(raw)) {
+    return {
+      nodes: "Eval Dataset → Model Under Test → LLM Judge → Report",
+      detail:
+        "Evaluation loop: run the dataset, score the responses with a judge, aggregate the metrics, then iterate on the weak cases",
+      zones: "Data (left) → Inference (center) → Evaluation (right)",
+    };
+  }
+
+  // 7. Deployment / serving.
+  if (/deploy|infra|serving|latency|scale|k8s|kubernetes|gateway|throughput/.test(raw)) {
+    return {
+      nodes: "Client → Gateway → Model Server → Response Cache",
+      detail:
+        "Production AI serving: gateway, model servers and a response cache, with monitoring alongside",
+      zones: "Edge (top) → Compute (middle) → Storage (bottom)",
+    };
+  }
+
+  // 8. Web delivery / cost.
+  if (/http|caching|cache|cdn|bandwidth|token cost|payload/.test(raw)) {
+    return {
+      nodes: "Request → Cache Check → Origin → Response",
+      detail:
+        "Request path with a cache in front of the origin, and the payload size that decides the token cost",
+      zones: "Edge (left) → Origin (right)",
+    };
+  }
+
+  // 9. Fallback. A three-node chain labelled with the topic's own leading
+  //    concept — honest about being minimal, instead of the old generic
+  //    "Input → Processing → AI Model → Output → Feedback", which pretended to
+  //    be the article's architecture and was wrong for every article.
+  const primary =
+    topicToVisualConcepts(title, topicHint)
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)[0] || "Request";
+  return {
+    nodes: `Request → ${primary.slice(0, 14)} → Response`,
+    detail: `Minimal three-step flow for ${primary}. Keep it to three nodes and do NOT invent architecture the article does not describe`,
+  };
+}
+
+/**
+ * Character budget for the diagram prompts.
+ *
+ * Two tiers, deliberately:
+ *  - The strictest provider (Nano Banana) truncates around 2500 chars, so every
+ *    P0 block is ordered to finish well inside that — nothing load-bearing can
+ *    be lost even by the provider that cuts earliest.
+ *  - The budget itself is 2800, matching `MAX_PROMPT` in
+ *    `buildPremiumImagePrompt`, so the P2 polish (the thumbnail self-check) is
+ *    still sent to the providers that accept it instead of being dropped
+ *    locally for everyone.
+ */
+const MAX_DIAGRAM_PROMPT = 2800;
+
+/**
+ * Assemble a diagram prompt from priority-ordered blocks, stopping BEFORE the
+ * budget would be exceeded. A block is atomic: it either fits whole or is
+ * dropped whole.
+ *
+ * Both diagram builders used to end with `(...).trim().slice(0, 2500)`, which
+ * cuts at an arbitrary character offset. The rules had grown past the budget, so
+ * the slice landed inside `[ACCURACY — MANDATORY]` and the model was handed a
+ * rule that stopped mid-word ("...Node lab"), followed by nothing. The prompt
+ * still reported success and the cover still rendered — it just silently
+ * ignored every rule after the cut, which is exactly the kind of failure that
+ * reads as "the model is bad at text" instead of "we truncated the rules".
+ *
+ * `buildPremiumImagePrompt` was already fixed for this; the two diagram
+ * builders were never migrated. This is that fix, shared by both.
+ */
+function assembleDiagramPrompt(blocks: string[]): string {
+  const parts: string[] = [];
+  let used = 0;
+
+  for (const block of blocks) {
+    if (!block) continue;
+    const cost = block.length + 1; // +1 for the joining space
+    if (used + cost > MAX_DIAGRAM_PROMPT) break;
+    parts.push(block);
+    used += cost;
+  }
+
+  const full = parts.join(" ").trim();
+
+  if (full.length > MAX_DIAGRAM_PROMPT) {
+    // Only reachable if the P0 blocks alone overflow — a real configuration
+    // error, so say so rather than shipping a prompt with rules missing.
+    console.warn(
+      `[imagePrompt] diagram P0 blocks exceed ${MAX_DIAGRAM_PROMPT} chars (${full.length}) — ` +
+        `shorten GLASS_STYLE / TYPOGRAPHY_RULES or the heading text.`,
+    );
+  }
+
+  return full;
+}
 
 /**
  * Build human-less technical schematic / diagram cover prompt.
  * Used when face identity is unavailable.
- * STRICTLY NO PEOPLE / NO FACES — glassmorphism architecture diagram, system node
- * graph, technical flowchart. Precise, accurate and readable.
+ * STRICTLY NO PEOPLE / NO FACES — flat editorial architecture diagram, system
+ * node graph, technical flowchart. Precise, accurate and readable.
  */
 export function buildSchematicImagePrompt(
   topicTitle: string,
@@ -951,49 +1182,46 @@ export function buildSchematicImagePrompt(
   const preset = pickImagePreset(seed, options?.preset || "workflow");
   const composition = pickCompositionHook(seed, preset, options?.composition);
 
-  // Topic-specific diagram visual — mapped from concepts.
-  // Node sequences are the technically correct ones (see ACCURACY_RULES): e.g. a
-  // RAG flow must include the re-ranker, and a LangGraph retry must be drawn as a
-  // loop back to the agent node rather than a straight line to END.
-  const diagramType = concepts.match(/\b(RAG|retriev|vector|embed)/i)
-    ? "retrieval-augmented generation: User Query → Query Embedder → Vector Search (top-k) → Re-ranker → Context Assembly → LLM → Grounded Answer; indexing side: Documents → Chunker → Embedder → Vector DB"
-    : concepts.match(/\b(agent|orchestrat|swarm|multi|tool)/i)
-    ? "multi-agent system: User Request → Orchestrator → Planner → [Researcher | Executor | Critic] → Tool Calls → Shared Memory → Aggregator → Final Answer"
-    : concepts.match(/\b(LangGraph|workflow|state|graph|node)/i)
-    ? "LangGraph state machine: START → Input Validation → Agent Node → Tool Node → Conditional Router → [Continue → END | Retry → Agent Node]; typed shared state + checkpointer"
-    : concepts.match(/\b(infra|kubernetes|deploy|serving|latency|gateway)/i)
-    ? "production deployment: Client → API Gateway → Load Balancer → Model Server → Response Cache → Vector DB → Response, with Monitoring sidecar"
-    : concepts.match(/\b(eval|benchmark|test|monitor|cicd)/i)
-    ? "evaluation pipeline: Eval Dataset → Model Under Test → Responses → LLM Judge + Metrics → Report → Iterate"
-    : `system architecture diagram for: ${concepts.slice(0, 100)}`;
+  // Topology comes from the shared routing table, so this builder and the xKiro
+  // builder can never disagree about the same article.
+  const subject = pickDiagramSubject(topicTitle, topicHint);
 
-  const lead = [
+  // Priority order, most load-bearing first — see assembleDiagramPrompt.
+  //
+  // [ACCURACY] is in P0, not P1, because it is the block that pins the diagram
+  // to the article — and it is the block the old `.slice(0, 2500)` was cutting
+  // in half, so the one rule that made the cover topic-true was the one arriving
+  // broken. The two blocks the covers visibly failed on (restraint, legible
+  // type) sit in P1, above the polish, so they cannot fall off either.
+  const prompt = assembleDiagramPrompt([
+    // P0 — genre, headline, topic and topology. Never droppable.
     `[NO HUMANS. NO FACES. NO PEOPLE. NO BODIES. NO CHARACTERS. NO AVATARS.]`,
-    `Clean technical architecture diagram — precise, readable, informative. NOT abstract art.`,
-    `Full-bleed 1:1 social media cover for AI Engineering. Canvas IS the cover, no frames, no mockups.`,
-    `[TITLE] Exact text, one line only: "${heading}". Large, bold, high-contrast white or teal on dark background.`,
+    `A flat editorial architecture diagram for an AI Engineering cover — precise, legible, one clear left-to-right flow. NOT abstract art, NOT a 3D render.`,
+    `Full-bleed 1:1 social media cover. Canvas IS the cover: no frames, no mockups, no device bezels.`,
+    `[TITLE] Exact text, one line only: "${heading}". The largest element on the canvas, high-contrast white on the dark background.`,
     `[NO LOGO] No IO/IstamAI monogram, badge, or watermark anywhere.`,
-    `[DIAGRAM SUBJECT] ${diagramType}. Topic context: ${concepts.slice(0, 120)}.`,
-    GLASS_STYLE,
+    `[DIAGRAM SUBJECT] ${subject.detail}. Node sequence: ${subject.nodes}.${subject.zones ? ` Grouping: ${subject.zones}.` : ""}`,
     ACCURACY_RULES,
-    `[LAYOUT] Logical left-to-right or top-to-bottom flow that matches how the system actually works, grouped into faint glass zones. Empty or decorative elements are forbidden.`,
-  ].join(" ");
+    // P1 — premium restraint and legibility: the two things that were wrong.
+    GLASS_STYLE,
+    TYPOGRAPHY_RULES,
+    // P2 — polish, dropped first if the budget runs out.
+    // No second "Requirements:" block restating the same rules. Repeating an
+    // instruction does not strengthen it, and the earlier duplicate both burned
+    // the character budget and contradicted the style block. This adds only what
+    // is genuinely new: the thumbnail test.
+    `FINAL CHECK: at thumbnail size the title and every node label must still be readable; if not, drop the least important node rather than shrinking the type.`,
+  ]);
 
-  const extended = [
-    ``,
-    `Requirements: render the node sequence above exactly, in order; arrows labelled; related nodes grouped into faint glass zones (1–2 words); title "${heading}" prominent at top, oversized and readable; include a tiny shape legend; every element serves the diagram; zero humans, faces, hands or characters; hard avoid glow, neon bloom, swirls, abstract shapes with no meaning, blurry elements, unreadable text.`,
-  ].join("\n");
-
-  const prompt = (lead + "\n" + extended).trim().slice(0, 2500);
   return { prompt, preset, composition, heading };
 }
 
 
 /**
  * Build dedicated AI Workflow schematic cover prompt for xKiro.
- * Topic-aware: derives the real pipeline topology from the title/hint.
- * Glassmorphism style — frosted panels, deep gradient, soft blurred light.
- * Technically accurate node sequence, readable and informative.
+ * Topic-aware: the topology comes from the shared `pickDiagramSubject` table, so
+ * this and the schematic builder always agree.
+ * Flat editorial style — restrained palette, generous space, large legible type.
  * STRICTLY NO HUMANS / NO FACES — pure technical diagram.
  */
 export function buildWorkflowImagePrompt(
@@ -1020,91 +1248,34 @@ export function buildWorkflowImagePrompt(
   const seed = topicTitle + "|workflow|" + concepts;
   const composition = pickCompositionHook(seed, "workflow", options?.composition);
 
-  // Derive the workflow topology from the topic.
-  // Each spec is the technically correct pipeline, not a plausible-looking guess:
-  // RAG keeps the re-ranker, LangGraph draws the retry as a loop back to the agent
-  // node, MCP uses the real host → client → server topology.
-  const raw = `${topicTitle} ${topicHint || ""}`.toLowerCase();
+  // Topology comes from the SAME shared routing table as the schematic builder.
+  // This used to be a second, independent copy of the routing, which is how the
+  // two diagrams could disagree about one article — and how this one fell
+  // through to a generic "Input → Processing → AI Model → Output" placeholder
+  // for a topic about HTTP content negotiation.
+  const subject = pickDiagramSubject(topicTitle, topicHint);
 
-  const workflowSpec =
-    raw.match(/rag|retriev|vector|embed|knowledge/)
-      ? {
-          nodes:
-            "User Query → Query Embedder → Vector Search (top-k) → Re-ranker → Context Assembly → LLM → Grounded Answer",
-          detail:
-            "Retrieval-augmented generation: embed the query, retrieve the top-k chunks, re-rank them, assemble the context, then answer",
-          zones:
-            "Indexing zone (top): Documents → Chunker → Embedder → Vector DB; Query zone (bottom): Query → Embed → Search → Re-rank → Assemble → LLM",
-        }
-      : raw.match(/multi.?agent|swarm|crew|orchestrat/)
-      ? {
-          nodes:
-            "User Request → Orchestrator → Planner → [Researcher | Executor | Critic] → Tool Calls → Shared Memory → Aggregator → Final Answer",
-          detail:
-            "Multi-agent orchestration: a supervisor plans, delegates to specialist agents, aggregates their results; shared memory is read and written by every worker (draw it as a dashed two-way link)",
-          zones:
-            "Supervisor layer (center): Orchestrator; Worker layer (ring): Planner, Researcher, Executor, Critic; Tool layer (outer): APIs, DB, Web Search",
-        }
-      : raw.match(/langgraph|state.?graph|state.?machine|graph|node|edge/)
-      ? {
-          nodes:
-            "START → Input Validation → Agent Node → Tool Node → Conditional Router → [Continue → END | Retry → Agent Node]",
-          detail:
-            "LangGraph state machine: typed shared state, conditional edges, and a dashed retry loop from the router back to the Agent Node",
-          zones:
-            "State schema box (top-left): typed fields; Main graph (center): nodes + directed edges; Checkpointer (bottom-right): persists thread state",
-        }
-      : raw.match(/mcp|model.?context|tool.?call|function.?call/)
-      ? {
-          nodes:
-            "Host App (LLM) → MCP Client → MCP Server → [Tools | Resources | Prompts] → Tool Result → back to Host",
-          detail:
-            "Model Context Protocol: the host's client talks to a server that exposes tools, resources and prompts",
-          zones:
-            "Host (left): the LLM application; MCP client/server bridge (center): JSON-RPC; Capability servers (right): Tools, Resources, Prompts",
-        }
-      : raw.match(/eval|benchmark|test|monitor|judge/)
-      ? {
-          nodes:
-            "Eval Dataset → Model Under Test → Responses → LLM Judge + Metrics → Report → Iterate",
-          detail:
-            "LLM evaluation loop: run the dataset, score responses with a judge, aggregate metrics, then iterate",
-          zones:
-            "Data prep (left): dataset + rubric; Inference (center): model under test; Evaluation (right): judge, metrics, report",
-        }
-      : raw.match(/deploy|infra|serving|latency|scale|k8s|kubernetes/)
-      ? {
-          nodes:
-            "Client → API Gateway → Load Balancer → Model Server → Response Cache → Vector DB → Response",
-          detail:
-            "Production AI serving: gateway, load balancing, model servers, response cache and vector store, with a monitoring sidecar",
-          zones:
-            "Edge layer (top): gateway + auth; Compute layer (middle): load balancer + model servers; Storage layer (bottom): cache + vector DB; sidecar: Monitoring",
-        }
-      : {
-          nodes: `Input → Processing → AI Model → Output → Feedback`,
-          detail: `AI system workflow for: ${concepts.slice(0, 80)}`,
-          zones: `Input zone (left) → Core processing (center) → Output zone (right); dashed feedback arrow from Output back to Input`,
-        };
-
-  const lead = [
+  // Same priority order and the same budget helper as the schematic builder, so
+  // the two can never disagree about what matters. See assembleDiagramPrompt for
+  // why this replaced `.slice(0, 2500)` and why [ACCURACY] is in P0.
+  const prompt = assembleDiagramPrompt([
+    // P0 — genre, headline, topic and topology. Never droppable.
     `[NO HUMANS. NO FACES. NO PEOPLE. NO BODIES. NO CHARACTERS. NO AVATARS. ZERO.]`,
-    `Clean technical AI workflow diagram — precise, readable, educational. NOT abstract art.`,
-    `Full-bleed 1:1 social media cover for AI Engineering. Canvas IS the cover, no frames, no mockups, no device bezels.`,
-    `[TITLE] Exact text, one line: "${heading}". Large, bold, white, maximum contrast, top of image.`,
+    `A flat editorial AI workflow diagram for an Engineering cover — precise, legible, one clear left-to-right flow. NOT abstract art, NOT a 3D render.`,
+    `Full-bleed 1:1 social media cover. Canvas IS the cover: no frames, no mockups, no device bezels.`,
+    `[TITLE] Exact text, one line: "${heading}". The largest element on the canvas, maximum contrast, top of image.`,
     `[NO LOGO] No IO/IstamAI monogram, badge, or watermark.`,
-    `[WORKFLOW DIAGRAM] ${workflowSpec.detail}. Node sequence: ${workflowSpec.nodes}.`,
-    `[LAYOUT ZONES] ${workflowSpec.zones}.`,
-    GLASS_STYLE,
+    `[WORKFLOW DIAGRAM] ${subject.detail}. Node sequence: ${subject.nodes}.`,
+    subject.zones ? `[LAYOUT ZONES] ${subject.zones}.` : "",
     ACCURACY_RULES,
-  ].join(" ");
+    // P1 — premium restraint and legibility: the two things that were wrong.
+    GLASS_STYLE,
+    TYPOGRAPHY_RULES,
+    // P2 — polish, dropped first if the budget runs out.
+    // No duplicate "Requirements:" restatement — see the schematic builder.
+    `FINAL CHECK: at thumbnail size the title and every node label must still be readable; if not, drop the least important node rather than shrinking the type.`,
+  ]);
 
-  const extended = [
-    ``,
-    `Requirements: node sequence exactly as above (authoritative); nodes labelled 1–3 words, never invented; arrows labelled; related nodes grouped into faint glass zones; title "${heading}" dominant at the top, readable at thumbnail size; every element serves the diagram; zero humans, faces, hands or characters; hard avoid neon glow, bloom, swirls, unreadable micro-text, blurry backgrounds, invented labels.`,
-  ].join("\n");
-
-  const prompt = (lead + "\n" + extended).trim().slice(0, 2500);
   return { prompt, preset: "workflow", composition, heading };
 }
 
