@@ -117,6 +117,7 @@ async function probeUnorouter() {
     Authorization: `Bearer ${key}`,
   });
   let verdict;
+  let ids = [];
   if (r.status === 0) {
     verdict = `UNREACHABLE (${r.text})`;
   } else if (r.status === 401 || r.status === 403) {
@@ -124,13 +125,33 @@ async function probeUnorouter() {
   } else if (!r.ok) {
     verdict = `HTTP ${r.status} (${r.text.slice(0, 160)})`;
   } else {
-    const ids = (r.json && r.json.data ? r.json.data : [])
+    ids = (r.json && r.json.data ? r.json.data : [])
       .map((m) => String(m.id || ""))
       .filter(Boolean);
     const want = process.env.UNOROUTER_IMAGE_MODEL || "gpt-image-2:free";
     verdict = `OK http=${r.status} models=${ids.length} seesModel(${want})=${ids.includes(want)}`;
   }
   console.log(`[probe] UnoRouter ${tail(key)} base=${base} ms=${r.ms} → ${verdict}`);
+
+  // A valid key whose configured model is not in the list is a silent dead end:
+  // the provider looks "configured" to the app and fails on every call. Name the
+  // models the key CAN see so the configured one can be corrected.
+  if (ids.length > 0) {
+    const want = process.env.UNOROUTER_IMAGE_MODEL || "gpt-image-2:free";
+    if (!ids.includes(want)) {
+      const imageish = ids.filter((i) =>
+        /image|flux|sdxl|diffusion|dall|cogview|sensenova|seedream|glm/i.test(i),
+      );
+      console.log(
+        `[probe] UnoRouter WARNING: configured model "${want}" is NOT in this key's list.`,
+      );
+      console.log(
+        `[probe] UnoRouter image-capable models (${imageish.length}): ` +
+          (imageish.slice(0, 40).join(", ") ||
+            "NONE — this key cannot see any image model"),
+      );
+    }
+  }
 }
 
 (async () => {
