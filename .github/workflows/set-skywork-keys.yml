@@ -47,7 +47,7 @@ jobs:
           }
 
       - name: Update .env Skywork keys and restart
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           SW_KEY1: ${{ github.event.inputs.key1 || secrets.SKYWORK_API_KEY }}
           SW_KEY2: ${{ github.event.inputs.key2 || secrets.SKYWORK_API_KEY_2 }}

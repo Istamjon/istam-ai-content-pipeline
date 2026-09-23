@@ -48,7 +48,7 @@ jobs:
           }
 
       - name: Run over SSH
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           REMOTE_APP_DIR: ${{ secrets.VDS_PATH }}
           TASK: ${{ github.event.inputs.task }}
