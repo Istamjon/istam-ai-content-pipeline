@@ -95,7 +95,31 @@ export function canUseGeminiToday(): {
   };
 }
 
-function extractText(json: unknown): string {
+/**
+ * Output-token ceiling for every text call.
+ *
+ * `maxOutputTokens` is a CEILING, not a target: it costs nothing when unused and
+ * only bounds a runaway generation. It used to be 4096, which is tight for the
+ * translator — it receives up to 10000 chars of source and returns Uzbek, which
+ * is typically LONGER than the English input, so ~4000 tokens was reachable. A
+ * truncated translation is not obviously broken: `translate.ts` does no length
+ * check, `rewrite.ts` only repairs the WRITER's output, so a half-translated
+ * source silently becomes a thinner post with no error anywhere.
+ *
+ * Whether that actually happened is unconfirmed — which is exactly why
+ * `geminiGenerate` now logs `finishReason`. 8192 is comfortably within the
+ * output limits of every Gemini flash model this pipeline can be pointed at.
+ */
+const MAX_OUTPUT_TOKENS = 8192;
+
+/**
+ * Extract the text plus the model's `finishReason`.
+ *
+ * The reason used to be declared in the type and then ignored, so a response cut
+ * off by `maxOutputTokens` was indistinguishable from a complete one — the same
+ * silent-truncation shape as the 2000-char draft cap in `rewrite.ts`.
+ */
+function extractText(json: unknown): { text: string; finishReason: string } {
   const obj = json as {
     candidates?: Array<{
       content?: { parts?: Array<{ text?: string }> };
@@ -106,7 +130,8 @@ function extractText(json: unknown): string {
   if (obj.error?.message) {
     throw new Error(obj.error.message);
   }
-  const parts = obj.candidates?.[0]?.content?.parts;
+  const candidate = obj.candidates?.[0];
+  const parts = candidate?.content?.parts;
   if (!parts?.length) {
     throw new Error(
       "Gemini empty response: " + JSON.stringify(json).slice(0, 200),
@@ -119,7 +144,7 @@ function extractText(json: unknown): string {
   if (!text) {
     throw new Error("Gemini returned empty text parts");
   }
-  return text;
+  return { text, finishReason: candidate?.finishReason || "" };
 }
 
 /**
@@ -212,7 +237,7 @@ async function geminiGenerate(
     ],
     generationConfig: {
       temperature: 0.4,
-      maxOutputTokens: 4096,
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
     },
   };
   if (systemPrompt?.trim()) {
@@ -250,7 +275,23 @@ async function geminiGenerate(
     throw new Error(`Gemini HTTP ${res.status}: ${msg}`);
   }
 
-  return extractText(json);
+  const { text, finishReason } = extractText(json);
+  console.log(
+    `[gemini] out=${text.length} chars finish=${finishReason || "?"}`,
+  );
+  // A cut-off response is still valid JSON with usable text, so without this
+  // warning a truncated translation or draft is indistinguishable from a
+  // complete one all the way through the pipeline.
+  if (finishReason === "MAX_TOKENS") {
+    console.warn(
+      `[gemini] response hit maxOutputTokens=${MAX_OUTPUT_TOKENS} — output is TRUNCATED at ${text.length} chars`,
+    );
+  } else if (finishReason && finishReason !== "STOP") {
+    console.warn(
+      `[gemini] finishReason=${finishReason} (not STOP) — output may be incomplete`,
+    );
+  }
+  return text;
 }
 
 /** Startup/dry-run budget report (mirrors image provider budget logs). */
