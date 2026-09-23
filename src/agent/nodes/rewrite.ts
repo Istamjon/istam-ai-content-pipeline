@@ -1,7 +1,7 @@
 import { StateAnnotation, GraphUpdate } from "../state.js";
 import { generateText } from "../../lib/geminiText.js";
 import { roles, buildRewriteUserPrompt } from "../prompts.js";
-import { cleanPostBody } from "../../lib/contentClean.js";
+import { stripSourceIntros } from "../../lib/contentClean.js";
 import { ensureFactsSection } from "../../lib/factsFromBrief.js";
 import {
   repairTruncation,
@@ -55,10 +55,23 @@ export async function rewrite(
     rewritten = rewritten
       .replace(/^(Here is|Quyida|Mana)\b[\s\S]*?:\s*/i, "")
       .trim();
-    rewritten = cleanPostBody(rewritten);
+    // Structure is preserved here ON PURPOSE.
+    //
+    // `cleanPostBody` flattens markdown — headings, emphasis, links — because
+    // LinkedIn/X/Threads render those markers literally. But that is a
+    // PER-PLATFORM rendering concern, and `formatOne` already applies
+    // `cleanPostBody` to the body for every plain-text platform. Doing it here
+    // instead destroyed the structure permanently: this runs BEFORE the
+    // canonical document is stored, so the Telegram rich renderer never received
+    // a heading or a list to render, and `markdownToRichHtml` only ever saw
+    // already-flattened text.
+    //
+    // This step removes source-intro noise only ("Yangi X maqolasi:", a stale
+    // "Manba:" line) and keeps the author's structure for the renderers.
+    rewritten = stripSourceIntros(rewritten);
     // E: guarantee 3–5 source-grounded "Asosiy faktlar" bullets when FACTS exist
     rewritten = ensureFactsSection(rewritten, current.summary, 5);
-    rewritten = cleanPostBody(rewritten);
+    rewritten = stripSourceIntros(rewritten);
     // Auto-repair: complete ending + drop invented % not in source/brief
     rewritten = repairTruncation(rewritten);
     const sourcePool = `${current.rawText || ""}\n${current.translated || ""}\n${current.summary || ""}\n${current.title || ""}`;

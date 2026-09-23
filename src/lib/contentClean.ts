@@ -5,6 +5,13 @@
 /**
  * Strip markdown markers so social posts stay plain (no literal **bold** on LinkedIn/X).
  * Also unwraps `inline code` markers (platforms show backticks literally).
+ *
+ * This is the safety net that lets the writer emit structure. The canonical body
+ * keeps its markdown so the Telegram rich renderer can use it, and every
+ * plain-text platform passes through here first — so any marker the writer is
+ * allowed to use MUST be handled below. An unhandled marker reaches the reader
+ * as literal punctuation, which is exactly why the writer used to be banned from
+ * markdown altogether.
  */
 export function stripMarkdownNoise(text: string): string {
   let t = (text || "").replace(/\r\n/g, "\n");
@@ -16,6 +23,11 @@ export function stripMarkdownNoise(text: string): string {
 
   // Inline code: `param` → param (keep contents)
   t = t.replace(/`([^`\n]+)`/g, "$1");
+
+  // Thematic breaks on their own line (--- / *** / ___): pure decoration that
+  // plain-text platforms would render literally. Runs before the stray-star
+  // cleanup below, which would otherwise leave the line's dashes behind.
+  t = t.replace(/^[ \t]*(-{3,}|\*{3,}|_{3,})[ \t]*$/gm, "");
 
   // **bold** / __bold__ (repeat for nested leftovers)
   for (let i = 0; i < 3; i++) {
@@ -33,6 +45,9 @@ export function stripMarkdownNoise(text: string): string {
 
   // ATX headings at line start: ## Title → Title
   t = t.replace(/^#{1,6}\s+/gm, "");
+
+  // Block quotation markers: "> text" → text
+  t = t.replace(/^[ \t]*>[ \t]?/gm, "");
 
   // Markdown links [label](url) → label
   t = t.replace(/\[([^\]]+)\]\([^)]+\)/g, "$1");

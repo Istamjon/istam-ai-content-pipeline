@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import type { Article } from "../agent/state.js";
 import { brand } from "../config/brand.js";
-import { cleanPostBody } from "../lib/contentClean.js";
+import { stripSourceIntros } from "../lib/contentClean.js";
 import type { CanonicalContent } from "./types.js";
 import { loadCanonicalByUrl, saveCanonical } from "./store.js";
 import { formatAllFromCanonical } from "./formatFromCanonical.js";
@@ -16,7 +16,14 @@ function contentHash(body: string): string {
 
 /**
  * Build / upsert Canonical Content from pipeline article state.
- * Master body = rewritten (quality-approved) text only — cleaned of markdown noise.
+ * Master body = rewritten (quality-approved) text, with source-intro noise
+ * removed but the author's markdown STRUCTURE kept.
+ *
+ * The canonical document is the source of truth for every platform, so it must
+ * not be pre-flattened: `cleanPostBody` (which strips headings, emphasis and
+ * links) is applied per platform in `formatOne`, where it belongs. Flattening
+ * here destroyed the structure before storage, so the Telegram rich renderer
+ * never received a heading or a list to render.
  */
 export function buildAndSaveCanonical(
   article: Article,
@@ -28,13 +35,13 @@ export function buildAndSaveCanonical(
     article.rawText ||
     ""
   ).trim();
-  const body = cleanPostBody(raw);
+  const body = stripSourceIntros(raw);
   if (!body) {
     throw new Error("Cannot build canonical: empty body");
   }
 
   const rawEn = (meta?.bodyEn || article.rewrittenEn || "").trim();
-  const bodyEn = rawEn ? cleanPostBody(rawEn) : undefined;
+  const bodyEn = rawEn ? stripSourceIntros(rawEn) : undefined;
 
   const now = new Date().toISOString();
   const hash = contentHash(body);
@@ -97,10 +104,14 @@ export function buildAndSaveCanonical(
 
 /**
  * Re-format platforms after manual body edit (no AI).
- * Also re-cleans master body (strips leftover ** markdown from older saves).
+ *
+ * Only source-intro noise is removed. This used to run `cleanPostBody`, which
+ * flattened the master body — so every regenerate silently stripped the
+ * headings and lists the writer had emitted, undoing the structure a second
+ * time (the first being `rewrite.ts`).
  */
 export function regenerateDerived(doc: CanonicalContent): CanonicalContent {
-  const cleaned = cleanPostBody(doc.body || "");
+  const cleaned = stripSourceIntros(doc.body || "");
   const bodyChanged = cleaned !== (doc.body || "").trim();
   const nextBody = cleaned || doc.body;
   const base: CanonicalContent = {

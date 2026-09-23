@@ -64,9 +64,11 @@ C. SPECIFICITY BEATS ADJECTIVES.
    - A sentence with no information the reader did not already have is deleted.
 
 D. RHYTHM AND SCANNABILITY.
-   - Paragraphs of 1–3 sentences. One idea per paragraph.
+   - Paragraphs of 1–3 sentences, never over ~350 characters. One idea each.
    - Vary sentence length: a short sentence after a long one lands harder.
    - Use line breaks deliberately; the feed is scanned before it is read.
+   - Make the structure visible: "## " section labels and "- " lists (see the
+     STRUCTURE rule). A wall of prose gets skipped; a labelled list gets read.
    - Active voice. Concrete verbs. Cut "bo'ladi/edi" padding where possible.
 
 E. ADDRESS THE READER.
@@ -177,7 +179,7 @@ FACT DISCIPLINE (highest priority):
 - Do NOT copy verbatim; write original, engaging, high-impact English.
 - Do NOT add source lines (no "Source:", no URL footer).
 - Do NOT add "Author:" line or hashtags — the platform formatter appends them automatically.
-- PLAIN TEXT ONLY: Absolutely NO Markdown formatting (no **bold**, *italic*, __underline__, # headers). Social feeds render asterisks and hashtags literally. Emphasize with spacing and words.
+- PLAIN TEXT ONLY: NO Markdown formatting (no **bold**, *italic*, __underline__, # headers). LinkedIn and Threads render plain text, so any marker is stripped before publishing and only wastes your effort. Emphasize with spacing and words.
 ${GLOBAL_RULES}
 
 ${COPY_CRAFT}
@@ -295,7 +297,13 @@ POST REQUIREMENTS:
      fewer steps. Each step starts with a concrete verb.
    - 1 honest limitation (from source or "manba cheklangan").
    - One concrete next action the reader can take today.
-   Use short paragraphs (1–3 sentences), one idea each, and vary sentence length.
+   - Then ONE closing question about the reader's OWN setup, placed BEFORE the
+     "Asosiy faktlar:" block. Ask something they can answer from experience in
+     one line, e.g. "Siz bu bosqichni qanday avtomatlashtirgansiz?". Never
+     rhetorical, and never a generic "Fikringiz qanday?".
+   Use short paragraphs: 1–3 sentences, one idea each, and NEVER longer than
+   ~350 characters. A 700-character paragraph is not read on a phone.
+   The steps in "Solution" MUST be a "- " list (see item 10), one step per line.
 5) REQUIRED closing section "Asosiy faktlar:" with 3–5 bullet lines (• …).
    - Each bullet MUST be a short, concrete claim from ALLOWED FACTS or SOURCE only.
    - Do not invent bullets. If fewer than 3 solid facts exist, write only those that are solid.
@@ -304,7 +312,21 @@ POST REQUIREMENTS:
 7) No hashtags in body
 8) No clickbait; no crypto; no pure promotion
 9) Coherent single topic — no confusion / mixed-up claims
-10) PLAIN TEXT ONLY — no Markdown: do not use **bold**, *italic*, __underline__, # headings, or other markdown markers. Platforms show asterisks literally. Emphasize with words, not stars.
+10) STRUCTURE — use light Markdown. It is RENDERED, not shown literally, so it
+    must carry meaning; the plain-text platforms strip the markers for you.
+    - "## " (exactly two hashes) before a section label: 2–4 sections max, e.g.
+      "## Muammo", "## Yechim", "## Cheklov". Never "# " alone, never "### " or
+      deeper.
+    - "- " for steps, options, or parallel items — one item per line. Never
+      write a multi-item list as a single paragraph.
+    - "**bold**" for at most 3 key terms in the whole post. Never bold a whole
+      sentence.
+    - "[label](https://…)" only for a URL that appears in SOURCE MATERIAL.
+      Never invent a URL.
+    - Do NOT use tables, code fences, images, or "> " quotations.
+    - Never leave a heading with no content under it, and do not end the post
+      with a heading: the closing question and the "Asosiy faktlar:" block are
+      the last things the reader sees.
 11) FORBIDDEN openers / phrases (never use):
    - "Yangi Skywork AI maqolasi:"
    - "Yangi … maqolasi:"
@@ -414,7 +436,7 @@ RULES:
    - 1 honest limitation / production caution.
    - Closing "Key Takeaways:" bullet lines (• …) and one concrete next action.
    Short paragraphs (1–3 sentences), one idea each, varied sentence length.
-4) PLAIN TEXT ONLY: DO NOT use markdown bold (**word**), italics (*word*), or headers (# Header). Platforms display markdown characters literally.
+4) PLAIN TEXT ONLY: DO NOT use markdown bold (**word**), italics (*word*), or headers (# Header). LinkedIn and Threads render plain text, so markers are stripped before publishing — carry the emphasis in the wording instead.
 5) NO hashtags and NO author signature lines (the platform publisher appends these).
 6) Length: target 1200–2200 characters. Fit cleanly on LinkedIn and Threads multi-part.
 7) Output ONLY the English post text.
