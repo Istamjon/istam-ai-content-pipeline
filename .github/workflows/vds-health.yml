@@ -53,6 +53,20 @@ jobs:
             echo "=== FACE ==="
             ls -la data/brand/face.jpg 2>/dev/null || echo "face.jpg missing"
 
+            echo "=== CONTENT BUDGET (from the DEPLOYED dist) ==="
+            # Read-only. Proves the length budget actually shipped, and that a
+            # draft at the writer prompt's own target survives capDraftLength.
+            # Before this probe existed, a 2000-char cap silently deleted the tail
+            # of every draft and nothing in any log reported it.
+            docker compose exec -T pipeline node -e "
+            import('./dist/lib/draftRepair.js').then((m) => {
+              const draft = Array.from({ length: 120 }, (_, i) => 'Bu ' + (i + 1) + '-jumla va u yetarlicha mazmunga ega.').join(' ');
+              const out = m.capDraftLength(draft);
+              console.log('MAX_DRAFT_CHARS=' + m.MAX_DRAFT_CHARS + ' MAX_BODY_CHARS=' + m.MAX_BODY_CHARS);
+              console.log('draft=' + draft.length + ' -> capped=' + out.length + ' targetPreserved=' + (out.length >= 4400));
+            }).catch((e) => console.log('budget probe failed:', e.message));
+            " 2>&1 || echo "(budget probe failed)"
+
             echo "=== LIVE IMAGE PIPELINE PROBE ==="
             docker compose exec -T pipeline node -r dotenv/config -e "import('./dist/lib/imagePipeline.js').then(m => m.logAllImageBudgets())" 2>&1 || true
 
