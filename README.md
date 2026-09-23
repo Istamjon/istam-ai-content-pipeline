@@ -25,7 +25,7 @@ The pipeline discovers AI/engineering articles, rewrites them in professional **
 7. **Image** (topic metaphors; no office; no on-image gibberish text when possible).
 8. **Canonical content** saved once; platform texts derived from it.
 9. **Publishes** only if quality OK **and** image exists.
-10. **Scheduler**: 3 random local times per day (new plan each day).
+10. **Scheduler**: 3–6 random local times per day (new plan each day).
 
 ### Graph overview
 
@@ -148,12 +148,31 @@ ENABLED_PLATFORMS=telegram,linkedin,facebook,instagram,threads
 Providers **1–3 are identity-capable**: they receive the real photo bytes and are
 the only ones that can reproduce the brand face. xKiro never gets the photo.
 
-**Diagram covers (xKiro / humanless fallback) use a glassmorphism style:**
-frosted translucent panels over a deep gradient, soft blurred teal light behind
-the glass, white labels kept on the panels for contrast. Prompts also carry an
-explicit accuracy contract — the node sequence is authoritative, arrows must
-follow real data flow, and invented nodes/labels are forbidden — so a technical
-cover is *correct*, not merely attractive.
+**Diagram covers (xKiro / humanless fallback) are flat and matte, not
+glassmorphism.** The earlier style asked for frosted translucent panels, a deep
+gradient and *"soft blurred teal light behind the glass"* while separately
+banning excessive glow — a contradiction the model resolved by over-serving the
+positive instructions, which is where the over-rendered look came from. Every
+positive line is now something a print designer would actually do, and every
+effect is a **named negative**:
+
+| Block | What it enforces |
+|-------|------------------|
+| `[STYLE]` | Solid panels a few percent lighter than the backdrop, 12–16px radius, one hairline border, near-black `#0A0A0A`, at most one very soft teal `#036158` corner wash |
+| `[FORBIDDEN EFFECTS]` | No glow, bloom, neon, lens flare, light streaks, bokeh, particles, sparkles, swirls, 3D perspective, bevel, emboss, stacked drop shadows, reflections, gradient mesh, motion blur, cyberpunk styling |
+| `[TYPOGRAPHY — MANDATORY]` | Horizontal upright labels, ≤5 node labels of 1–2 words and ≤~14 chars, title largest. If a label cannot be set legibly, **omit that node** rather than shrink it into gibberish |
+| `[ACCURACY — MANDATORY]` | The node sequence is authoritative — never invent, merge, drop or duplicate a node; every arrow follows real data flow; no legend, key or caption block |
+
+**The prompt is assembled in priority order and never sliced.** Both diagram
+builders used to end with `(...).trim().slice(0, 2500)`. The rules grew past the
+budget, so the cut landed inside `[ACCURACY — MANDATORY]` and the model received
+a rule that stopped mid-word — while the prompt still reported success and the
+cover still rendered. `assembleDiagramPrompt()` now treats each block as atomic:
+it fits whole or is dropped whole, assembly stops at the first block that does
+not fit, and the budget is 2800 with **every load-bearing block ordered to
+finish before ~2500** (where Nano Banana truncates). Only the thumbnail
+self-check sits in the tail. See
+[`src/config/imagePrompt.ts`](./src/config/imagePrompt.ts).
 
 ### Brand face (`data/brand/face.jpg`)
 
@@ -225,6 +244,70 @@ Quality rules (high level):
 - Post ends with **Asosiy faktlar:** (3–5 bullets when FACTS exist)
 - `FACT_OK` must be yes or draft is rejected
 - After quality retries fail → article skipped (no publish)
+
+---
+
+## Brand voice & audience
+
+Single source of truth: [`src/config/voiceRules.ts`](./src/config/voiceRules.ts).
+It exists because the brand *declared* rules that nothing enforced — the voice
+spec lived in prose inside the prompts, and the quality gate hardcoded a
+two-item list while `brand.neverPublish` declared four. A rule nothing reads is
+not a rule, so the rules now live in one module and both the prompt and the gate
+import from it.
+
+### Never-publish enforcement
+
+Every entry in `brand.neverPublish` has a matching check in
+`NEVER_PUBLISH_CHECKS`, and `voiceRules.test.ts` asserts the two sets are equal —
+so adding a declared rule without an enforcement cannot pass CI. Each check
+carries a `label` that `isHardIssue()` classifies; a label that stops matching
+would silently downgrade a hard rule to a soft one, so every label is asserted
+against the predicate.
+
+The advertising rule deliberately needs **two** independent signals (promotional
+wording *and* a price or an ad-only CTA), so a single word like *chegirma* in a
+technical post cannot block a publish. All four checks are also run against the
+real body of a live post and required to stay silent.
+
+### Dual-audience contract
+
+The brand has two audiences reading the same post: beginners/juniors/students/IT
+entrepreneurs (primary, and the larger group) and middle+/AI engineers/founders
+(secondary). "Keep it simple" and "give me the real detail" are therefore not a
+trade-off the writer may pick between, so the writer prompt carries an explicit
+contract requiring **both**, in layers:
+
+- **Layer 1** — what this is and why it matters, in ≤2 plain sentences.
+- **Layer 2** — the actual mechanism, the specific constraint, the number, the
+  failure mode, and when *not* to reach for this.
+
+It also forbids explaining what the reader can look up (translate the
+*consequence* instead), requires every claim a senior would challenge to come
+from the source, and takes its interest from the source's own tension rather than
+manufactured drama. The audience tiers are interpolated from
+`brand.targetAudience`, and the same rule sentences are used verbatim in both the
+role prompt and the rewrite prompt — a paraphrase would just be a second copy
+that drifts.
+
+### Paragraph rhythm
+
+`normalizeParagraphs()` splits over-long prose at sentence boundaries as a
+**deterministic repair**, not a gate. An earlier length *gate* (a 3500-char
+"Too long") once broke the pipeline, so the fix is a repair that can only
+improve the draft: URLs and abbreviations are masked first, and the block is
+returned untouched unless the re-joined text is provably identical to the
+original.
+
+### `voiceLint` is a diagnostic, not a gate
+
+[`src/lib/voiceLint.ts`](./src/lib/voiceLint.ts) reports voice issues and metrics
+for a *finished* post. It is surfaced in the ops preview
+(`scripts/tg-rich-preview.mjs`), **not** wired into the publish path — a lint that
+blocks publishing would be the same outage-shaped mistake as the length gate
+above. It measures prose only, so a bullet list is never reported as an
+over-long paragraph, and its `longestParagraph` metric skips exactly the
+structural blocks the repair refuses to touch.
 
 ---
 
@@ -549,21 +632,49 @@ node scripts/reset-image-soft-budget.mjs   # clear soft image counters (UTC day)
 
 ## CI
 
-GitHub Actions (`.github/workflows/ci.yml`) on every push/PR to `main`:
+GitHub Actions (`.github/workflows/ci.yml`) on every push/PR to `main`.
+
+**Job `build-and-test`**
 
 1. `npm ci` → `npm run build` (TypeScript)
-2. `langgraph.json` path check
-3. Unit tests (`npm test`)
-4. Smoke check for image prompt builder
-5. Docker image build (no push)
+2. `npm run lint:langgraph-json` — every path in `langgraph.json` resolves and exports its object
+3. `npm test` — unit suite
+4. `npm run test:int` — integration suite, including the OAuth token-refresh path against a real local HTTP socket. A stale access token is the most expensive silent failure in this pipeline, so this step is never skipped
+5. Smoke — image prompt builder (brand colour, person, heading, logo, preset, composition)
+6. Smoke — brand-fit + sources (accepts an AI-engineering article, rejects a gaming one)
+7. `npm run lint` — **report only** (`continue-on-error`)
+
+**Job `docker`** (needs `build-and-test`)
+
+8. Docker image build, no push
 
 Local equivalent:
 
 ```bash
-npm run ci
+npm run ci   # build + langgraph check + unit tests + integration tests
 ```
 
-ESLint still reports legacy `process.env` usage outside `env.ts` (non-blocking in CI until cleaned up).
+The two smoke checks and the Docker build are CI-only — run them by hand after
+touching `imagePrompt.ts` or `brandFit.ts`.
+
+ESLint is report-only because the codebase violates several of its own rules —
+measured at 170 problems (134 errors) across 39 files, dominated by
+`no-process-env` (84), then `no-instanceof` (32) and `no-non-null-assertion`
+(27). Note that fixing only the `process.env` usage would **not** make the gate
+pass: ~50 errors from the other rules would remain. Flip it to blocking once the
+count reaches zero, otherwise the gate stays decorative.
+
+### Deploy
+
+`.github/workflows/deploy.yml` runs on `workflow_run` after **CI succeeds on a
+push to `main`** (guarded on `conclusion == 'success'`), pulls the commit on the
+VDS, rebuilds the container and restarts it. There is no manual step. See
+[`docs/DEPLOY-VDS.md`](./docs/DEPLOY-VDS.md).
+
+`vds-health.yml` is the read-only probe used to confirm a deploy actually landed
+— it prints the box's `local=<sha>` next to `origin=<sha>`, the container status,
+the live image-provider ledger and the day's schedule. **Confirm the deployed
+commit with that probe rather than assuming the workflow meant it.**
 
 ---
 

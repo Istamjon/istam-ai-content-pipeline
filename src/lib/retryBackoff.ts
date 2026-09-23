@@ -12,8 +12,8 @@
  * gave up ~4 seconds too early, and reported only "TypeError: fetch failed".
  *
  * These delays give a blip ~85 seconds to clear. That is affordable: the next
- * scheduler slot is CRON_MIN_GAP_MINUTES (150) away, and the article is only
- * marked seen once, after publishing.
+ * scheduler slot is CRON_MIN_GAP_MINUTES away (default 180m), and the article is
+ * only marked seen once, after publishing.
  */
 export const PLATFORM_RETRY_DELAYS_MS = [5_000, 20_000, 60_000] as const;
 
