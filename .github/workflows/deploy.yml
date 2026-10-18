@@ -48,7 +48,7 @@ jobs:
           echo "Secrets present"
 
       - name: Deploy over SSH (pull + scripts/vds-deploy.sh)
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         env:
           # Forwarded to vds-deploy.sh, which upserts it into the VDS .env.
           # Credentials must never be hardcoded in scripts/ — this repo is public.
