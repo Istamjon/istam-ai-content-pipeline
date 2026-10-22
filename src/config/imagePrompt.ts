@@ -8,7 +8,13 @@
  *
  * Brand colors: see `BRAND_COLORS` in config/brand.ts — teal + cyan.
  * Length target: ≤ 2800 chars (Nano Banana truncates ~2500; identity must survive lead).
- * Provider pipeline: UnoRouter → Nano Banana → Skywork → xKiro (diagram only).
+ * Provider pipeline: UnoRouter → Nano Banana → Skywork → xKiro.
+ *
+ * xKiro has no face reference, so it cannot render the brand portrait. It used
+ * to compensate by drawing a technical flowchart on every single cover, which
+ * was accurate but visually identical post after post. It now rotates across
+ * three renderings of the same topic — editorial scene, physical metaphor and
+ * technical diagram — see `buildEngagingImagePrompt`.
  */
 import {
   identityClause,
@@ -880,7 +886,7 @@ export function buildPremiumImagePrompt(
     `Text rule: the ONLY readable words on the image are exactly "${heading}" — no subtitle, no other labels, no language names, no logo text, no gibberish.`,
     `Layout zones: TOP band = POWER TITLE "${heading}" (single line, oversized); MAIN = person in pose "${poseSpec.label}" + tech hologram mid-ground; generous negative space around the title; no nested rectangles, no poster-on-wall, no device bezel.`,
     faceRef
-      ? `[IDENTITY vs POSE] face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE); high likeness required, identity only. New pose (${poseSpec.label}). UnoRouter, Nano Banana and Skywork all receive this reference; xKiro does not (diagram-only).`
+      ? `[IDENTITY vs POSE] face.jpg = FACE ONLY (ORIGINAL FACE REFERENCE); high likeness required, identity only. New pose (${poseSpec.label}). UnoRouter, Nano Banana and Skywork all receive this reference; xKiro does not (it gets a face-free scene instead).`
       : `Person: photoreal professional AI creator vibe. ONE person only. Pose: ${poseSpec.label}.`,
     `Cover narrative: ${narrative}`,
   ].filter(Boolean);
@@ -1124,25 +1130,28 @@ const MAX_DIAGRAM_PROMPT = 2800;
  * `buildPremiumImagePrompt` was already fixed for this; the two diagram
  * builders were never migrated. This is that fix, shared by both.
  */
-function assembleDiagramPrompt(blocks: string[]): string {
+function assembleDiagramPrompt(
+  blocks: string[],
+  budget = MAX_DIAGRAM_PROMPT,
+): string {
   const parts: string[] = [];
   let used = 0;
 
   for (const block of blocks) {
     if (!block) continue;
     const cost = block.length + 1; // +1 for the joining space
-    if (used + cost > MAX_DIAGRAM_PROMPT) break;
+    if (used + cost > budget) break;
     parts.push(block);
     used += cost;
   }
 
   const full = parts.join(" ").trim();
 
-  if (full.length > MAX_DIAGRAM_PROMPT) {
+  if (full.length > budget) {
     // Only reachable if the P0 blocks alone overflow — a real configuration
     // error, so say so rather than shipping a prompt with rules missing.
     console.warn(
-      `[imagePrompt] diagram P0 blocks exceed ${MAX_DIAGRAM_PROMPT} chars (${full.length}) — ` +
+      `[imagePrompt] diagram P0 blocks exceed ${budget} chars (${full.length}) — ` +
         `shorten GLASS_STYLE / TYPOGRAPHY_RULES or the heading text.`,
     );
   }
@@ -1277,6 +1286,379 @@ export function buildWorkflowImagePrompt(
   ]);
 
   return { prompt, preset: "workflow", composition, heading };
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  xKiro — content-matched, feed-optimised covers
+// ══════════════════════════════════════════════════════════════════════════
+//
+// xKiro is the one provider that cannot see face.jpg, so the identity cover is
+// out of reach for it. It used to compensate by drawing a technical flowchart
+// on EVERY cover: accurate, but the same flat infographic post after post, and
+// a weak performer in a feed where the cover is the only thing competing for a
+// scroll.
+//
+// It now renders the SAME topic three different ways and rotates between them:
+//
+//   editorial — a cinematic hero scene of the article's subject
+//   metaphor  — the core mechanism as one physical object the viewer knows
+//   diagram   — the original technical flowchart (kept, no longer the default)
+//
+// Topic truth is not reinvented here: every mode reads its subject matter from
+// `pickDiagramSubject`, the same routing table the two diagram builders use. So
+// no mode can invent architecture the post never claimed, and the three modes
+// describe the same article rather than three different ones.
+
+export type XkiroVisualMode = "editorial" | "metaphor" | "diagram";
+
+export const XKIRO_VISUAL_MODES: XkiroVisualMode[] = [
+  "editorial",
+  "metaphor",
+  "diagram",
+];
+
+/**
+ * Weighted rotation — diagrams are deliberately a minority.
+ *
+ * The flowchart is the right answer for an architecture deep-dive and the wrong
+ * one for a "why this matters" post, and the pipeline cannot tell those apart
+ * cheaply. Rotating means each mode gets used where it happens to fit, and the
+ * feed stops repeating one look. `XKIRO_VISUAL_MODE` pins a single mode.
+ */
+const XKIRO_MODE_ROTATION: XkiroVisualMode[] = [
+  "editorial",
+  "metaphor",
+  "editorial",
+  "diagram",
+];
+
+export function pickXkiroVisualMode(
+  seed: string,
+  force?: XkiroVisualMode | string,
+): XkiroVisualMode {
+  const f = (force || "").toLowerCase().trim() as XkiroVisualMode;
+  if (XKIRO_VISUAL_MODES.includes(f)) return f;
+  const h = hashSeed(seed + "|xkiro-mode");
+  return XKIRO_MODE_ROTATION[h % XKIRO_MODE_ROTATION.length];
+}
+
+/** Scene structures for the non-diagram modes. */
+export type XkiroSceneHook =
+  | "hero_object"
+  | "split_contrast"
+  | "depth_corridor"
+  | "exploded_layers"
+  | "macro_mechanism"
+  | "threshold_portal";
+
+type SceneSpec = {
+  id: XkiroSceneHook;
+  label: string;
+  layout: string;
+  eyeCatch: string;
+};
+
+const SCENES: Record<XkiroSceneHook, SceneSpec> = {
+  hero_object: {
+    id: "hero_object",
+    label: "hero object",
+    layout:
+      "HERO OBJECT: one colossal, physically real object embodying the subject, centred and filling two thirds of the canvas at a low three-quarter camera angle; a single hard key light from upper left, deep falloff into black on the right, the object's leading edge picked out in brand teal",
+    eyeCatch:
+      "one unmistakable silhouette — at thumbnail size the shape alone carries the story",
+  },
+  split_contrast: {
+    id: "split_contrast",
+    label: "split contrast",
+    layout:
+      "SPLIT CONTRAST: a hard vertical division — the left half shows the problem as a dim, cluttered, desaturated mass; the right half shows the same system resolved into one clean lit structure; the seam is a thin cyan line, not a gradient",
+    eyeCatch:
+      "the before/after seam opens a 'what changed?' gap the viewer has to resolve",
+  },
+  depth_corridor: {
+    id: "depth_corridor",
+    label: "depth corridor",
+    layout:
+      "DEPTH CORRIDOR: a long receding passage of repeated structural frames — racks, arch ribs or pipeline segments — converging on one bright point; the camera sits low and slightly off-axis so the repetition reads as speed",
+    eyeCatch:
+      "forced perspective pulls the eye to the vanishing point and into the topic",
+  },
+  exploded_layers: {
+    id: "exploded_layers",
+    label: "exploded layers",
+    layout:
+      "EXPLODED VIEW: the subject's three or four layers pulled apart along one axis, floating and aligned, each a different matte material — one layer lit, the rest in shadow; separation shown by light, never by drawn annotation lines",
+    eyeCatch:
+      "a system shown as its parts reads as 'I can understand this at a glance'",
+  },
+  macro_mechanism: {
+    id: "macro_mechanism",
+    label: "macro mechanism",
+    layout:
+      "MACRO MECHANISM: an extreme close-up of the one physical detail that carries the idea — a connector, a valve, a fibre bundle, a latch — filling the frame, razor-sharp, with the rest of the machine dissolving into bokeh behind",
+    eyeCatch:
+      "familiar material at an unfamiliar scale stops the scroll before the title is read",
+  },
+  threshold_portal: {
+    id: "threshold_portal",
+    label: "threshold",
+    layout:
+      "THRESHOLD: a single doorway, hatch or aperture standing alone in a dark field, warm teal light spilling out of it across the floor; the space beyond is implied and never shown",
+    eyeCatch:
+      "an open threshold is an unresolved question — the viewer steps through it mentally",
+  },
+};
+
+export function pickSceneHook(
+  seed: string,
+  force?: XkiroSceneHook | string,
+): XkiroSceneHook {
+  const f = (force || "").toLowerCase().trim() as XkiroSceneHook;
+  if (f && SCENES[f]) return f;
+  const all = Object.keys(SCENES) as XkiroSceneHook[];
+  const h = hashSeed(seed + "|scene");
+  return all[h % all.length];
+}
+
+/**
+ * Cinematic style for editorial/metaphor covers.
+ *
+ * Deliberately the opposite of `GLASS_STYLE`: a diagram earns its premium look
+ * from restraint, a cover earns it from light. The two are never mixed into one
+ * prompt, which is why the glow ban stays scoped to the diagram builders.
+ */
+const CINEMATIC_STYLE = [
+  `[STYLE] Cinematic 3D editorial key art — photoreal materials, one hard directional key light, deep ${brandImageColors.black} field, brand teal ${brandImageColors.primary} and cyan ${brandImageColors.accentCyan} as the only accent hues, amber ${brandImageColors.hotAmber} only on the single point of tension.`,
+  `Surface detail over effects: brushed metal, frosted glass, woven cable, matte plastic. Shallow depth of field, hero tack-sharp.`,
+  `[FORBIDDEN] No neon outlines, lens flare, particles, HUD overlays, glowing wireframe grid, holographic panels, cyberpunk city, collage, tiled panel grid, clip-art icons, cartoon or comic style.`,
+].join(" ");
+
+/**
+ * Feed-performance and monetisation contract.
+ *
+ * "Monetisable" here means one specific, checkable thing: the cover survives a
+ * 200px thumbnail AND passes platform ad policy. Both halves matter — a cover
+ * that only reads full-size loses the click, and one that trips a policy filter
+ * loses the reach the click was paying for. Every rule below is either a
+ * legibility constraint or an explicit ad-safety ban.
+ */
+const FEED_PERFORMANCE_RULES = [
+  `[FEED PERFORMANCE — MANDATORY] This image is judged at ~200px wide in a scrolling feed. Exactly ONE focal point; at most three visual elements; at least 35% clean negative space. Strong luminance separation between hero and field — the subject must never sit at the background's brightness.`,
+  `Curiosity, never deception: no fake dashboards, metrics, screenshots or chat windows; no arrows or circles drawn over the image; no before/after the article does not support.`,
+  `Advertiser-safe: no gore, violence, weapons, nudity, drugs, gambling, political or religious symbols, medical or financial claims, cryptocurrency logos, stock-photo watermarks, and no third-party mark beyond those listed in [MARKS].`,
+].join(" ");
+
+/**
+ * People are allowed — but never as an author portrait.
+ *
+ * The earlier rule banned faces outright. That kept identity honest but made
+ * every cover feel like an empty showroom: a control room with nobody in it.
+ * People are what makes a scene read as a place. The guard is now narrower and
+ * more useful: a face may be incidental, never the hero, and never framed as a
+ * portrait of the author — because this provider has no face reference, and an
+ * invented portrait would put a stranger's face on a personal brand.
+ */
+const PEOPLE_RULE = `[PEOPLE] Include people when they make the idea clearer — an engineer at a terminal, a hand on a control, a small team around a lit table, a figure walking the corridor. They must look like real professionals caught mid-task, not stock-photo models: natural posture, no forced smiles, no posing at the camera. Faces are allowed at mid or full-body scale. NEVER make a large close-up face the focal point, and NEVER frame anyone as the author of the post — no name badge, no presenter stance. No crowd filling the frame, no visible brand apparel.`;
+
+/**
+ * Product marks the article may legitimately show.
+ *
+ * A cover about LangGraph that refuses to show the LangGraph mark is less
+ * informative, not safer. What actually matters is that the mark is (a) one the
+ * article names, (b) small and attached to the thing it belongs to, and (c)
+ * never implying a partnership. Matching runs over title + summary + rewritten
+ * text, so the list is grounded in the post rather than in the model's priors —
+ * an image model asked for "AI logos" will otherwise invent a dozen.
+ *
+ * Aliases are matched on word boundaries and deliberately conservative: a loose
+ * alias like "torch" or "lambda" fires on ordinary prose and puts a logo on a
+ * post that never mentioned the product.
+ */
+type TechMark = { name: string; aliases: string[] };
+
+const TECH_MARKS: TechMark[] = [
+  { name: "OpenAI", aliases: ["openai", "chatgpt", "gpt-4", "gpt-5", "gpt-image", "dall-e"] },
+  { name: "Anthropic", aliases: ["anthropic", "claude"] },
+  { name: "Google Gemini", aliases: ["gemini", "vertex ai", "google ai studio"] },
+  { name: "Meta Llama", aliases: ["llama"] },
+  { name: "Mistral", aliases: ["mistral", "mixtral"] },
+  { name: "Qwen", aliases: ["qwen"] },
+  { name: "DeepSeek", aliases: ["deepseek"] },
+  { name: "LangChain", aliases: ["langchain", "langgraph", "langsmith", "langserve"] },
+  { name: "Hugging Face", aliases: ["hugging face", "huggingface"] },
+  { name: "PyTorch", aliases: ["pytorch"] },
+  { name: "TensorFlow", aliases: ["tensorflow"] },
+  { name: "NVIDIA", aliases: ["nvidia", "cuda"] },
+  { name: "Docker", aliases: ["docker"] },
+  { name: "Kubernetes", aliases: ["kubernetes", "k8s"] },
+  { name: "PostgreSQL", aliases: ["postgres", "postgresql"] },
+  { name: "Redis", aliases: ["redis"] },
+  { name: "Kafka", aliases: ["kafka"] },
+  { name: "AWS", aliases: ["aws", "amazon web services", "s3"] },
+  { name: "Azure", aliases: ["azure"] },
+  { name: "GitHub", aliases: ["github"] },
+  { name: "Vercel", aliases: ["vercel"] },
+  { name: "Supabase", aliases: ["supabase"] },
+  { name: "Ollama", aliases: ["ollama"] },
+  { name: "vLLM", aliases: ["vllm"] },
+  { name: "TypeScript", aliases: ["typescript"] },
+  { name: "Python", aliases: ["python"] },
+  { name: "Rust", aliases: ["rust"] },
+];
+
+/**
+ * Marks actually named by the article, in registry order (deterministic), capped
+ * at `limit`. Returning [] is the common case and is a real answer: it means
+ * "draw no mark at all", not "pick some".
+ */
+export function detectTechMarks(
+  title: string,
+  hint?: string,
+  rewritten?: string,
+  limit = 3,
+): string[] {
+  const haystack = [title, hint, rewritten]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  const found: string[] = [];
+  for (const mark of TECH_MARKS) {
+    if (found.length >= limit) break;
+    const hit = mark.aliases.some((alias) =>
+      new RegExp(`(^|[^a-z0-9])${alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^a-z0-9]|$)`).test(
+        haystack,
+      ),
+    );
+    if (hit) found.push(mark.name);
+  }
+  return found;
+}
+
+/**
+ * Marks block. With no detected marks this is an explicit ban, because "add
+ * relevant AI logos" without a grounding list is exactly how a cover ends up
+ * wearing six logos for products the post never mentioned.
+ */
+function buildMarksBlock(marks: string[]): string {
+  if (marks.length === 0) {
+    return `[MARKS] This article names no specific product or company. Add NO logo, badge or wordmark of any kind — an invented mark is worse than an empty panel.`;
+  }
+  return `[MARKS] This article names: ${marks.join(", ")}. You may render AT MOST TWO of these marks, each small, flat, and attached to the object it actually belongs to — a terminal window, a rack label, a case badge. Never larger than a quarter of the title's height, never floating in empty space, never arranged as a row of partner logos. If a mark cannot be drawn accurately, set its name in clean sans-serif instead of a distorted glyph. Add no other company or product mark, and never imply sponsorship, partnership or endorsement.`;
+}
+
+/**
+ * `pickDiagramSubject().detail` is written for a flowchart — it talks about
+ * "dashed two-way links" and labelled arrows. Left verbatim in a scene prompt,
+ * those words make the model paint diagram furniture (dashed lines, arrowheads)
+ * into what should be a photograph. The scene modes strip them; the diagram
+ * mode keeps the detail untouched.
+ */
+function detailToScene(detail: string): string {
+  return detail
+    .replace(/\s*\((?:[^()]*(?:dashed|arrow|link|loop|edge|label)[^()]*)\)/gi, "")
+    .replace(/\bdashed\b\s*/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * xKiro slices prompts at 4000 chars. The people + marks blocks added ~500
+ * chars, so the budget moved up — but it stays 150 under that hard cut, and
+ * `FEED_PERFORMANCE_RULES` sits early enough in the block order that a future
+ * growth spurt drops polish, never the ad-safety contract.
+ */
+const MAX_ENGAGING_PROMPT = 3850;
+
+/**
+ * Build the cover prompt xKiro actually receives.
+ *
+ * `diagram` mode delegates to `buildWorkflowImagePrompt`, so the flowchart
+ * branch keeps its accuracy and legibility contracts unchanged instead of
+ * being re-implemented (and quietly drifting) here.
+ */
+export function buildEngagingImagePrompt(
+  topicTitle: string,
+  topicHint?: string,
+  options?: {
+    heading?: string;
+    rewritten?: string;
+    mode?: XkiroVisualMode | string;
+    scene?: XkiroSceneHook | string;
+    composition?: ImageCompositionHook | string;
+  },
+): {
+  prompt: string;
+  mode: XkiroVisualMode;
+  scene: XkiroSceneHook | null;
+  heading: string;
+  /** Product marks the article actually names (empty = draw none). */
+  marks: string[];
+} {
+  const concepts = topicToVisualConcepts(topicTitle, topicHint);
+  const heading = pickCoverHeading({
+    title: topicTitle,
+    rewritten: options?.rewritten,
+    heading: options?.heading,
+    maxLen: COVER_HEADING_MAX_LEN,
+  });
+  const seed = topicTitle + "|engaging|" + concepts + "|" + heading;
+  const mode = pickXkiroVisualMode(seed, options?.mode);
+  // Grounded in the article text, never in the model's idea of "AI brands".
+  // Computed before the branch so the caller can log it on every path.
+  const marks = detectTechMarks(topicTitle, topicHint, options?.rewritten);
+
+  if (mode === "diagram") {
+    const w = buildWorkflowImagePrompt(topicTitle, topicHint, {
+      heading,
+      rewritten: options?.rewritten,
+      composition: options?.composition,
+    });
+    return {
+      prompt: w.prompt,
+      mode,
+      scene: null,
+      heading: w.heading,
+      marks,
+    };
+  }
+
+  const scene = pickSceneHook(seed, options?.scene);
+  const spec = SCENES[scene];
+  // Same subject matter as the diagram builders — only the rendering changes.
+  const subject = pickDiagramSubject(topicTitle, topicHint);
+  const sceneStory = detailToScene(subject.detail);
+
+  const story =
+    mode === "metaphor"
+      ? `[STORY — METAPHOR] Turn this mechanism into ONE physical object or place the viewer already understands, and let the metaphor carry the idea: ${sceneStory}. The metaphor must be literal and instantly readable — not surreal, not symbolic in two ways at once.`
+      : `[STORY — SCENE] Render this system as a single real scene in one continuous 3D space — never a flowchart, never a row of labelled boxes: ${sceneStory}.`;
+
+  const prompt = assembleDiagramPrompt(
+    [
+      // P0 — genre, headline, story, people, marks. Never droppable.
+      `A cinematic editorial key-art cover for an AI Engineering post — one hero subject, dramatic light, premium tech-brand aesthetic. NOT a diagram, NOT a flowchart, NOT an infographic.`,
+      `Full-bleed 1:1 social media cover. Canvas IS the cover: no frames, no poster on a wall, no device mockup, no double border.`,
+      `[TITLE] Exact text, one line only: "${heading}". The largest element on the canvas, high-contrast white, tight tracking, placed in clean negative space so it never crosses the hero subject.`,
+      `[NO BRAND LOGO] No IO/IstamAI monogram, badge or watermark anywhere. Third-party product marks are governed separately by [MARKS].`,
+      story,
+      PEOPLE_RULE,
+      buildMarksBlock(marks),
+      // P0 continued — the monetisation contract. Deliberately placed BEFORE the
+      // style block: the assembler drops from the tail, and losing ad-safety
+      // rules silently demonetises the post. This must never be the casualty.
+      FEED_PERFORMANCE_RULES,
+      // P1 — look and composition: what makes it stop the scroll.
+      CINEMATIC_STYLE,
+      `[SCENE (${spec.label})] ${spec.layout}. Eye-catch: ${spec.eyeCatch}.`,
+      // P2 — polish, dropped first if the budget runs out.
+      `[TEXT BUDGET] Apart from the title and at most two [MARKS] wordmarks, no other readable words: no subtitle, no caption, no object labels, no numbers, no arrows, no legend.`,
+      `FINAL CHECK: squint at thumbnail size — if the hero and the title are not both instantly readable, simplify the scene instead of adding detail.`,
+    ],
+    MAX_ENGAGING_PROMPT,
+  );
+
+  return { prompt, mode, scene, heading, marks };
 }
 
 

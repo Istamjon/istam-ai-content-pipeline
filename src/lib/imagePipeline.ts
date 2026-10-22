@@ -22,20 +22,22 @@
  *     • Kamchilik: credit asosida (to'ldirish kerak), bepul emas
  *     • Muammo: SSE ba'zan "no file_url" bilan tugaydi; SERVICE_ERROR mumkin
  *
- *  4) xKiro — sensenova-u1.5-lite       ❌ FACE.JPG YO'Q (workflow/sxema only)
- *     • Faqat text-to-image: mavzuga mos workflow diagramlar, arxitektura sxemalar
+ *  4) xKiro — sensenova-u1.5-lite       ❌ FACE.JPG YO'Q (matn → kontentga mos cover)
+ *     • Faqat text-to-image: face.jpg yo'q, shuning uchun brend portreti chizilmaydi
+ *     • Buning o'rniga mavzuga mos, feed'da bosiladigan cover yaratadi
+ *     • Rejimlar (buildEngagingImagePrompt): editorial scena / metafora / diagram
+ *     • Rejimlar seed bo'yicha rotatsiya qilinadi — har post bir xil sxema emas
  *     • Face.jpg bilan HARAKAT QILINMAYDI — bu absolute last resort
- *     • gpt-image edit API xKiro-da paid model talab qiladi → ishlatilmaydi
- *     • workflowPrompt/schematicPrompt bilan chaqiriladi (topic-aware diagram)
  *
  * ════════════════════════════════════════════════════════════════════
  *  FALLBACK CHAIN
  * ════════════════════════════════════════════════════════════════════
- *  face.jpg bor → UnoRouter(edit) → NanoBanana(multimodal) → Skywork(edit) → xKiro(workflow)
- *  face.jpg yo'q → UnoRouter(prompt) → NanoBanana(prompt) → Skywork(prompt) → xKiro(workflow)
+ *  face.jpg bor → UnoRouter(edit) → NanoBanana(multimodal) → Skywork(edit) → xKiro(cover)
+ *  face.jpg yo'q → UnoRouter(prompt) → NanoBanana(prompt) → Skywork(prompt) → xKiro(cover)
  *
  *  xKiro FAQAT 1-3 hammasi muvaffaqiyatsiz bo'lgandagina ishga tushadi.
- *  xKiro workflow diagramida insonlar bo'lmaydi — faqat mavzuga mos sxema.
+ *  xKiro cover'ida taniladigan inson yuzi bo'lmaydi (silhouette/back-view
+ *  mumkin) — face.jpg yo'qligi sababli. Qolgan hamma narsa mavzuga mos.
  *
  * ════════════════════════════════════════════════════════════════════
  *  FACE VERIFICATION (REQUIRE_BRAND_FACE=true bo'lganda)
@@ -47,7 +49,7 @@
  *  "model itoat qildi degan umid"ni "majburiy shart"ga aylantiradi — Sabab 1/2
  *  kabi jimgina yo'qolishlar endi birinchi urinishdanoq ushlanadi.
  *
- *  xKiro tekshirilmaydi: u dizayn bo'yicha diagrams (odam yo'q).
+ *  xKiro tekshirilmaydi: unga face.jpg berilmaydi, tekshiradigan identity yo'q.
  */
 import { env } from "../config/env.js";
 import {
@@ -96,8 +98,15 @@ const IDENTITY_PROVIDERS = new Set<ImageProviderUsed>([
 export type GenerateImageBufferOptions = {
   /** Humanless schematic prompt (used when face is missing for providers 1-3). */
   schematicPrompt?: string;
-  /** Strict workflow diagram prompt (used exclusively for xKiro last-resort). */
+  /** Strict workflow diagram prompt (the `diagram` xKiro mode). */
   workflowPrompt?: string;
+  /**
+   * Mode-aware xKiro cover prompt (editorial scene / physical metaphor /
+   * diagram), built by `buildEngagingImagePrompt`. Preferred over
+   * `workflowPrompt` so the last-resort cover varies with the article instead of
+   * repeating one flat flowchart.
+   */
+  xkiroPrompt?: string;
 };
 
 export async function generateImageBuffer(
@@ -125,13 +134,14 @@ export async function generateImageBuffer(
   const requireIdentity = Boolean(face) && env.REQUIRE_BRAND_FACE;
   const schematicPrompt = options?.schematicPrompt;
   const workflowPrompt = options?.workflowPrompt;
+  const xkiroPrompt = options?.xkiroPrompt;
 
   // ── Brand face status log ──────────────────────────────────────────
   if (face) {
     console.log(
       `[imagePipeline] brand face: ${face.path} (${face.buffer.length} bytes` +
         `${face.prepared ? ", prepared/downscaled" : ""})` +
-        ` — chain: UnoRouter(edit) → NanoBanana(multimodal) → Skywork(edit) → xKiro(workflow-only)`,
+        ` — chain: UnoRouter(edit) → NanoBanana(multimodal) → Skywork(edit) → xKiro(cover, no face)`,
     );
   } else {
     console.warn(
@@ -286,7 +296,7 @@ export async function generateImageBuffer(
       errors.push(`skywork: ${msg}`);
       decisions.push("skywork=failed");
       console.warn(
-        `[imagePipeline] Skywork FAILED → 4) xKiro LAST RESORT (workflow only) | ${msg.slice(0, 200)}`,
+        `[imagePipeline] Skywork FAILED → 4) xKiro LAST RESORT (content cover, no face) | ${msg.slice(0, 200)}`,
       );
     }
   } else if (isSkyworkConfigured()) {
@@ -308,25 +318,34 @@ export async function generateImageBuffer(
   //    Muammo: async job — 3+ daqiqa kutish mumkin
   // ══════════════════════════════════════════════════════════════════
   if (isXkiroConfigured() && canUseXkiroToday().ok) {
-    const xkiroPrompt = workflowPrompt || schematicPrompt || prompt;
+    // Prefer the mode-aware cover prompt (editorial scene / physical metaphor /
+    // diagram) and fall back to the diagram prompt only when the node did not
+    // build one — e.g. a caller that only has a schematic.
+    const chosenXkiroPrompt =
+      xkiroPrompt || workflowPrompt || schematicPrompt || prompt;
+    const promptSource = xkiroPrompt
+      ? "xkiroPrompt (content-matched cover)"
+      : workflowPrompt
+        ? "workflowPrompt (diagram)"
+        : schematicPrompt
+          ? "schematicPrompt (no humans)"
+          : "main prompt";
     console.warn(
-      `[imagePipeline] → 4) xKiro LAST RESORT — workflow diagram (NO face.jpg). ` +
-        `All identity providers failed/exhausted. Prompt mode: ${
-          workflowPrompt ? "workflowPrompt" : schematicPrompt ? "schematicPrompt" : "main prompt"
-        }`,
+      `[imagePipeline] → 4) xKiro LAST RESORT — text-to-image, NO face.jpg. ` +
+        `All identity providers failed/exhausted. Prompt: ${promptSource}`,
     );
     try {
-      const buffer = await xkiroImage(xkiroPrompt, {
-        face: null,                  // ← NO face ref: xKiro = workflow diagrams only
-        workflowPrompt: xkiroPrompt, // ← Forces topic-aware workflow diagram mode
+      const buffer = await xkiroImage(chosenXkiroPrompt, {
+        face: null, // ← no reference photo: xKiro renders a face-free cover
+        xkiroPrompt: chosenXkiroPrompt,
       });
-      // Deliberately NOT face-verified: xKiro never receives face.jpg, so the
-      // output is a topic diagram, not a portrait. The post still publishes.
-      decisions.push("xkiro=diagram");
+      // Deliberately NOT face-verified: xKiro never receives face.jpg, so there
+      // is no identity to check — the cover is content-matched, not a portrait.
+      decisions.push("xkiro=cover");
       logChain("xkiro");
       console.warn(
-        "[imagePipeline] xKiro produced a DIAGRAM cover (no brand face by design) — " +
-          "post will publish with a diagram instead of a portrait.",
+        "[imagePipeline] xKiro produced a face-free content cover — " +
+          "post will publish without the brand portrait.",
       );
       return { buffer, provider: "xkiro" };
     } catch (e) {
@@ -370,7 +389,7 @@ export function logAllImageBudgets(): void {
   console.log(
     `[AI] REQUIRE_BRAND_FACE: ${env.REQUIRE_BRAND_FACE} | ` +
       `Face chain: 1)UnoRouter(edit) → 2)NanoBanana(multimodal) → 3)Skywork(edit) | ` +
-      `Last resort: 4)xKiro(workflow diagram, NO face)`,
+      `Last resort: 4)xKiro(content-matched cover: editorial / metaphor / diagram, NO face)`,
   );
   logFaceVerifyBudget();
   logUnorouterBudget();

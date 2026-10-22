@@ -285,12 +285,18 @@ async function downloadBuffer(url: string): Promise<Buffer> {
 
 export type XkiroImageOptions = {
   /**
-   * Always null in practice. xKiro is the diagram-only last resort and cannot
-   * preserve facial identity, so imagePipeline never sends the brand face here.
-   * Passing a real buffer is a programming error and throws (see below) — a
-   * silent ignore would produce a faceless image reported as a face cover.
+   * Always null in practice. xKiro has no way to preserve facial identity, so
+   * imagePipeline never sends the brand face here. Passing a real buffer is a
+   * programming error and throws (see below) — a silent ignore would produce a
+   * faceless image reported as a face cover.
    */
   face?: { buffer: Buffer; mimeType?: string; path?: string } | null;
+  /**
+   * Mode-aware cover prompt (editorial scene / physical metaphor / diagram),
+   * built by `buildEngagingImagePrompt`. Preferred over `workflowPrompt` so the
+   * last-resort cover is not always the same flat flowchart.
+   */
+  xkiroPrompt?: string;
   schematicPrompt?: string;
   workflowPrompt?: string;
 };
@@ -298,11 +304,14 @@ export type XkiroImageOptions = {
 /**
  * Generate image with xKiro — multi-MODEL + multi-KEY waterfall.
  *
- * xKiro is the ABSOLUTE LAST RESORT and is diagram-only: it receives a
- * topic-aware workflow prompt and never face.jpg. (It used to expose a
- * gpt-image /images/edits path with a hardcoded "clean-shaven Uzbek man"
- * description — dead code, since imagePipeline always passed face: null, and a
- * second source of identity drift. Removed.)
+ * xKiro is the ABSOLUTE LAST RESORT and never sees face.jpg: it renders a
+ * content-matched cover from a text prompt instead. The prompt comes from
+ * `buildEngagingImagePrompt`, which rotates an editorial scene, a physical
+ * metaphor and a technical diagram, so repeated runs do not all produce the
+ * same infographic. (It used to expose a gpt-image /images/edits path with a
+ * hardcoded "clean-shaven Uzbek man" description — dead code, since
+ * imagePipeline always passed face: null, and a second source of identity
+ * drift. Removed.)
  */
 export async function xkiroImage(
   prompt: string,
@@ -310,9 +319,9 @@ export async function xkiroImage(
 ): Promise<Buffer> {
   if (options?.face?.buffer) {
     throw new Error(
-      "xKiro is diagram-only and cannot preserve the brand face — it must never " +
-        "be given face.jpg. Remove xKiro from the identity path (imagePipeline " +
-        "passes face: null) instead of silently producing a faceless image.",
+      "xKiro cannot preserve the brand face — it must never be given face.jpg. " +
+        "Remove xKiro from the identity path (imagePipeline passes face: null) " +
+        "instead of silently producing a faceless image.",
     );
   }
 
@@ -342,7 +351,7 @@ export async function xkiroImage(
   console.log(
     `[xkiro] day=${utcToday()} models=[${usableModels.map((m) => m.split("/").pop()).join("→")}] ` +
       `keys=${usableSlots.length}/${allSlots.length} budget=${budget.used}/${budget.limit || "∞"} ` +
-      `(diagram-only mode)`,
+      `(text-to-image, no face reference)`,
   );
 
   if (usableSlots.length === 0) {
@@ -354,21 +363,28 @@ export async function xkiroImage(
   }
 
   // 2) Text-to-image models (sensenova, minimax, qwen)
-  // Strictly generate pure human-less workflow diagrams
+  //
+  // Priority: the mode-aware engaging prompt (editorial / metaphor / diagram),
+  // then the strict workflow diagram, then the human-less schematic. The first
+  // is what the node builds for every article; the other two keep working for
+  // callers that only have a diagram prompt.
+  const promptMode = options?.xkiroPrompt
+    ? "content-matched cover (editorial / metaphor / diagram)"
+    : options?.workflowPrompt
+      ? "strictly workflow style (odamsiz sof workflow sxema)"
+      : options?.schematicPrompt
+        ? "odamsiz sxema (no humans)"
+        : "default";
+
   const fallbackPrompt = (
+    options?.xkiroPrompt ||
     options?.workflowPrompt ||
     options?.schematicPrompt ||
     safePrompt
-  ).trim().slice(0, 4000);
-  console.log(
-    `[xkiro] text-to-image prompt mode: ${
-      options?.workflowPrompt
-        ? "strictly workflow style (odamsiz sof workflow sxema)"
-        : options?.schematicPrompt
-          ? "odamsiz sxema (no humans)"
-          : "default"
-    }`,
-  );
+  )
+    .trim()
+    .slice(0, 4000);
+  console.log(`[xkiro] text-to-image prompt mode: ${promptMode}`);
 
   let lastErr: unknown;
 

@@ -20,7 +20,8 @@ function ensureImagesDir(): void {
 /**
  * Generate post image:
  *   UnoRouter(edit) → Nano Banana → Skywork  (all support brand face identity)
- *   → xKiro workflow diagram (no face) as the absolute last resort.
+ *   → xKiro content-matched cover (editorial / metaphor / diagram, no face)
+ *     as the absolute last resort.
  * On total failure → no imagePath → graph skips publish.
  */
 export async function generateImage(
@@ -48,6 +49,7 @@ export async function generateImage(
     const { buffer, provider } = await generateImageBuffer(current.imagePrompt, {
       schematicPrompt: current.schematicPrompt,
       workflowPrompt: current.workflowPrompt,
+      xkiroPrompt: current.xkiroPrompt,
     });
     // Both Nano Banana and Skywork return PNG buffers.
     const ext = "png";

@@ -3,9 +3,11 @@ import {
   buildPremiumImagePrompt,
   buildSchematicImagePrompt,
   buildWorkflowImagePrompt,
+  buildEngagingImagePrompt,
   type ImageVisualPreset,
   type ImageCompositionHook,
 } from "../../config/imagePrompt.js";
+import { env } from "../../config/env.js";
 import { isBrandFaceConfigured } from "../../lib/brandFace.js";
 import { generateCatchyCoverHeading } from "../../lib/coverHeading.js";
 import { describeError } from "../../lib/errText.js";
@@ -87,12 +89,33 @@ export async function generateImagePrompt(
       },
     );
 
+    // xKiro never receives face.jpg, so it gets a mode-aware cover prompt of its
+    // own: an editorial scene, a physical metaphor, or (a minority of the time)
+    // the flat diagram above. Building it here rather than inside the provider
+    // keeps the prompt deterministic per article and testable without network.
+    const {
+      prompt: xkiroPrompt,
+      mode: xkiroMode,
+      marks: xkiroMarks,
+    } = buildEngagingImagePrompt(current.title, topicHint, {
+      heading,
+      rewritten: current.rewritten,
+      mode:
+        env.XKIRO_VISUAL_MODE === "auto" ? undefined : env.XKIRO_VISUAL_MODE,
+    });
+
     console.log(
-      `[generateImagePrompt] preset=${preset} composition=${composition} pose=${pose} faceRef=${faceRef} heading="${heading.slice(0, 48)}" len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
+      `[generateImagePrompt] preset=${preset} composition=${composition} pose=${pose} faceRef=${faceRef} xkiro=${xkiroMode} marks=[${xkiroMarks.join(", ") || "none"}] heading="${heading.slice(0, 48)}" len=${imagePrompt.length} topic=${current.title.slice(0, 60)}`,
     );
 
     return {
-      current: { ...current, imagePrompt, schematicPrompt, workflowPrompt },
+      current: {
+        ...current,
+        imagePrompt,
+        schematicPrompt,
+        workflowPrompt,
+        xkiroPrompt,
+      },
     };
   } catch (error) {
     return {

@@ -21,6 +21,13 @@ export interface Article {
   imagePrompt?: string;
   schematicPrompt?: string;
   workflowPrompt?: string;
+  /**
+   * Prompt for xKiro, which has no face reference. Rotates across an editorial
+   * scene, a physical metaphor and a technical diagram (see
+   * `buildEngagingImagePrompt`), so the last-resort cover is no longer always
+   * a flowchart.
+   */
+  xkiroPrompt?: string;
   imagePath?: string;
 }
 

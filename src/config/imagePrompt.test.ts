@@ -2,17 +2,22 @@ import {
   buildPremiumImagePrompt,
   buildSchematicImagePrompt,
   buildWorkflowImagePrompt,
+  buildEngagingImagePrompt,
+  detectTechMarks,
   pickDiagramSubject,
   pickImagePreset,
   pickCompositionHook,
   pickImagePose,
   pickCoverHeading,
+  pickXkiroVisualMode,
+  pickSceneHook,
   looksLikeUzbekLatin,
   topicToVisualConcepts,
   topicToCoverNarrative,
   titleToCoverHeading,
   COMPOSITION_HOOKS,
   IMAGE_POSES,
+  XKIRO_VISUAL_MODES,
 } from "./imagePrompt.js";
 
 describe("imagePrompt", () => {
@@ -402,5 +407,234 @@ describe("titleToCoverHeading — the headline printed on the cover", () => {
       const last = titleToCoverHeading(t).split(/\s+/).pop()!.toLowerCase();
       expect(["with", "for", "of", "and", "the", "in", "on", "to"]).not.toContain(last);
     }
+  });
+});
+
+describe("xKiro covers — content-matched, not only diagrams", () => {
+  const TITLE = "StateGraph Orchestration for Multi-Agent Systems";
+  const HINT = "cyclic workflow state transitions and decision routers";
+
+  it("no longer produces a diagram for every article", () => {
+    // The old builder was diagram-only, so every xKiro cover was the same flat
+    // infographic. Rotation by seed must reach a non-diagram mode.
+    const modes = new Set(
+      [
+        "StateGraph Orchestration for Multi-Agent Systems",
+        "GPU-Resident Top-K for Agentic RAG Pipelines",
+        "Making agent-friendly pages with content negotiation",
+        "Deploying model servers at low latency",
+        "LLM evaluation with LangSmith judges",
+        "HTTP caching for token cost",
+        "Postgres indexes explained",
+        "Designing a CLI for humans",
+      ].map((t) => pickXkiroVisualMode(t + "|engaging|seed")),
+    );
+    expect(modes.size).toBeGreaterThan(1);
+    expect([...modes].some((m) => m !== "diagram")).toBe(true);
+  });
+
+  it("honours a pinned mode and tolerates junk", () => {
+    expect(pickXkiroVisualMode("any", "editorial")).toBe("editorial");
+    expect(pickXkiroVisualMode("any", "metaphor")).toBe("metaphor");
+    expect(pickXkiroVisualMode("any", "diagram")).toBe("diagram");
+    expect(XKIRO_VISUAL_MODES).toContain(pickXkiroVisualMode("any", "nonsense"));
+  });
+
+  it("renders the article's own subject matter as a scene", () => {
+    const { prompt, mode, heading } = buildEngagingImagePrompt(TITLE, HINT, {
+      mode: "editorial",
+    });
+    expect(mode).toBe("editorial");
+    expect(prompt).toContain(`"${heading}"`);
+    // Topic truth is reused, not re-guessed: same routing table as the diagrams.
+    expect(pickDiagramSubject(TITLE, HINT).detail).toMatch(/Multi-agent orchestration/);
+    expect(prompt).toMatch(/Multi-agent orchestration/i);
+    // Diagram furniture must not leak into a scene prompt — "dashed two-way
+    // link" is flowchart vocabulary and makes the model paint diagram lines
+    // into what should be a photograph.
+    expect(prompt).not.toContain("dashed two-way link");
+    expect(prompt).not.toMatch(/dashed/i);
+    expect(prompt).toMatch(/\[STORY — SCENE\]/);
+    expect(prompt).toMatch(/never a flowchart/i);
+    // ...but the diagram contracts must not leak into a scene prompt.
+    expect(prompt).not.toContain("[WORKFLOW DIAGRAM]");
+    expect(prompt).not.toContain("[ACCURACY — MANDATORY]");
+    expect(prompt).not.toContain("Node sequence:");
+  });
+
+  it("supports a physical-metaphor rendering", () => {
+    const { prompt, mode } = buildEngagingImagePrompt(TITLE, HINT, {
+      mode: "metaphor",
+    });
+    expect(mode).toBe("metaphor");
+    expect(prompt).toMatch(/\[STORY — METAPHOR\]/);
+    expect(prompt).toMatch(/literal and instantly readable/i);
+  });
+
+  it("keeps the diagram available, with its contracts intact", () => {
+    const { prompt, mode } = buildEngagingImagePrompt(TITLE, HINT, {
+      mode: "diagram",
+    });
+    expect(mode).toBe("diagram");
+    expect(prompt).toMatch(/WORKFLOW DIAGRAM/i);
+    expect(prompt).toContain("[ACCURACY — MANDATORY]");
+    expect(prompt).toContain("[TYPOGRAPHY — MANDATORY]");
+    expect(prompt).toMatch(/NO HUMANS|NO PEOPLE|NO FACES/i);
+  });
+
+  it("allows people in the scene, but never as the author's portrait", () => {
+    // People make a scene read as a place. What must not happen is an invented
+    // close-up face standing in for the author — this provider has no identity
+    // reference, so that would put a stranger's face on a personal brand.
+    const { prompt } = buildEngagingImagePrompt(TITLE, HINT, {
+      mode: "editorial",
+    });
+    expect(prompt).toMatch(/\[PEOPLE\]/);
+    expect(prompt).toMatch(/engineer at a terminal|hand on a control|team around/i);
+    expect(prompt).toMatch(/Faces are allowed at mid or full-body scale/i);
+    expect(prompt).toMatch(/NEVER make a large close-up face the focal point/i);
+    expect(prompt).toMatch(/NEVER frame anyone as the author/i);
+    expect(prompt).not.toContain("[IDENTITY]");
+    expect(prompt).not.toMatch(/Preserve exact facial identity/i);
+  });
+
+  it("carries the feed-performance and ad-safety contract", () => {
+    const { prompt } = buildEngagingImagePrompt(TITLE, HINT, {
+      mode: "editorial",
+    });
+    expect(prompt).toMatch(/\[FEED PERFORMANCE — MANDATORY\]/);
+    expect(prompt).toMatch(/200px wide/);
+    expect(prompt).toMatch(/Exactly ONE focal point/i);
+    expect(prompt).toMatch(/Curiosity, never deception/i);
+    expect(prompt).toMatch(/Advertiser-safe/i);
+    // Marks are no longer banned outright — they are scoped to what the article
+    // names. Anything else is still forbidden.
+    expect(prompt).toMatch(/no third-party mark beyond those listed in \[MARKS\]/i);
+    // Monetisation depends on not tripping ad review, so the bans must be
+    // concrete rather than a vague "be tasteful".
+    for (const banned of [
+      "gore",
+      "nudity",
+      "gambling",
+      "political or religious symbols",
+    ]) {
+      expect(prompt.toLowerCase()).toContain(banned);
+    }
+  });
+
+  it("stays inside the xKiro budget and ends on a complete sentence", () => {
+    const cases: Array<[string, string]> = [
+      [TITLE, HINT],
+      [
+        "Building a production-grade retrieval augmented generation pipeline with re-ranking and evaluation",
+        "RAG chunking embeddings vector store re-ranker eval",
+      ],
+    ];
+    for (const mode of ["editorial", "metaphor", "diagram"] as const) {
+      for (const [t, h] of cases) {
+        const { prompt } = buildEngagingImagePrompt(t, h, { mode });
+        expect(prompt.length).toBeLessThanOrEqual(3850);
+        expect(prompt.endsWith(".")).toBe(true);
+        // xKiro hard-slices at 4000 — never get near it.
+        expect(prompt.length).toBeLessThan(3900);
+      }
+    }
+  });
+
+  it("picks a scene deterministically and accepts a force", () => {
+    expect(pickSceneHook("seed", "macro_mechanism")).toBe("macro_mechanism");
+    expect(pickSceneHook("stable-seed")).toBe(pickSceneHook("stable-seed"));
+  });
+});
+
+describe("detectTechMarks — marks are grounded in the article", () => {
+  it("finds a product the title actually names", () => {
+    expect(detectTechMarks("LangGraph state machine in production")).toContain(
+      "LangChain",
+    );
+  });
+
+  it("returns nothing when no product is named", () => {
+    // The common case, and a real answer: it means "draw no mark at all".
+    expect(
+      detectTechMarks(
+        "Why your build is slow",
+        "caching and incremental compilation",
+      ),
+    ).toEqual([]);
+  });
+
+  it("does not fire on prose that merely contains a lookalike substring", () => {
+    // "rust" must not match "trust". A loose match here puts a Rust logo on a
+    // post about reliability.
+    expect(
+      detectTechMarks("Building trust in distributed systems"),
+    ).not.toContain("Rust");
+    expect(detectTechMarks("Designing a CLI for humans")).toEqual([]);
+  });
+
+  it("caps the list so a cover cannot become a logo wall", () => {
+    const many = detectTechMarks(
+      "OpenAI Anthropic Gemini Llama Mistral Qwen DeepSeek LangChain Docker Kubernetes",
+    );
+    expect(many.length).toBeLessThanOrEqual(3);
+  });
+
+  it("is deterministic", () => {
+    const t = "LangGraph and PyTorch with Docker";
+    expect(detectTechMarks(t)).toEqual(detectTechMarks(t));
+  });
+});
+
+describe("the marks block follows the article", () => {
+  it("bans marks outright when the article names none", () => {
+    const { prompt, marks } = buildEngagingImagePrompt(
+      "Why your build is slow",
+      "caching and incremental compilation",
+      { mode: "editorial" },
+    );
+    expect(marks).toEqual([]);
+    expect(prompt).toMatch(/Add NO logo, badge or wordmark of any kind/i);
+  });
+
+  it("allows at most two marks, attached, never a partner row", () => {
+    const { prompt, marks } = buildEngagingImagePrompt(
+      "LangGraph orchestration with PyTorch workers",
+      "agent graph and model serving",
+      { mode: "editorial" },
+    );
+    expect(marks).toContain("LangChain");
+    expect(marks).toContain("PyTorch");
+    expect(prompt).toMatch(/AT MOST TWO/);
+    expect(prompt).toMatch(/never arranged as a row of partner logos/i);
+    expect(prompt).toMatch(/never imply sponsorship, partnership or endorsement/i);
+  });
+
+  it("keeps the author's own brand out of the marks system", () => {
+    const { prompt } = buildEngagingImagePrompt(
+      "StateGraph Orchestration for Multi-Agent Systems",
+      "cyclic workflow state transitions and decision routers",
+      { mode: "editorial" },
+    );
+    expect(prompt).toMatch(/\[NO BRAND LOGO\]/);
+    expect(prompt).toMatch(/No IO\/IstamAI monogram/i);
+  });
+
+  it("never lets the ad-safety contract be the block that gets dropped", () => {
+    // Adding the marks block pushed the prompt over budget. The assembler drops
+    // from the tail, so FEED PERFORMANCE was the first casualty — every cover
+    // silently lost its ad-safety rules while still generating fine. It now
+    // sits in the P0 group, ahead of the style block.
+    const worst = buildEngagingImagePrompt(
+      "OpenAI Anthropic Gemini LangGraph PyTorch Docker Kubernetes",
+      "a deliberately long summary naming many products at once, to push the prompt budget to its limit and force the tail to be dropped",
+      { mode: "editorial" },
+    );
+    expect(worst.marks.length).toBe(3);
+    expect(worst.prompt).toContain("[FEED PERFORMANCE — MANDATORY]");
+    expect(worst.prompt).toContain("Advertiser-safe");
+    expect(worst.prompt).toContain(
+      "no third-party mark beyond those listed in [MARKS]",
+    );
   });
 });

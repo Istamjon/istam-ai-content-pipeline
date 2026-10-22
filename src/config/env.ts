@@ -142,6 +142,20 @@ export const env = {
    */
   XKIRO_IMAGE_SIZE: process.env.XKIRO_IMAGE_SIZE || "1024x1024",
   /**
+   * What kind of cover xKiro draws. It never receives face.jpg, so it cannot
+   * render the brand portrait; this decides what it renders instead.
+   *
+   *   auto (default) — rotate editorial / metaphor / diagram per article, with
+   *                    diagrams a minority so the feed does not repeat one look
+   *   editorial      — cinematic hero scene of the article's subject
+   *   metaphor       — the core mechanism as one physical object
+   *   diagram        — flat technical flowchart (the old behaviour)
+   *
+   * Every mode takes its subject matter from the same topic routing table, so
+   * pinning one mode never makes the cover less about the article.
+   */
+  XKIRO_VISUAL_MODE: (process.env.XKIRO_VISUAL_MODE || "auto").toLowerCase(),
+  /**
    * Soft daily xKiro images PER KEY (UTC). 0 = unlimited.
    */
   DAILY_XKIRO_LIMIT: Math.max(
@@ -152,7 +166,8 @@ export const env = {
    * When brand face.jpg is present, only use identity-capable image providers.
    * All three identity providers in the waterfall support face.jpg:
    *   1) UnoRouter (/images/edits)  2) Nano Banana (inlineData)  3) Skywork (source_images)
-   * xKiro is diagram-only and never receives the face.
+   * xKiro has no face reference and never receives face.jpg. It renders a
+   * content-matched cover instead — see XKIRO_VISUAL_MODE below.
    * Default true. Set REQUIRE_BRAND_FACE=false to allow text-only person fallback.
    */
   REQUIRE_BRAND_FACE: !["0", "false", "no", "off"].includes(
@@ -572,10 +587,8 @@ const ENUM_RULES: ReadonlyArray<
   ["SKYWORK_RESOLUTION", ["1K", "2K", "4K"]],
   ["IMAGE_QUALITY", ["balanced", "premium"]],
   ["LINKEDIN_POST_AS", ["person", "organization", "both", "auto"]],
-  [
-    "XKIRO_IMAGE_SIZE",
-    ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"],
-  ],
+  ["XKIRO_IMAGE_SIZE", ["256x256", "512x512", "1024x1024", "1024x1792", "1792x1024"]],
+  ["XKIRO_VISUAL_MODE", ["auto", "editorial", "metaphor", "diagram"]],
 ];
 
 for (const [name, allowed] of ENUM_RULES) {
